@@ -17,6 +17,7 @@ const menus: Menu[] = [
       { label: "Anúncios Marketplace", href: "/dashboard/produtos/anuncios" },
     ],
   },
+  { label: "Pedidos", href: "/dashboard/pedidos" },
   { label: "Calculadora", href: "/dashboard/calculadora" },
   { label: "Relatórios", href: "/dashboard/relatorios" },
   { label: "DRE", href: "/dashboard/dre" },

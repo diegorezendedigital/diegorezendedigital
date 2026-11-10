@@ -83,6 +83,11 @@ export type Sale = {
   profit: number;
   sold_at: string;
   external_id: string | null;
+  listing_id?: string | null;
+  order_number?: string | null;
+  title?: string | null;
+  buyer_state?: string | null;
+  ml_user_id?: string | null;
 };
 
 export type Expense = {

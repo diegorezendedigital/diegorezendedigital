@@ -25,7 +25,7 @@ type Order = {
 
 // Importa pedidos pagos do Mercado Livre como vendas. Cada item vira (ou usa) um anúncio; o custo vem do
 // produto do armazém ligado ao anúncio e o imposto, do regime do CNPJ do anúncio.
-// Pode ser repetido à vontade: cada venda tem um external_id único e não é duplicada.
+// Pode ser repetido à vontade: cada venda tem um external_id único; repetir atualiza custo, imposto e estado.
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
@@ -125,6 +125,7 @@ export async function POST(req: Request) {
 
     // 2) Frete que o vendedor paga em cada pedido (melhor esforço: se falhar, fica 0).
     const frete = new Map<number, number>();
+    const estado = new Map<number, string>();
     for (let i = 0; i < orders.length; i += 5) {
       await Promise.all(
         orders.slice(i, i + 5).map(async (o) => {
@@ -135,6 +136,14 @@ export async function POST(req: Request) {
             frete.set(o.id, Number(c.senders?.[0]?.cost) || 0);
           } catch {
             /* mantém 0 */
+          }
+          try {
+            const sh = await mlGet<{ receiver_address?: { state?: { id?: string; name?: string } } }>(token, `/shipments/${shipId}`);
+            const st = sh.receiver_address?.state;
+            const uf = (st?.id || "").replace(/^BR-/, "") || st?.name || "";
+            if (uf) estado.set(o.id, uf);
+          } catch {
+            /* estado fica em branco */
           }
         })
       );
@@ -169,6 +178,10 @@ export async function POST(req: Request) {
           tax_amount: Math.round(imposto * 100) / 100,
           sold_at: o.date_created,
           external_id: `${o.id}:${oi.item.id}`,
+          order_number: String(o.id),
+          title: oi.item.title || oi.item.id,
+          buyer_state: estado.get(o.id) ?? null,
+          ml_user_id: conn.ml_user_id,
         };
       })
     );
@@ -177,7 +190,7 @@ export async function POST(req: Request) {
     if (vendas.length) {
       const { data: inseridas, error } = await admin
         .from("sales")
-        .upsert(vendas, { onConflict: "store_id,external_id", ignoreDuplicates: true })
+        .upsert(vendas, { onConflict: "store_id,external_id" })
         .select("id");
       if (error) throw new Error(error.message);
       importadas = inseridas?.length ?? 0;

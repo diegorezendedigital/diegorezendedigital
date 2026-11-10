@@ -325,3 +325,11 @@ update public.listings l
    and (select count(*) from public.ml_connections x where x.store_id = l.store_id) = 1;
 
 notify pgrst, 'reload schema';
+
+alter table public.sales
+  add column if not exists order_number text,
+  add column if not exists title text,
+  add column if not exists buyer_state text,
+  add column if not exists ml_user_id text;
+
+notify pgrst, 'reload schema';
