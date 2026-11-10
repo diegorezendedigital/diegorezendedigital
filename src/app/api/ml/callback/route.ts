@@ -1,0 +1,43 @@
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/server/supabase-admin";
+import { exchangeCode, verifyState } from "@/lib/server/ml";
+
+export const dynamic = "force-dynamic";
+
+// O Mercado Livre volta aqui com ?code=...&state=... depois que o vendedor autoriza.
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const voltar = (qs: string) => NextResponse.redirect(new URL(`/dashboard/mercadolivre?${qs}`, url));
+
+  try {
+    if (url.searchParams.get("error")) return voltar("erro=negado");
+
+    const storeId = verifyState(url.searchParams.get("state"));
+    const code = url.searchParams.get("code");
+    if (!storeId || !code) return voltar("erro=state");
+
+    const t = await exchangeCode(code);
+    const admin = supabaseAdmin();
+
+    // Garante que a loja existe (a tabela de conexões depende dela).
+    await admin.from("stores").upsert({ id: storeId, name: "Minha Loja" }, { onConflict: "id", ignoreDuplicates: true });
+
+    const { error } = await admin.from("ml_connections").upsert(
+      {
+        store_id: storeId,
+        ml_user_id: String(t.user_id),
+        access_token: t.access_token,
+        refresh_token: t.refresh_token,
+        expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
+        connected_at: new Date().toISOString(),
+      },
+      { onConflict: "store_id" }
+    );
+    if (error) throw new Error(error.message);
+
+    return voltar("conectado=1");
+  } catch (e) {
+    console.error(e);
+    return voltar("erro=conexao");
+  }
+}
