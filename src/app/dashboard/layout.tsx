@@ -158,6 +158,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </header>
       <main className="mx-auto max-w-7xl p-5">{children}</main>
+      <div className="pointer-events-none fixed bottom-1.5 left-2 font-mono text-[10px] leading-tight text-slate-400">
+        v{process.env.NEXT_PUBLIC_APP_VERSION} · atualizado em{" "}
+        {process.env.NEXT_PUBLIC_BUILD_TIME
+          ? new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleString("pt-BR", {
+              timeZone: "America/Sao_Paulo",
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "—"}
+      </div>
     </div>
   );
 }
