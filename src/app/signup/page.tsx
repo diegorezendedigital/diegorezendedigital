@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
+const campo =
+  "w-full rounded-lg border border-line bg-white px-4 py-3 text-sm outline-none focus:border-ink focus:ring-2 focus:ring-gold/30";
+
 export default function SignupPage() {
   const router = useRouter();
   const [nome, setNome] = useState("");
@@ -37,30 +40,74 @@ export default function SignupPage() {
     else setAviso("Conta criada! Confirme o e-mail que enviamos para você e depois entre.");
   }
 
+  async function entrarComGoogle() {
+    setErro("");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/dashboard/produtos` },
+    });
+    if (error) setErro("Não foi possível continuar com o Google. Tente novamente.");
+  }
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">
-      <h1 className="mb-1 text-2xl font-bold text-brand">Criar conta</h1>
-      <p className="mb-6 text-sm text-slate-600">Comece a calcular a margem real das suas vendas.</p>
-      <form onSubmit={criar} className="card space-y-3">
-        <div>
-          <label className="label" htmlFor="nome">Nome da loja</label>
-          <input id="nome" className="input" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Minha Loja" />
+    <main className="min-h-screen bg-paper font-body text-ink antialiased flex items-center justify-center px-6">
+      <div className="w-full max-w-sm">
+        <Link href="/" className="font-display text-xl font-semibold">
+          Margem<span className="text-gold">Certa</span>
+        </Link>
+        <h1 className="font-display text-2xl font-medium mt-8 mb-1">Criar conta</h1>
+        <p className="text-ink/60 text-sm mb-8">Comece a calcular a margem real das suas vendas. É grátis.</p>
+
+        <button
+          type="button"
+          onClick={entrarComGoogle}
+          className="w-full rounded-full border border-ink px-4 py-3 text-sm font-medium hover:bg-ink hover:text-paper transition-colors"
+        >
+          Continuar com Google
+        </button>
+
+        <div className="my-6 flex items-center gap-3 text-xs text-ink/40">
+          <span className="h-px flex-1 bg-line" />
+          ou
+          <span className="h-px flex-1 bg-line" />
         </div>
-        <div>
-          <label className="label" htmlFor="email">E-mail</label>
-          <input id="email" type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </div>
-        <div>
-          <label className="label" htmlFor="senha">Senha</label>
-          <input id="senha" type="password" className="input" value={senha} onChange={(e) => setSenha(e.target.value)} required />
-        </div>
-        {erro && <p className="text-sm text-red-600">{erro}</p>}
-        {aviso && <p className="text-sm text-emerald-700">{aviso}</p>}
-        <button className="btn w-full" disabled={enviando}>{enviando ? "Criando…" : "Criar conta"}</button>
-      </form>
-      <p className="mt-4 text-center text-sm text-slate-600">
-        Já tem conta? <Link href="/login" className="font-medium text-brand underline">Entrar</Link>
-      </p>
+
+        <form onSubmit={criar} className="space-y-4">
+          <div>
+            <label htmlFor="nome" className="mb-1 block font-mono text-xs uppercase tracking-widest text-clay">
+              Nome da loja
+            </label>
+            <input id="nome" className={campo} value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Minha Loja" />
+          </div>
+          <div>
+            <label htmlFor="email" className="mb-1 block font-mono text-xs uppercase tracking-widest text-clay">
+              E-mail
+            </label>
+            <input id="email" type="email" className={campo} value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </div>
+          <div>
+            <label htmlFor="senha" className="mb-1 block font-mono text-xs uppercase tracking-widest text-clay">
+              Senha
+            </label>
+            <input id="senha" type="password" className={campo} value={senha} onChange={(e) => setSenha(e.target.value)} required />
+          </div>
+          {erro && <p className="text-sm text-red-700">{erro}</p>}
+          {aviso && <p className="text-sm text-emerald-800">{aviso}</p>}
+          <button
+            disabled={enviando}
+            className="w-full rounded-full bg-ink px-4 py-3 text-sm font-medium text-paper hover:bg-inkdeep transition-colors disabled:opacity-60"
+          >
+            {enviando ? "Criando…" : "Criar conta"}
+          </button>
+        </form>
+
+        <p className="mt-6 text-center text-sm text-ink/60">
+          Já tem conta?{" "}
+          <Link href="/login" className="font-medium text-ink underline underline-offset-4">
+            Entrar
+          </Link>
+        </p>
+      </div>
     </main>
   );
 }

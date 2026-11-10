@@ -6,6 +6,7 @@ Mostra o lucro real de cada venda nos marketplaces (taxas, frete e impostos) e s
 
 ## O que tem
 
+- **Página de apresentação** e login com e-mail/senha ou Google.
 - **Produtos**: custo e preço, com taxas, lucro e margem por marketplace.
 - **Calculadora**: lucro por venda e preço mínimo para atingir a margem desejada.
 - **Mercado Livre**: conecta a conta (OAuth), mostra a reputação e importa pedidos pagos como vendas, com a taxa e o frete reais. Pode sincronizar quantas vezes quiser sem duplicar.
@@ -32,6 +33,11 @@ Em https://developers.mercadolivre.com.br/devcenter crie uma aplicação com:
 
 ### 3. Vercel
 Importe este repositório e cadastre as variáveis de `.env.example` **antes do primeiro deploy** (as `NEXT_PUBLIC_*` são usadas já no build). Depois do deploy, confira o endereço real do projeto e use-o em `ML_REDIRECT_URI` e no DevCenter.
+
+### 4. Login com Google
+O botão "Continuar com Google" (login e cadastro) usa o provedor do Supabase. Se aparecer erro ao clicar:
+- No Supabase, em **Authentication > Providers > Google**, deixe o provedor ligado com o Client ID e o Secret do Google;
+- Em **Authentication > URL Configuration**, inclua `https://SEU-DOMINIO/**` nas Redirect URLs.
 
 ## Rodar localmente
 
