@@ -25,7 +25,7 @@ type Order = {
 
 // Importa pedidos pagos do Mercado Livre como vendas. Cada item vira (ou usa) um anúncio; o custo vem do
 // produto do armazém ligado ao anúncio e o imposto, do regime do CNPJ do anúncio.
-// Pode ser repetido à vontade: cada venda tem um external_id único; repetir atualiza custo, imposto e estado.
+// Pode ser repetido à vontade: cada venda tem um external_id único; repetir só completa dados (estado, produto); o custo e o imposto de vendas já gravadas não mudam.
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
@@ -123,6 +123,25 @@ export async function POST(req: Request) {
       }
     }
 
+    // Histórico de custo: cada venda usa o custo vigente na data dela (nunca o custo de hoje, se mudou).
+    type CustoHist = { product_id: string; cost_price: number; icms_credit: number; pis_credit: number; cofins_credit: number; valid_from: string };
+    const historico = new Map<string, CustoHist[]>();
+    {
+      const ids = Array.from(produtos.keys());
+      if (ids.length) {
+        const { data: hs } = await admin.from("product_costs").select("*").in("product_id", ids).order("valid_from", { ascending: true });
+        ((hs ?? []) as CustoHist[]).forEach((h) => historico.set(h.product_id, [...(historico.get(h.product_id) ?? []), h]));
+      }
+    }
+    const custoEm = (prod: Product, data: string) => {
+      const lista = historico.get(prod.id) ?? [];
+      const t = new Date(data).getTime();
+      const vigente = [...lista].reverse().find((h) => new Date(h.valid_from).getTime() <= t) ?? lista[0];
+      return vigente
+        ? { custo: Number(vigente.cost_price), credito: Number(vigente.icms_credit) + Number(vigente.pis_credit) + Number(vigente.cofins_credit) }
+        : { custo: Number(prod.cost_price), credito: Number(prod.icms_credit) + Number(prod.pis_credit) + Number(prod.cofins_credit) };
+    };
+
     // 2) Frete que o vendedor paga em cada pedido (melhor esforço: se falhar, fica 0).
     const frete = new Map<number, number>();
     const estado = new Map<number, string>();
@@ -156,8 +175,9 @@ export async function POST(req: Request) {
         const an = anuncios.get(oi.item.id);
         const prod = an?.product_id ? produtos.get(an.product_id) : undefined;
         const unidades = (an?.units ?? 1) * q;
-        const custo = (prod ? Number(prod.cost_price) : 0) * unidades;
-        const credito = prod ? (Number(prod.icms_credit) + Number(prod.pis_credit) + Number(prod.cofins_credit)) * unidades : 0;
+        const hist = prod ? custoEm(prod, o.date_created) : { custo: 0, credito: 0 };
+        const custo = hist.custo * unidades;
+        const credito = hist.credito * unidades;
         const empresa = (an?.company_id && empresas.get(an.company_id)) || (empresaPadrao as Company | null);
         const preco = (Number(oi.unit_price) || 0) * q;
         const taxa = (Number(oi.sale_fee) || 0) * q;
@@ -186,14 +206,39 @@ export async function POST(req: Request) {
       })
     );
 
+    // Vendas que já têm custo gravado ficam congeladas: só recebem os dados do pedido (produto, estado, conta).
+    // Vendas novas, ou ainda sem custo, entram completas.
     let importadas = 0;
     if (vendas.length) {
-      const { data: inseridas, error } = await admin
+      const { data: ja } = await admin
         .from("sales")
-        .upsert(vendas, { onConflict: "store_id,external_id" })
-        .select("id");
-      if (error) throw new Error(error.message);
-      importadas = inseridas?.length ?? 0;
+        .select("id, external_id, cost_price")
+        .eq("store_id", storeId)
+        .in("external_id", vendas.map((v) => v.external_id));
+      const existentes = new Map<string, { id: string; cost_price: number }>(
+        (ja ?? []).map((x) => [x.external_id as string, { id: x.id as string, cost_price: Number(x.cost_price) }])
+      );
+      const novas = vendas.filter((v) => {
+        const e = existentes.get(v.external_id);
+        return !e || Number(e.cost_price) === 0;
+      });
+      const congeladas = vendas.filter((v) => !novas.includes(v));
+      if (novas.length) {
+        const { data: inseridas, error } = await admin
+          .from("sales")
+          .upsert(novas, { onConflict: "store_id,external_id" })
+          .select("id");
+        if (error) throw new Error(error.message);
+        importadas = inseridas?.length ?? 0;
+      }
+      await Promise.all(
+        congeladas.map((v) =>
+          admin
+            .from("sales")
+            .update({ order_number: v.order_number, title: v.title, buyer_state: v.buyer_state, ml_user_id: v.ml_user_id, listing_id: v.listing_id })
+            .eq("id", (existentes.get(v.external_id) as { id: string }).id)
+        )
+      );
     }
 
     const proximo = offset + orders.length;

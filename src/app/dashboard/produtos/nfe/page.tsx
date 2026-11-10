@@ -170,7 +170,6 @@ export default function NfePage() {
                 .eq("id", destino);
               if (r.error) throw new Error(`Item ${item.codigo}: ${r.error.message}`);
               antigo.stock_qty = novoEstoque; // dois itens da nota podem apontar para o mesmo produto
-              await supabase.rpc("recalc_sales_cost", { p_product: destino });
               atualizados++;
             }
           }

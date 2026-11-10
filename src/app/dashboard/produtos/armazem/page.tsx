@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
-import { Company, Product, brl, campo, formatarCnpj, mensagemErro, num } from "@/lib/types";
+import { Company, CustoProduto, Product, brl, campo, formatarCnpj, mensagemErro, num } from "@/lib/types";
 import { LinhaProduto, baixarModelo, lerPlanilha } from "@/lib/planilha";
 
 type Painel = null | "manual" | "excel";
@@ -15,6 +15,10 @@ export default function ArmazemPage() {
   const [empresas, setEmpresas] = useState<Company[]>([]);
   const [anuncios, setAnuncios] = useState<Record<string, number>>({});
   const [busca, setBusca] = useState("");
+  const [histId, setHistId] = useState<string | null>(null);
+  const [hist, setHist] = useState<CustoProduto[]>([]);
+  const [histCusto, setHistCusto] = useState("");
+  const [histData, setHistData] = useState("");
   const [painel, setPainel] = useState<Painel>(null);
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
@@ -97,9 +101,54 @@ export default function ArmazemPage() {
       setErro(error.message);
       return;
     }
-    // Atualiza o custo das vendas já registradas desse produto.
-    if (campoNome === "cost_price") await supabase.rpc("recalc_sales_cost", { p_product: p.id });
+    // Só preenche vendas que ainda estão sem custo; as que já têm custo gravado não mudam.
     carregar();
+  }
+
+  async function abrirHistorico(p: Product) {
+    if (histId === p.id) {
+      setHistId(null);
+      return;
+    }
+    setHistId(p.id);
+    setHistCusto("");
+    setHistData("");
+    await carregarHistorico(p.id);
+  }
+
+  async function carregarHistorico(id: string) {
+    const r = await supabase.from("product_costs").select("*").eq("product_id", id).order("valid_from", { ascending: false });
+    if (r.error) setErro(r.error.message);
+    setHist((r.data ?? []) as CustoProduto[]);
+  }
+
+  // Registra um custo que valeu a partir de uma data (ex.: o que você pagou há um ano). Não muda o custo atual do produto.
+  async function adicionarCusto(p: Product) {
+    setErro("");
+    if (!histData || !(num(histCusto) > 0)) {
+      setErro("Informe a data e o custo.");
+      return;
+    }
+    const { error } = await supabase.from("product_costs").insert({
+      store_id: p.store_id,
+      product_id: p.id,
+      cost_price: num(histCusto),
+      valid_from: new Date(`${histData}T00:00:00-03:00`).toISOString(),
+    });
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+    setHistCusto("");
+    setHistData("");
+    await carregarHistorico(p.id);
+  }
+
+  async function removerCusto(c: CustoProduto) {
+    if (!confirm("Remover esta linha do histórico de custo?")) return;
+    const { error } = await supabase.from("product_costs").delete().eq("id", c.id);
+    if (error) setErro(error.message);
+    else await carregarHistorico(c.product_id);
   }
 
   async function trocarEmpresa(p: Product, id: string) {
@@ -176,7 +225,6 @@ export default function ArmazemPage() {
         if (r.error) throw new Error(r.error.message);
         (r.data ?? []).forEach((x) => ids.push(x.id as string));
       }
-      for (const id of ids) await supabase.rpc("recalc_sales_cost", { p_product: id });
 
       const novos = linhas.filter((l) => !existentes.has(l.sku)).length;
       setAviso(`${linhas.length} produtos importados (${novos} novos, ${linhas.length - novos} atualizados).`);
@@ -322,9 +370,11 @@ export default function ArmazemPage() {
               </tr>
             )}
             {visiveis.map((p) => {
+              const aberto = histId === p.id;
               const cred = Number(p.icms_credit) + Number(p.pis_credit) + Number(p.cofins_credit);
               return (
-                <tr key={p.id}>
+                <Fragment key={p.id}>
+                <tr>
                   <td className="td font-mono text-xs">{p.sku}</td>
                   <td className="td max-w-[280px] truncate" title={p.name}>{p.name}</td>
                   <td className="td">
@@ -357,16 +407,53 @@ export default function ArmazemPage() {
                     />
                   </td>
                   <td className="td font-mono text-xs">{anuncios[p.id] ?? 0}</td>
-                  <td className="td">
+                  <td className="td whitespace-nowrap">
+                    <button onClick={() => abrirHistorico(p)} className="mr-3 text-xs text-brand hover:underline">Histórico</button>
                     <button onClick={() => remover(p)} className="text-xs text-red-700 hover:underline">Excluir</button>
                   </td>
                 </tr>
+                {aberto && (
+                  <tr className="bg-slate-50">
+                    <td className="td" colSpan={8}>
+                      <div className="space-y-2 py-1">
+                        <p className="text-xs text-slate-600">
+                          Histórico de custo. Cada venda usa o custo vigente na data dela. Ao alterar o custo acima, uma linha nova é criada com a data de hoje.
+                        </p>
+                        <table className="text-sm">
+                          <tbody>
+                            {hist.map((c) => (
+                              <tr key={c.id}>
+                                <td className="pr-6 font-mono text-xs">a partir de {new Date(c.valid_from).toLocaleDateString("pt-BR")}</td>
+                                <td className="pr-6">{brl(Number(c.cost_price))}</td>
+                                <td>
+                                  <button onClick={() => removerCusto(c)} className="text-xs text-red-700 hover:underline">remover</button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <div>
+                            <label className="label">Valeu a partir de</label>
+                            <input type="date" className="input py-1" value={histData} onChange={(e) => setHistData(e.target.value)} />
+                          </div>
+                          <div>
+                            <label className="label">Custo un. (R$)</label>
+                            <input className="input w-28 py-1" inputMode="decimal" value={histCusto} onChange={(e) => setHistCusto(e.target.value)} />
+                          </div>
+                          <button className="btn-ghost" onClick={() => adicionarCusto(p)}>Adicionar custo antigo</button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-500">Altere custo ou estoque direto na tabela; ao sair do campo, o valor é salvo. Mudar o custo atualiza as vendas já registradas desse produto.</p>
+      <p className="text-xs text-slate-500">Altere custo ou estoque direto na tabela; ao sair do campo, o valor é salvo. Mudar o custo vale só para as vendas daqui para frente: as vendas antigas guardam o custo da época. O botão Histórico mostra cada custo e a data em que passou a valer.</p>
     </div>
   );
 }

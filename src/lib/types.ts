@@ -162,3 +162,13 @@ export type ContaML = {
   last_synced_at: string | null;
   connected_at: string;
 };
+
+export type CustoProduto = {
+  id: string;
+  product_id: string;
+  cost_price: number;
+  icms_credit: number;
+  pis_credit: number;
+  cofins_credit: number;
+  valid_from: string;
+};
