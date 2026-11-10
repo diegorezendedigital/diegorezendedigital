@@ -38,6 +38,8 @@ export async function GET(req: Request) {
     return voltar("conectado=1");
   } catch (e) {
     console.error(e);
-    return voltar("erro=conexao");
+    // Mostra o motivo na tela (vem do Mercado Livre ou do banco; nunca contém segredos).
+    const detalhe = e instanceof Error ? e.message.slice(0, 200) : "";
+    return voltar(`erro=conexao&detalhe=${encodeURIComponent(detalhe)}`);
   }
 }

@@ -66,7 +66,10 @@ export default function MercadoLivrePage() {
     if (qs.get("conectado")) setAviso("Conta do Mercado Livre conectada com sucesso!");
     const e = qs.get("erro");
     if (e === "negado") setErro("Você não autorizou o acesso no Mercado Livre.");
-    else if (e) setErro("Não foi possível concluir a conexão. Tente novamente.");
+    else if (e) {
+      const d = qs.get("detalhe");
+      setErro("Não foi possível concluir a conexão." + (d ? ` Motivo: ${d}` : " Tente novamente."));
+    }
     carregar();
   }, [carregar]);
 

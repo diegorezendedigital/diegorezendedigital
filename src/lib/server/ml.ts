@@ -61,8 +61,12 @@ async function tokenRequest(params: Record<string, string>): Promise<TokenRespon
       ...params,
     }),
   });
-  const json = await res.json();
-  if (!res.ok) throw new Error(`Falha no OAuth do Mercado Livre: ${json?.message || res.status}`);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const j = json as { error?: string; error_description?: string; message?: string };
+    const detalhe = [j.error, j.error_description || j.message].filter(Boolean).join(": ") || String(res.status);
+    throw new Error(`Falha no OAuth do Mercado Livre: ${detalhe}`);
+  }
   return json as TokenResponse;
 }
 
