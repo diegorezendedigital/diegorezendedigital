@@ -48,6 +48,7 @@ export type Listing = {
   store_id: string;
   marketplace_id: string;
   external_id: string;
+  ml_user_id: string | null;
   title: string;
   permalink: string | null;
   thumbnail: string | null;
@@ -148,3 +149,11 @@ export function formatarCnpj(v: string | null | undefined): string {
   const d = String(v ?? "").replace(/\D/g, "");
   return d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : d;
 }
+
+export type ContaML = {
+  ml_user_id: string;
+  nickname: string | null;
+  company_id: string | null;
+  last_synced_at: string | null;
+  connected_at: string;
+};

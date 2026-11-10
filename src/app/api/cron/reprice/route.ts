@@ -23,16 +23,23 @@ export async function GET(req: Request) {
 
   const resumo = { aplicados: 0, sem_mudanca: 0, ignorados: 0, erros: 0 };
   for (const [storeId, lista] of Array.from(porLoja.entries())) {
-    let token: string | null = null;
-    try {
-      token = await getAccessToken(storeId);
-    } catch {
-      token = null;
-    }
-    if (!token) continue;
     const ctx = await carregarContexto(admin, storeId);
+    const tokens = new Map<string, string | null>();
     for (const l of lista) {
       if (Date.now() - inicio > 50000) return NextResponse.json({ ...resumo, parcial: true });
+      const chave = l.ml_user_id ?? "";
+      if (!tokens.has(chave)) {
+        try {
+          tokens.set(chave, await getAccessToken(storeId, l.ml_user_id));
+        } catch {
+          tokens.set(chave, null);
+        }
+      }
+      const token = tokens.get(chave);
+      if (!token) {
+        resumo.ignorados++;
+        continue;
+      }
       const r = await reajustarAnuncio(admin, token, l, ctx, true);
       if (r.status === "aplicado") resumo.aplicados++;
       else if (r.status === "sem_mudanca") resumo.sem_mudanca++;

@@ -32,12 +32,12 @@ export async function POST(req: Request) {
 
   try {
     const storeId = user.id;
-    const conn = await getConnection(storeId);
-    if (!conn) return NextResponse.json({ error: "Conecte sua conta do Mercado Livre primeiro" }, { status: 400 });
-    const token = await getAccessToken(storeId);
+    const body = await req.json().catch(() => ({}));
+    const conn = await getConnection(storeId, body.ml_user_id ? String(body.ml_user_id) : null);
+    if (!conn) return NextResponse.json({ error: "Conecte sua conta do Mercado Livre primeiro (Configurações)" }, { status: 400 });
+    const token = await getAccessToken(storeId, conn.ml_user_id);
     if (!token) return NextResponse.json({ error: "Conexão com o Mercado Livre expirada" }, { status: 400 });
 
-    const body = await req.json().catch(() => ({}));
     const days = Math.min(Math.max(Number(body.days) || 30, 1), 90);
     const offset = Math.max(Number(body.offset) || 0, 0);
     const from = new Date(Date.now() - days * 24 * 3600 * 1000);
@@ -98,10 +98,11 @@ export async function POST(req: Request) {
             store_id: storeId,
             marketplace_id: MARKETPLACE_ID,
             external_id: id,
+            ml_user_id: conn.ml_user_id,
             title: oi.item.title || id,
             price: Number(oi.unit_price) || 0,
             product_id: (oi.item.seller_sku && porSku.get(oi.item.seller_sku)) || null,
-            company_id: (empresaPadrao as Company | null)?.id ?? null,
+            company_id: conn.company_id ?? (empresaPadrao as Company | null)?.id ?? null,
           };
         });
         const { data: criados, error } = await admin
@@ -185,7 +186,11 @@ export async function POST(req: Request) {
     const proximo = offset + orders.length;
     const temMais = orders.length > 0 && proximo < total;
     if (!temMais) {
-      await admin.from("ml_connections").update({ last_synced_at: new Date().toISOString() }).eq("store_id", storeId);
+      await admin
+        .from("ml_connections")
+        .update({ last_synced_at: new Date().toISOString() })
+        .eq("store_id", storeId)
+        .eq("ml_user_id", conn.ml_user_id);
     }
 
     return NextResponse.json({

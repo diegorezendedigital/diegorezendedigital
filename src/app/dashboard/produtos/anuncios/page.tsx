@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, supabase } from "@/lib/supabase/client";
-import { Company, Listing, Marketplace, Product, brl, campo, mensagemErro, num, pct } from "@/lib/types";
+import { Company, ContaML, Listing, Marketplace, Product, brl, campo, mensagemErro, num, pct } from "@/lib/types";
 import { analisarAnuncio } from "@/lib/anuncio";
 
 type Resultado = {
@@ -30,6 +30,7 @@ export default function AnunciosPage() {
   const [produtos, setProdutos] = useState<Product[]>([]);
   const [empresas, setEmpresas] = useState<Company[]>([]);
   const [mps, setMps] = useState<Marketplace[]>([]);
+  const [contas, setContas] = useState<ContaML[]>([]);
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [busca, setBusca] = useState("");
   const [erro, setErro] = useState("");
@@ -51,6 +52,11 @@ export default function AnunciosPage() {
     setProdutos((p.data ?? []) as Product[]);
     setEmpresas((c.data ?? []) as Company[]);
     setMps((m.data ?? []) as Marketplace[]);
+    try {
+      setContas((await apiFetch<{ accounts: ContaML[] }>("/api/ml/accounts")).accounts);
+    } catch {
+      /* sem contas conectadas ou ainda sem a atualização do banco: a tela continua funcionando */
+    }
   }, []);
 
   useEffect(() => {
@@ -87,21 +93,27 @@ export default function AnunciosPage() {
   async function importar() {
     setErro("");
     setAviso("");
+    if (contas.length === 0) {
+      setErro("Conecte uma conta do Mercado Livre em Configurações primeiro.");
+      return;
+    }
     setImportando(true);
-    let offset = 0;
     let criados = 0;
     let atualizados = 0;
     try {
-      for (;;) {
-        const r = await apiFetch<{ created: number; updated: number; total: number; next_offset: number; has_more: boolean }>("/api/ml/listings", {
-          method: "POST",
-          body: JSON.stringify({ offset }),
-        });
-        criados += r.created;
-        atualizados += r.updated;
-        offset = r.next_offset;
-        setProgresso(`${Math.min(offset, r.total)} de ${r.total} anúncios…`);
-        if (!r.has_more) break;
+      for (const conta of contas) {
+        let offset = 0;
+        for (;;) {
+          const r = await apiFetch<{ created: number; updated: number; total: number; next_offset: number; has_more: boolean }>("/api/ml/listings", {
+            method: "POST",
+            body: JSON.stringify({ offset, ml_user_id: conta.ml_user_id }),
+          });
+          criados += r.created;
+          atualizados += r.updated;
+          offset = r.next_offset;
+          setProgresso(`${conta.nickname ?? conta.ml_user_id}: ${Math.min(offset, r.total)} de ${r.total} anúncios…`);
+          if (!r.has_more) break;
+        }
       }
       setAviso(`${criados} anúncios novos e ${atualizados} atualizados. Anúncios com SKU igual ao de um produto do armazém já vieram ligados a ele.`);
       await carregar();
@@ -283,7 +295,10 @@ export default function AnunciosPage() {
                           l.title
                         )}
                       </p>
-                      <p className="font-mono text-[11px] text-slate-500">{l.external_id}</p>
+                      <p className="font-mono text-[11px] text-slate-500">
+                        {l.external_id}
+                        {l.ml_user_id && contas.length > 1 ? ` · ${contas.find((c) => c.ml_user_id === l.ml_user_id)?.nickname ?? l.ml_user_id}` : ""}
+                      </p>
                     </div>
                   </div>
                 </td>

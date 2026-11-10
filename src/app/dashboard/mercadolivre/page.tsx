@@ -1,18 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "@/lib/supabase/client";
-import { mensagemErro } from "@/lib/types";
+import Link from "next/link";
+import { apiFetch, supabase } from "@/lib/supabase/client";
+import { Company, mensagemErro } from "@/lib/types";
 
 type Metrica = { rate?: number; value?: number; completed?: number };
-type Status = {
-  connected: boolean;
-  ml_user_id?: string | null;
-  last_synced_at?: string | null;
-  nickname?: string;
+type Conta = {
+  ml_user_id: string;
+  nickname: string | null;
+  company_id: string | null;
+  last_synced_at: string | null;
   level_id?: string | null;
   power_seller_status?: string | null;
-  transactions?: { total?: number } | null;
   metrics?: {
     claims?: Metrica;
     delayed_handling_time?: Metrica;
@@ -31,11 +31,11 @@ type SyncResp = {
 };
 
 const NIVEIS: Record<string, [string, string]> = {
-  "1_red": ["Vermelho", "bg-red-500"],
+  "1_red": ["Vermelho", "bg-red-600"],
   "2_orange": ["Laranja", "bg-orange-500"],
   "3_yellow": ["Amarelo", "bg-yellow-500"],
-  "4_light_green": ["Verde claro", "bg-lime-500"],
-  "5_green": ["Verde", "bg-green-600"],
+  "4_light_green": ["Verde claro", "bg-lime-600"],
+  "5_green": ["Verde", "bg-green-700"],
 };
 const LIDER: Record<string, string> = {
   silver: "MercadoLíder",
@@ -46,7 +46,8 @@ const LIDER: Record<string, string> = {
 const taxa = (m?: Metrica) => (m && m.rate != null ? `${(m.rate * 100).toFixed(1).replace(".", ",")}%` : "—");
 
 export default function MercadoLivrePage() {
-  const [status, setStatus] = useState<Status | null>(null);
+  const [contas, setContas] = useState<Conta[] | null>(null);
+  const [empresas, setEmpresas] = useState<Company[]>([]);
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [dias, setDias] = useState("30");
@@ -55,56 +56,55 @@ export default function MercadoLivrePage() {
 
   const carregar = useCallback(async () => {
     try {
-      setStatus(await apiFetch<Status>("/api/ml/status"));
+      const r = await apiFetch<{ accounts: Conta[] }>("/api/ml/status");
+      setContas(r.accounts);
+      const c = await supabase.from("companies").select("*");
+      setEmpresas((c.data ?? []) as Company[]);
     } catch (e) {
       setErro(mensagemErro(e));
+      setContas([]);
     }
   }, []);
 
   useEffect(() => {
-    const qs = new URLSearchParams(window.location.search);
-    if (qs.get("conectado")) setAviso("Conta do Mercado Livre conectada com sucesso!");
-    const e = qs.get("erro");
-    if (e === "negado") setErro("Você não autorizou o acesso no Mercado Livre.");
-    else if (e) {
-      const d = qs.get("detalhe");
-      setErro("Não foi possível concluir a conexão." + (d ? ` Motivo: ${d}` : " Tente novamente."));
-    }
     carregar();
   }, [carregar]);
 
-  async function conectar() {
-    setErro("");
-    try {
-      const { url } = await apiFetch<{ url: string }>("/api/ml/connect", { method: "POST" });
-      window.location.href = url;
-    } catch (e) {
-      setErro(mensagemErro(e));
+  // Importa as vendas de uma conta, página por página, até terminar.
+  async function sincronizarConta(c: Conta): Promise<{ vendas: number; anuncios: number }> {
+    let offset = 0;
+    let vendas = 0;
+    let anuncios = 0;
+    const nome = c.nickname ?? c.ml_user_id;
+    for (;;) {
+      const r = await apiFetch<SyncResp>("/api/ml/sync", {
+        method: "POST",
+        body: JSON.stringify({ days: Number(dias), offset, ml_user_id: c.ml_user_id }),
+      });
+      vendas += r.imported;
+      anuncios += r.listings_created;
+      offset = r.next_offset;
+      setProgresso(`${nome}: ${Math.min(offset, r.total)} de ${r.total} pedidos…`);
+      if (!r.has_more) break;
     }
+    return { vendas, anuncios };
   }
 
-  async function sincronizar() {
+  async function sincronizar(lista: Conta[]) {
     setErro("");
     setAviso("");
     setSincronizando(true);
-    let offset = 0;
-    let importadas = 0;
-    let produtos = 0;
+    let vendas = 0;
+    let anuncios = 0;
     try {
-      for (;;) {
-        const r = await apiFetch<SyncResp>("/api/ml/sync", {
-          method: "POST",
-          body: JSON.stringify({ days: Number(dias), offset }),
-        });
-        importadas += r.imported;
-        produtos += r.listings_created;
-        offset = r.next_offset;
-        setProgresso(`${Math.min(offset, r.total)} de ${r.total} pedidos…`);
-        if (!r.has_more) break;
+      for (const c of lista) {
+        const r = await sincronizarConta(c);
+        vendas += r.vendas;
+        anuncios += r.anuncios;
       }
       setAviso(
-        `Sincronização concluída: ${importadas} vendas novas e ${produtos} anúncios novos. ` +
-          (produtos > 0 ? "Ligue os anúncios novos a um produto do armazém (Produtos > Anúncios Marketplace) para o lucro ficar correto." : "")
+        `Sincronização concluída: ${vendas} vendas novas e ${anuncios} anúncios novos. ` +
+          (anuncios > 0 ? "Ligue os anúncios novos a um produto do armazém (Produtos > Anúncios Marketplace) para o lucro ficar correto." : "")
       );
       carregar();
     } catch (e) {
@@ -115,41 +115,72 @@ export default function MercadoLivrePage() {
     }
   }
 
-  if (!status && !erro) return <p className="text-sm text-slate-500">Carregando…</p>;
+  if (!contas && !erro) return <p className="text-sm text-slate-500">Carregando…</p>;
 
-  const nivel = status?.level_id ? NIVEIS[status.level_id] : undefined;
-  const m = status?.metrics;
+  const lista = contas ?? [];
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-bold">Mercado Livre</h1>
+    <div className="space-y-5">
+      <div>
+        <h1 className="page-title">Mercado Livre</h1>
+        <p className="mt-1 text-sm text-slate-600">Reputação e importação de vendas das contas conectadas. Para conectar ou desconectar contas, use as Configurações.</p>
+      </div>
 
-      {aviso && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{aviso}</p>}
-      {erro && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{erro}</p>}
+      {aviso && <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">{aviso}</p>}
+      {erro && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erro}</p>}
 
-      {!status?.connected && (
+      {lista.length === 0 && (
         <div className="card space-y-3">
-          <p className="text-sm text-slate-600">
-            Conecte sua conta de vendedor para importar pedidos como vendas, com a taxa e o frete reais, e ver sua reputação.
-          </p>
-          <button className="btn" onClick={conectar}>Conectar com Mercado Livre</button>
+          <p className="text-sm text-slate-600">Nenhuma conta do Mercado Livre conectada.</p>
+          <Link href="/dashboard/configuracoes" className="btn">Conectar em Configurações</Link>
         </div>
       )}
 
-      {status?.connected && (
-        <>
-          <div className="card space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold">{status.nickname ?? `Conta ${status.ml_user_id}`}</h2>
-              {nivel && <span className={`rounded-full px-3 py-1 text-xs font-semibold text-white ${nivel[1]}`}>Reputação: {nivel[0]}</span>}
-              {status.power_seller_status && LIDER[status.power_seller_status] && (
-                <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white">{LIDER[status.power_seller_status]}</span>
-              )}
+      {lista.length > 0 && (
+        <div className="card flex flex-wrap items-end gap-3">
+          <div>
+            <label className="label">Período das vendas</label>
+            <select className="input" value={dias} onChange={(e) => setDias(e.target.value)} disabled={sincronizando}>
+              <option value="7">Últimos 7 dias</option>
+              <option value="30">Últimos 30 dias</option>
+              <option value="60">Últimos 60 dias</option>
+              <option value="90">Últimos 90 dias</option>
+            </select>
+          </div>
+          <button className="btn" onClick={() => sincronizar(lista)} disabled={sincronizando}>
+            {sincronizando ? "Sincronizando…" : lista.length > 1 ? "Sincronizar todas as contas" : "Sincronizar agora"}
+          </button>
+          {progresso && <span className="font-mono text-xs text-slate-500">{progresso}</span>}
+          <p className="basis-full text-xs text-slate-500">
+            Traz os pedidos pagos do período como vendas (preço, taxa e frete do Mercado Livre). O custo vem do produto do armazém ligado ao anúncio e o imposto, do regime do CNPJ da conta.
+            Pode repetir sem duplicar. Sem produto ligado ao anúncio, o custo fica em R$ 0,00.
+          </p>
+        </div>
+      )}
+
+      {lista.map((c) => {
+        const nivel = c.level_id ? NIVEIS[c.level_id] : undefined;
+        const m = c.metrics;
+        const empresa = empresas.find((e) => e.id === c.company_id);
+        return (
+          <div key={c.ml_user_id} className="card space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-semibold">{c.nickname ?? `Conta ${c.ml_user_id}`}</h2>
+                {nivel && <span className={`badge text-white ${nivel[1]}`}>Reputação {nivel[0]}</span>}
+                {c.power_seller_status && LIDER[c.power_seller_status] && (
+                  <span className="badge bg-blue-700 text-white">{LIDER[c.power_seller_status]}</span>
+                )}
+                {empresa && <span className="badge bg-slate-200 text-slate-700">{empresa.name}</span>}
+              </div>
+              <button className="btn-ghost" onClick={() => sincronizar([c])} disabled={sincronizando}>
+                Sincronizar só esta
+              </button>
             </div>
-            {status.ml_error ? (
+            {c.ml_error ? (
               <p className="text-sm text-red-700">
-                O Mercado Livre recusou o acesso ({status.ml_error}). Reconecte a conta.{" "}
-                <button onClick={conectar} className="font-medium underline">Reconectar</button>
+                O Mercado Livre recusou o acesso ({c.ml_error}). Reconecte a conta em{" "}
+                <Link href="/dashboard/configuracoes" className="font-medium underline">Configurações</Link>.
               </p>
             ) : (
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -159,47 +190,21 @@ export default function MercadoLivrePage() {
                 <Metric t="Vendas (período)" v={m?.sales?.completed != null ? String(m.sales.completed) : "—"} />
               </div>
             )}
-          </div>
-
-          <div className="card space-y-3">
-            <h2 className="font-semibold">Importar vendas</h2>
-            <p className="text-sm text-slate-600">
-              Traz os pedidos pagos do período como vendas (preço, taxa e frete do Mercado Livre). O custo vem do produto do armazém ligado ao anúncio e o imposto, do regime do CNPJ do anúncio.
-              Pode repetir sem duplicar.
-            </p>
-            <div className="flex flex-wrap items-end gap-3">
-              <div>
-                <label className="label">Período</label>
-                <select className="input" value={dias} onChange={(e) => setDias(e.target.value)} disabled={sincronizando}>
-                  <option value="7">Últimos 7 dias</option>
-                  <option value="30">Últimos 30 dias</option>
-                  <option value="60">Últimos 60 dias</option>
-                  <option value="90">Últimos 90 dias</option>
-                </select>
-              </div>
-              <button className="btn" onClick={sincronizar} disabled={sincronizando}>
-                {sincronizando ? "Sincronizando…" : "Sincronizar agora"}
-              </button>
-              {progresso && <span className="text-sm text-slate-500">{progresso}</span>}
-            </div>
-            {status.last_synced_at && (
-              <p className="text-xs text-slate-500">Última sincronização completa: {new Date(status.last_synced_at).toLocaleString("pt-BR")}</p>
+            {c.last_synced_at && (
+              <p className="text-xs text-slate-500">Última sincronização completa: {new Date(c.last_synced_at).toLocaleString("pt-BR")}</p>
             )}
-            <p className="text-xs text-slate-500">
-              Os impostos são calculados pelo regime do CNPJ (Configurações). Sem produto ligado ao anúncio, o custo fica em R$ 0,00. Confira os valores na primeira importação.
-            </p>
           </div>
-        </>
-      )}
+        );
+      })}
     </div>
   );
 }
 
 function Metric({ t, v, s }: { t: string; v: string; s?: number }) {
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
-      <div className="text-xs text-slate-500">{t}</div>
-      <div className="text-xl font-bold">{v}</div>
+    <div className="rounded-md border border-slate-200 p-3">
+      <div className="font-mono text-[11px] uppercase tracking-wider text-slate-500">{t}</div>
+      <div className="text-xl font-semibold">{v}</div>
       {s != null && <div className="text-xs text-slate-500">{s} ocorrências</div>}
     </div>
   );

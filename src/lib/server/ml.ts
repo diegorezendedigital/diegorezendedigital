@@ -87,16 +87,37 @@ export function exchangeCode(code: string, state: string): Promise<TokenResponse
   });
 }
 
-export async function getConnection(storeId: string) {
-  const { data } = await supabaseAdmin().from("ml_connections").select("*").eq("store_id", storeId).maybeSingle();
-  return data;
+export type MlConn = {
+  store_id: string;
+  ml_user_id: string;
+  access_token: string;
+  refresh_token: string;
+  expires_at: string;
+  last_synced_at: string | null;
+  connected_at: string;
+  nickname: string | null;
+  company_id: string | null;
+};
+
+// Todas as contas do Mercado Livre conectadas à loja (a mais antiga primeiro).
+export async function listConnections(storeId: string): Promise<MlConn[]> {
+  const { data, error } = await supabaseAdmin().from("ml_connections").select("*").eq("store_id", storeId).order("connected_at");
+  if (error) throw new Error(`Banco de dados: ${error.message}`);
+  return (data ?? []) as MlConn[];
+}
+
+// Uma conta pelo id do Mercado Livre; sem id, devolve a primeira conectada.
+export async function getConnection(storeId: string, mlUserId?: string | null): Promise<MlConn | null> {
+  const todas = await listConnections(storeId);
+  if (mlUserId) return todas.find((c) => c.ml_user_id === mlUserId) ?? null;
+  return todas[0] ?? null;
 }
 
 // Devolve um access_token válido; renova (e guarda o novo refresh_token) se faltar menos de 2 min.
-export async function getAccessToken(storeId: string): Promise<string | null> {
-  const conn = await getConnection(storeId);
+export async function getAccessToken(storeId: string, mlUserId?: string | null): Promise<string | null> {
+  const conn = await getConnection(storeId, mlUserId);
   if (!conn) return null;
-  if (new Date(conn.expires_at).getTime() - Date.now() > 120000) return conn.access_token as string;
+  if (new Date(conn.expires_at).getTime() - Date.now() > 120000) return conn.access_token;
 
   const t = await tokenRequest({ grant_type: "refresh_token", refresh_token: conn.refresh_token });
   await supabaseAdmin()
@@ -106,7 +127,8 @@ export async function getAccessToken(storeId: string): Promise<string | null> {
       refresh_token: t.refresh_token,
       expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
     })
-    .eq("store_id", storeId);
+    .eq("store_id", storeId)
+    .eq("ml_user_id", conn.ml_user_id);
   return t.access_token;
 }
 

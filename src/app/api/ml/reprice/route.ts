@@ -18,16 +18,25 @@ export async function POST(req: Request) {
     const aplicar = body.apply === true;
     if (ids.length === 0) return NextResponse.json({ error: "Escolha pelo menos um anúncio" }, { status: 400 });
 
-    if (!(await getConnection(user.id))) return NextResponse.json({ error: "Conecte sua conta do Mercado Livre primeiro" }, { status: 400 });
-    const token = await getAccessToken(user.id);
-    if (!token) return NextResponse.json({ error: "Conexão com o Mercado Livre expirada" }, { status: 400 });
+    if (!(await getConnection(user.id))) return NextResponse.json({ error: "Conecte sua conta do Mercado Livre primeiro (Configurações)" }, { status: 400 });
 
     const admin = supabaseAdmin();
     const { data } = await admin.from("listings").select("*").eq("store_id", user.id).in("id", ids);
     const ctx = await carregarContexto(admin, user.id);
 
     const resultados: ResultadoPreco[] = [];
-    for (const l of (data ?? []) as Listing[]) resultados.push(await reajustarAnuncio(admin, token, l, ctx, aplicar));
+    const tokens = new Map<string, string | null>();
+    for (const l of (data ?? []) as Listing[]) {
+      // Cada anúncio usa o acesso da conta do Mercado Livre a que pertence.
+      const chave = l.ml_user_id ?? "";
+      if (!tokens.has(chave)) tokens.set(chave, await getAccessToken(user.id, l.ml_user_id));
+      const token = tokens.get(chave);
+      if (!token) {
+        resultados.push({ listing_id: l.id, external_id: l.external_id, title: l.title, status: "erro", old_price: Number(l.price), motivo: "A conta do Mercado Livre deste anúncio não está conectada." });
+        continue;
+      }
+      resultados.push(await reajustarAnuncio(admin, token, l, ctx, aplicar));
+    }
     return NextResponse.json({ results: resultados });
   } catch (e) {
     console.error(e);
