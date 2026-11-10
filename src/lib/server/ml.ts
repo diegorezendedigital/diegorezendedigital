@@ -34,12 +34,20 @@ export function verifyState(state: string | null): string | null {
   }
 }
 
+// PKCE: o code_verifier não é guardado em lugar nenhum; é recalculado a partir do "state" assinado
+// (só o servidor conhece o segredo), então nunca viaja pela URL.
+function pkceVerifier(state: string): string {
+  return hmac(`pkce:${state.split(".")[0]}`);
+}
+
 export function authUrl(state: string): string {
   const url = new URL("https://auth.mercadolivre.com.br/authorization");
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", env("ML_CLIENT_ID"));
   url.searchParams.set("redirect_uri", env("ML_REDIRECT_URI"));
   url.searchParams.set("state", state);
+  url.searchParams.set("code_challenge", crypto.createHash("sha256").update(pkceVerifier(state)).digest("base64url"));
+  url.searchParams.set("code_challenge_method", "S256");
   return url.toString();
 }
 
@@ -70,8 +78,13 @@ async function tokenRequest(params: Record<string, string>): Promise<TokenRespon
   return json as TokenResponse;
 }
 
-export function exchangeCode(code: string): Promise<TokenResponse> {
-  return tokenRequest({ grant_type: "authorization_code", code, redirect_uri: env("ML_REDIRECT_URI") });
+export function exchangeCode(code: string, state: string): Promise<TokenResponse> {
+  return tokenRequest({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: env("ML_REDIRECT_URI"),
+    code_verifier: pkceVerifier(state),
+  });
 }
 
 export async function getConnection(storeId: string) {

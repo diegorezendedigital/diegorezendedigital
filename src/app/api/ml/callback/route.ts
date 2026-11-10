@@ -16,7 +16,7 @@ export async function GET(req: Request) {
     const code = url.searchParams.get("code");
     if (!storeId || !code) return voltar("erro=state");
 
-    const t = await exchangeCode(code);
+    const t = await exchangeCode(code, url.searchParams.get("state") as string);
     const admin = supabaseAdmin();
 
     // Garante que a loja existe (a tabela de conexões depende dela).
