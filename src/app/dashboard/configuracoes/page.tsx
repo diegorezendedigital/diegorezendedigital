@@ -1,5 +1,6 @@
 "use client";
 
+import PainelML from "@/components/PainelML";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, supabase } from "@/lib/supabase/client";
 import { Company, ContaML, campo, formatarCnpj, mensagemErro, num } from "@/lib/types";
@@ -225,6 +226,8 @@ export default function ConfiguracoesPage() {
       </section>
 
       {erro && <p className="text-sm text-red-700">{erro}</p>}
+
+      <PainelML />
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
