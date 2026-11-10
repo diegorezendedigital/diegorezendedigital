@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { getAccessToken, getConnection, mlGet } from "@/lib/server/ml";
+import { calcularLucro } from "@/lib/pricing";
+import type { Company, Product } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -21,7 +23,8 @@ type Order = {
   order_items: OrderItem[];
 };
 
-// Importa pedidos pagos do Mercado Livre como vendas (e cria os produtos que ainda não existem).
+// Importa pedidos pagos do Mercado Livre como vendas. Cada item vira (ou usa) um anúncio; o custo vem do
+// produto do armazém ligado ao anúncio e o imposto, do regime do CNPJ do anúncio.
 // Pode ser repetido à vontade: cada venda tem um external_id único e não é duplicada.
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
@@ -53,43 +56,69 @@ export async function POST(req: Request) {
 
     const admin = supabaseAdmin();
 
-    // 1) Produtos: cria os que ainda não existem (custo começa em 0, você preenche depois).
+    // 1) Anúncios: cria os que ainda não existem (ligados ao produto de mesmo SKU e ao CNPJ padrão).
     const itens = new Map<string, OrderItem>();
     orders.forEach((o) => o.order_items.forEach((oi) => itens.set(oi.item.id, oi)));
     const itemIds = Array.from(itens.keys());
 
-    let produtosCriados = 0;
-    const produtos = new Map<string, { id: string; cost_price: number }>();
+    type Anuncio = { id: string; product_id: string | null; company_id: string | null; units: number };
+    let anunciosCriados = 0;
+    const anuncios = new Map<string, Anuncio>();
+    const produtos = new Map<string, Product>();
+    const empresas = new Map<string, Company>();
+    let empresaPadrao: Company | null = null;
+
     if (itemIds.length) {
+      const { data: emps } = await admin.from("companies").select("*").eq("store_id", storeId);
+      ((emps ?? []) as Company[]).forEach((c) => {
+        empresas.set(c.id, c);
+        if (c.is_default) empresaPadrao = c;
+      });
+
       const { data: existentes } = await admin
-        .from("products")
-        .select("id, external_id, cost_price")
+        .from("listings")
+        .select("id, external_id, product_id, company_id, units")
         .eq("store_id", storeId)
         .in("external_id", itemIds);
-      (existentes ?? []).forEach((p) => produtos.set(p.external_id as string, { id: p.id, cost_price: Number(p.cost_price) }));
+      (existentes ?? []).forEach((l) =>
+        anuncios.set(l.external_id as string, { id: l.id, product_id: l.product_id, company_id: l.company_id, units: Number(l.units) || 1 })
+      );
 
-      const novos = itemIds
-        .filter((id) => !produtos.has(id))
-        .map((id) => {
+      const faltam = itemIds.filter((id) => !anuncios.has(id));
+      if (faltam.length) {
+        const skus = faltam.map((id) => itens.get(id)?.item.seller_sku || "").filter(Boolean);
+        const porSku = new Map<string, string>();
+        if (skus.length) {
+          const { data: prods } = await admin.from("products").select("id, sku").eq("store_id", storeId).in("sku", skus);
+          (prods ?? []).forEach((p) => porSku.set(p.sku as string, p.id as string));
+        }
+        const novos = faltam.map((id) => {
           const oi = itens.get(id) as OrderItem;
           return {
             store_id: storeId,
-            external_id: id,
-            name: oi.item.title || id,
-            sku: oi.item.seller_sku || null,
-            cost_price: 0,
-            sale_price: Number(oi.unit_price) || 0,
             marketplace_id: MARKETPLACE_ID,
+            external_id: id,
+            title: oi.item.title || id,
+            price: Number(oi.unit_price) || 0,
+            product_id: (oi.item.seller_sku && porSku.get(oi.item.seller_sku)) || null,
+            company_id: (empresaPadrao as Company | null)?.id ?? null,
           };
         });
-      if (novos.length) {
         const { data: criados, error } = await admin
-          .from("products")
+          .from("listings")
           .upsert(novos, { onConflict: "store_id,external_id", ignoreDuplicates: true })
-          .select("id, external_id, cost_price");
+          .select("id, external_id, product_id, company_id, units");
         if (error) throw new Error(error.message);
-        (criados ?? []).forEach((p) => produtos.set(p.external_id as string, { id: p.id, cost_price: Number(p.cost_price) }));
-        produtosCriados = criados?.length ?? 0;
+        (criados ?? []).forEach((l) =>
+          anuncios.set(l.external_id as string, { id: l.id, product_id: l.product_id, company_id: l.company_id, units: Number(l.units) || 1 })
+        );
+        anunciosCriados = criados?.length ?? 0;
+      }
+
+      const prodIds = Array.from(new Set(Array.from(anuncios.values()).map((a) => a.product_id).filter(Boolean))) as string[];
+      if (prodIds.length) {
+        const { data: prods } = await admin.from("products").select("*").in("id", prodIds);
+        ((prods ?? []) as Product[]).forEach((p) => produtos.set(p.id, p));
       }
     }
 
@@ -114,17 +143,29 @@ export async function POST(req: Request) {
     const vendas = orders.flatMap((o) =>
       o.order_items.map((oi, idx) => {
         const q = Number(oi.quantity) || 1;
-        const prod = produtos.get(oi.item.id);
+        const an = anuncios.get(oi.item.id);
+        const prod = an?.product_id ? produtos.get(an.product_id) : undefined;
+        const unidades = (an?.units ?? 1) * q;
+        const custo = (prod ? Number(prod.cost_price) : 0) * unidades;
+        const credito = prod ? (Number(prod.icms_credit) + Number(prod.pis_credit) + Number(prod.cofins_credit)) * unidades : 0;
+        const empresa = (an?.company_id && empresas.get(an.company_id)) || (empresaPadrao as Company | null);
+        const preco = (Number(oi.unit_price) || 0) * q;
+        const taxa = (Number(oi.sale_fee) || 0) * q;
+        const freteVenda = idx === 0 ? frete.get(o.id) ?? 0 : 0;
+        const imposto = empresa
+          ? Math.max(0, calcularLucro(preco, { custo, credito, feePct: 0, feeFixo: taxa, frete: freteVenda, empresa }).impostos)
+          : 0;
         return {
           store_id: storeId,
           product_id: prod?.id ?? null,
+          listing_id: an?.id ?? null,
           marketplace_id: MARKETPLACE_ID,
           quantity: q,
-          sale_price: (Number(oi.unit_price) || 0) * q,
-          cost_price: (prod?.cost_price ?? 0) * q,
-          fees_total: (Number(oi.sale_fee) || 0) * q,
-          shipping_cost: idx === 0 ? frete.get(o.id) ?? 0 : 0,
-          tax_amount: 0,
+          sale_price: preco,
+          cost_price: custo,
+          fees_total: taxa,
+          shipping_cost: freteVenda,
+          tax_amount: Math.round(imposto * 100) / 100,
           sold_at: o.date_created,
           external_id: `${o.id}:${oi.item.id}`,
         };
@@ -150,7 +191,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       processed: orders.length,
       imported: importadas,
-      products_created: produtosCriados,
+      listings_created: anunciosCriados,
       total,
       next_offset: proximo,
       has_more: temMais,

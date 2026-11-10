@@ -24,7 +24,7 @@ type Status = {
 type SyncResp = {
   processed: number;
   imported: number;
-  products_created: number;
+  listings_created: number;
   total: number;
   next_offset: number;
   has_more: boolean;
@@ -94,14 +94,14 @@ export default function MercadoLivrePage() {
           body: JSON.stringify({ days: Number(dias), offset }),
         });
         importadas += r.imported;
-        produtos += r.products_created;
+        produtos += r.listings_created;
         offset = r.next_offset;
         setProgresso(`${Math.min(offset, r.total)} de ${r.total} pedidos…`);
         if (!r.has_more) break;
       }
       setAviso(
-        `Sincronização concluída: ${importadas} vendas novas e ${produtos} produtos novos. ` +
-          (produtos > 0 ? "Preencha o custo dos produtos novos para o lucro ficar correto." : "")
+        `Sincronização concluída: ${importadas} vendas novas e ${produtos} anúncios novos. ` +
+          (produtos > 0 ? "Ligue os anúncios novos a um produto do armazém (Produtos > Anúncios Marketplace) para o lucro ficar correto." : "")
       );
       carregar();
     } catch (e) {
@@ -161,7 +161,7 @@ export default function MercadoLivrePage() {
           <div className="card space-y-3">
             <h2 className="font-semibold">Importar vendas</h2>
             <p className="text-sm text-slate-600">
-              Traz os pedidos pagos do período como vendas (preço, taxa e frete do Mercado Livre) e cria os produtos que ainda não existem.
+              Traz os pedidos pagos do período como vendas (preço, taxa e frete do Mercado Livre). O custo vem do produto do armazém ligado ao anúncio e o imposto, do regime do CNPJ do anúncio.
               Pode repetir sem duplicar.
             </p>
             <div className="flex flex-wrap items-end gap-3">
@@ -183,7 +183,7 @@ export default function MercadoLivrePage() {
               <p className="text-xs text-slate-500">Última sincronização completa: {new Date(status.last_synced_at).toLocaleString("pt-BR")}</p>
             )}
             <p className="text-xs text-slate-500">
-              Impostos não vêm do Mercado Livre e entram como R$ 0,00. Confira os valores na primeira importação.
+              Os impostos são calculados pelo regime do CNPJ (Configurações). Sem produto ligado ao anúncio, o custo fica em R$ 0,00. Confira os valores na primeira importação.
             </p>
           </div>
         </>

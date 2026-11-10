@@ -1,3 +1,5 @@
+import type { Regime } from "./pricing";
+
 export type Marketplace = {
   id: string;
   name: string;
@@ -17,6 +19,53 @@ export type Product = {
   marketplace_id: string | null;
   external_id: string | null;
   created_at: string;
+  company_id: string | null;
+  ean: string | null;
+  ncm: string | null;
+  stock_qty: number;
+  icms_credit: number;
+  pis_credit: number;
+  cofins_credit: number;
+  cost_updated_at: string | null;
+};
+
+export type Company = {
+  id: string;
+  store_id: string;
+  name: string;
+  cnpj: string | null;
+  regime: Regime;
+  simples_aliquota: number;
+  icms_pct: number;
+  pis_pct: number;
+  cofins_pct: number;
+  irpj_csll_pct: number;
+  is_default: boolean;
+};
+
+export type Listing = {
+  id: string;
+  store_id: string;
+  marketplace_id: string;
+  external_id: string;
+  title: string;
+  permalink: string | null;
+  thumbnail: string | null;
+  status: string | null;
+  category_id: string | null;
+  listing_type_id: string | null;
+  price: number;
+  product_id: string | null;
+  company_id: string | null;
+  units: number;
+  shipping_cost: number;
+  fee_percent: number | null;
+  fee_fixed: number | null;
+  target_margin: number;
+  min_price: number | null;
+  max_price: number | null;
+  auto_price: boolean;
+  last_repriced_at: string | null;
 };
 
 export type Sale = {
@@ -92,4 +141,10 @@ export function intervaloDoMes(mes: string): { inicio: string; fim: string } {
 
 export function mensagemErro(e: unknown): string {
   return e instanceof Error ? e.message : "Erro inesperado";
+}
+
+// Mantém só os dígitos de um CNPJ/CPF e aplica a máscara quando tem 14 dígitos.
+export function formatarCnpj(v: string | null | undefined): string {
+  const d = String(v ?? "").replace(/\D/g, "");
+  return d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : d;
 }

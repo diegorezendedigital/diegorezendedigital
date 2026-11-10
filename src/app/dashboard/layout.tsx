@@ -1,16 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
-const abas = [
-  { href: "/dashboard/produtos", label: "Produtos" },
-  { href: "/dashboard/calculadora", label: "Calculadora" },
-  { href: "/dashboard/mercadolivre", label: "Mercado Livre" },
-  { href: "/dashboard/relatorios", label: "Relatórios" },
-  { href: "/dashboard/dre", label: "DRE" },
+type Item = { label: string; href: string };
+type Menu = { label: string; href?: string; base?: string; filhos?: Item[] };
+
+const menus: Menu[] = [
+  {
+    label: "Produtos",
+    base: "/dashboard/produtos",
+    filhos: [
+      { label: "Produtos armazém", href: "/dashboard/produtos/armazem" },
+      { label: "Anúncios Marketplace", href: "/dashboard/produtos/anuncios" },
+    ],
+  },
+  { label: "Calculadora", href: "/dashboard/calculadora" },
+  { label: "Mercado Livre", href: "/dashboard/mercadolivre" },
+  { label: "Relatórios", href: "/dashboard/relatorios" },
+  { label: "DRE", href: "/dashboard/dre" },
+  { label: "Configurações", href: "/dashboard/configuracoes" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -19,6 +30,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [carregando, setCarregando] = useState(true);
   const [nomeLoja, setNomeLoja] = useState("");
   const [ehAdmin, setEhAdmin] = useState(false);
+  const [aberto, setAberto] = useState<string | null>(null);
+  const barra = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let ativo = true;
@@ -53,6 +66,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [router]);
 
+  // Fecha o submenu ao trocar de página ou clicar fora dele.
+  useEffect(() => {
+    setAberto(null);
+  }, [pathname]);
+  useEffect(() => {
+    function fora(e: MouseEvent) {
+      if (barra.current && !barra.current.contains(e.target as Node)) setAberto(null);
+    }
+    document.addEventListener("mousedown", fora);
+    return () => document.removeEventListener("mousedown", fora);
+  }, []);
+
   async function sair() {
     await supabase.auth.signOut();
     router.push("/login");
@@ -60,36 +85,80 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (carregando) return <p className="p-8 text-sm text-slate-500">Carregando…</p>;
 
-  const todas = ehAdmin ? [...abas, { href: "/dashboard/admin", label: "Admin" }] : abas;
+  const todos: Menu[] = ehAdmin ? [...menus, { label: "Admin", href: "/dashboard/admin" }] : menus;
+  const ativo = (m: Menu) => (m.base ? pathname.startsWith(m.base) : pathname === m.href);
 
   return (
     <div className="min-h-screen">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <div>
-            <span className="text-lg font-bold text-brand">Margem Certa</span>
-            {nomeLoja && <span className="ml-2 text-sm text-slate-500">{nomeLoja}</span>}
+      <header ref={barra} className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex min-h-[3.5rem] max-w-7xl flex-wrap items-stretch gap-x-8 px-5">
+          <Link href="/dashboard/produtos/armazem" className="flex shrink-0 items-center font-display text-lg font-semibold tracking-tight">
+            Margem<span className="text-gold">Certa</span>
+          </Link>
+
+          <nav className="flex flex-1 flex-wrap items-stretch gap-1 py-0">
+            {todos.map((m) => {
+              const on = ativo(m);
+              const base = `flex items-center gap-1 whitespace-nowrap border-b-2 px-3 py-4 text-sm ${
+                on ? "border-brand font-medium text-slate-900" : "border-transparent text-slate-600 hover:text-slate-900"
+              }`;
+              if (!m.filhos) {
+                return (
+                  <Link key={m.label} href={m.href as string} className={base}>
+                    {m.label}
+                  </Link>
+                );
+              }
+              const abertoAqui = aberto === m.label;
+              return (
+                <div
+                  key={m.label}
+                  className="relative flex"
+                  onMouseEnter={() => setAberto(m.label)}
+                  onMouseLeave={() => setAberto(null)}
+                >
+                  <button
+                    type="button"
+                    className={base}
+                    aria-haspopup="menu"
+                    aria-expanded={abertoAqui}
+                    onClick={() => setAberto(abertoAqui ? null : m.label)}
+                  >
+                    {m.label}
+                    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" className={abertoAqui ? "rotate-180" : ""}>
+                      <path d="M1 3.5 5 7.5 9 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                    </svg>
+                  </button>
+                  {abertoAqui && (
+                    <div role="menu" className="absolute left-0 top-full min-w-[220px] rounded-b-md border border-t-0 border-slate-200 bg-white py-1">
+                      {m.filhos.map((f) => (
+                        <Link
+                          key={f.href}
+                          href={f.href}
+                          role="menuitem"
+                          className={`block px-4 py-2 text-sm hover:bg-slate-100 ${
+                            pathname === f.href ? "font-medium text-brand" : "text-slate-700"
+                          }`}
+                        >
+                          {f.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </nav>
+
+          <div className="ml-auto flex shrink-0 items-center gap-4">
+            {nomeLoja && <span className="hidden font-mono text-xs text-slate-500 md:inline">{nomeLoja}</span>}
+            <button onClick={sair} className="text-sm text-slate-600 hover:text-slate-900">
+              Sair
+            </button>
           </div>
-          <button onClick={sair} className="btn-ghost">Sair</button>
         </div>
-        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4">
-          {todas.map((a) => {
-            const ativa = pathname === a.href;
-            return (
-              <Link
-                key={a.href}
-                href={a.href}
-                className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
-                  ativa ? "border-brand text-brand" : "border-transparent text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {a.label}
-              </Link>
-            );
-          })}
-        </nav>
       </header>
-      <main className="mx-auto max-w-6xl p-4">{children}</main>
+      <main className="mx-auto max-w-7xl p-5">{children}</main>
     </div>
   );
 }

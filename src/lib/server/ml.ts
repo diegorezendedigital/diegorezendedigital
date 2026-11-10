@@ -100,3 +100,43 @@ export async function mlGet<T = any>(token: string, path: string): Promise<T> {
   if (!res.ok) throw new Error((json as { message?: string }).message || `Mercado Livre respondeu ${res.status}`);
   return json as T;
 }
+
+export async function mlPut<T = any>(token: string, path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${ML_API}${path}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const j = json as { message?: string; cause?: { message?: string }[] };
+    const causa = j.cause && j.cause[0] && j.cause[0].message ? ` (${j.cause[0].message})` : "";
+    throw new Error((j.message || `Mercado Livre respondeu ${res.status}`) + causa);
+  }
+  return json as T;
+}
+
+// Taxa que o Mercado Livre cobra de um anúncio nesse preço: percentual e valor fixo.
+export async function taxaDoAnuncio(
+  token: string,
+  preco: number,
+  categoryId: string | null,
+  listingTypeId: string | null
+): Promise<{ pct: number; fixo: number } | null> {
+  try {
+    const q = new URLSearchParams({ price: String(preco) });
+    if (categoryId) q.set("category_id", categoryId);
+    if (listingTypeId) q.set("listing_type_id", listingTypeId);
+    const r = await mlGet<any>(token, `/sites/MLB/listing_prices?${q}`);
+    const o = Array.isArray(r) ? r.find((x: any) => x.listing_type_id === listingTypeId) || r[0] : r;
+    if (!o) return null;
+    const d = o.sale_fee_details || {};
+    const total = Number(o.sale_fee_amount);
+    const fixo = Number(d.fixed_fee) || 0;
+    const pct = d.percentage_fee != null ? Number(d.percentage_fee) : preco > 0 ? ((total - fixo) / preco) * 100 : NaN;
+    if (!Number.isFinite(pct)) return null;
+    return { pct, fixo };
+  } catch {
+    return null;
+  }
+}
