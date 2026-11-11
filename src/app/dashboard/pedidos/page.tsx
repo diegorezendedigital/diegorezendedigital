@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiFetch, supabase } from "@/lib/supabase/client";
 import { sincronizarVendas } from "@/lib/sincronizar";
@@ -378,29 +378,77 @@ export default function PedidosPage() {
                           {l.itens.length > 1 ? `${l.itens.length} itens` : l.sku || "—"}
                         </td>
                         <td className="px-4 py-5">{l.uf}</td>
-                        <td className="px-4 py-5 text-right">{brl(l.preco)}</td>
-                        <td className="px-4 py-5 text-right font-medium">{brl(l.preco - l.comissao - l.frete)}<Pc v={pCel(l.preco - l.comissao - l.frete, l.preco)} /></td>
-                        <td className="px-4 py-5 text-right">{brl(l.comissao)}<Pc v={pCel(l.comissao, l.preco)} /></td>
-                        <td className="px-4 py-5 text-right">{brl(l.frete)}<Pc v={pCel(l.frete, l.preco)} /></td>
-                        <td className="px-4 py-5 text-right text-slate-500">{brl(l.freteComprador)}</td>
-                        <td className="px-4 py-5 text-right">{brl(l.impostos)}<Pc v={pCel(l.impostos, l.preco)} /></td>
-                        <td className="px-4 py-5 text-right">
-                          {l.custo > 0 && (
+                        {(() => {
+                          const rep = l.preco - l.comissao - l.frete;
+                          const f = (n: number) => pCel(n, l.preco);
+                          return (
                             <>
-                              {brl(l.custo)}
-                              <Pc v={pCel(l.custo, l.preco)} />
-                              {l.manual && <div className="text-[11px] text-slate-500">manual</div>}
+                              <td className="px-4 py-5 text-right">
+                                <Tip titulo="Venda" nota={l.itens.length > 1 ? "Soma do preço dos itens do pacote (preço unitário × quantidade). Não inclui o frete que o comprador pagou." : "Preço do produto × quantidade vendida. Não inclui o frete que o comprador pagou."}>
+                                  {brl(l.preco)}
+                                </Tip>
+                              </td>
+                              <td className="px-4 py-5 text-right font-medium">
+                                <Tip titulo="Repasse: o que o marketplace libera" linhas={[["Venda", brl(l.preco)], ["− Comissão", brl(l.comissao)], ["− Frete (por sua conta)", brl(l.frete)], ["= Repasse", brl(rep)]]} nota="Ainda não desconta imposto nem custo do produto. Confere com o “Total” do Detalhe do recebimento do Mercado Livre.">
+                                  {brl(rep)}
+                                  <Pc v={f(rep)} />
+                                </Tip>
+                              </td>
+                              <td className="px-4 py-5 text-right">
+                                <Tip titulo="Comissão (tarifa de venda)" linhas={[["Cobrado pelo ML", brl(l.comissao)], ["% da venda", f(l.comissao) ?? "—"]]} nota="Tarifa de venda do Mercado Livre (percentual + valor fixo por unidade, quando houver).">
+                                  {brl(l.comissao)}
+                                  <Pc v={f(l.comissao)} />
+                                </Tip>
+                              </td>
+                              <td className="px-4 py-5 text-right">
+                                <Tip titulo="Frete pago por você" linhas={[["Mercado Envios (sua conta)", brl(l.frete)], ["% da venda", f(l.frete) ?? "—"]]} nota="Em pacote com vários pedidos o frete é cobrado uma vez só.">
+                                  {brl(l.frete)}
+                                  <Pc v={f(l.frete)} />
+                                </Tip>
+                              </td>
+                              <td className="px-4 py-5 text-right text-slate-500">
+                                <Tip titulo="Frete pago pelo comprador" nota="Só informativo: esse valor não entra na conta do lucro.">
+                                  {brl(l.freteComprador)}
+                                </Tip>
+                              </td>
+                              <td className="px-4 py-5 text-right">
+                                <Tip titulo="Impostos" linhas={[["Imposto calculado", brl(l.impostos)], ["% da venda", f(l.impostos) ?? "—"]]} nota="Calculado pelo regime do CNPJ ligado ao anúncio (Simples Nacional ou Lucro Real), configurado em Configurações.">
+                                  {brl(l.impostos)}
+                                  <Pc v={f(l.impostos)} />
+                                </Tip>
+                              </td>
+                              <td className="px-4 py-5 text-right">
+                                {l.custo > 0 && (
+                                  <Tip titulo="Custo do produto" linhas={[["Custo total da venda", brl(l.custo)], ["% da venda", f(l.custo) ?? "—"]]} nota={l.manual ? "Informado manualmente com a senha master." : "Custo cadastrado no Armazém na data da venda × unidades. Mudar o custo depois não altera esta venda."}>
+                                    {brl(l.custo)}
+                                    <Pc v={f(l.custo)} />
+                                    {l.manual && <div className="text-[11px] text-slate-500">manual</div>}
+                                  </Tip>
+                                )}
+                                {l.pendente && (
+                                  <button className="block w-full text-right text-amber-700 underline" onClick={() => { const id = l.pendente!.id; setEditId(editId === id ? null : id); setCustoManual(""); setSenha(""); }}>
+                                    {l.itens.length > 1 ? "item sem custo · informar" : "sem custo · informar"}
+                                  </button>
+                                )}
+                              </td>
+                              <td className={`px-4 py-5 text-right font-semibold ${cor(l.sobra)}`}>
+                                <Tip titulo="Sobrou (lucro da venda)" linhas={[["Venda", brl(l.preco)], ["− Comissão", brl(l.comissao)], ["− Frete", brl(l.frete)], ["− Impostos", brl(l.impostos)], ["− Custo", brl(l.custo)], ["= Sobrou", brl(l.sobra)]]}>
+                                  {brl(l.sobra)}
+                                </Tip>
+                              </td>
+                              <td className={`px-4 py-5 text-right ${cor(l.margem)}`}>
+                                <Tip titulo="Margem de contribuição" linhas={[["Sobrou", brl(l.sobra)], ["÷ Venda", brl(l.preco)], ["= Margem", pct(l.margem)]]} nota="Quanto de cada R$ 100 vendidos virou lucro.">
+                                  {pct(l.margem)}
+                                </Tip>
+                              </td>
+                              <td className={`px-5 py-5 text-right ${l.roi == null ? "" : cor(l.roi)}`}>
+                                <Tip titulo="ROI: retorno sobre o investimento" linhas={[["Sobrou", brl(l.sobra)], ["÷ Custo do produto", brl(l.custo)], ["= ROI", l.roi == null ? "—" : pct(l.roi)]]} nota="Quanto você ganhou para cada R$ 100 investidos no produto. Sem custo cadastrado, não dá para calcular.">
+                                  {l.roi == null ? "—" : pct(l.roi)}
+                                </Tip>
+                              </td>
                             </>
-                          )}
-                          {l.pendente && (
-                            <button className="block w-full text-right text-amber-700 underline" onClick={() => { const id = l.pendente!.id; setEditId(editId === id ? null : id); setCustoManual(""); setSenha(""); }}>
-                              {l.itens.length > 1 ? "item sem custo · informar" : "sem custo · informar"}
-                            </button>
-                          )}
-                        </td>
-                        <td className={`px-4 py-5 text-right font-semibold ${cor(l.sobra)}`}>{brl(l.sobra)}</td>
-                        <td className={`px-4 py-5 text-right ${cor(l.margem)}`}>{pct(l.margem)}</td>
-                        <td className={`px-5 py-5 text-right ${l.roi == null ? "" : cor(l.roi)}`}>{l.roi == null ? "—" : pct(l.roi)}</td>
+                          );
+                        })()}
                       </tr>
                       {l.pendente && editId === l.pendente.id && (
                         <tr className="border-b border-slate-100 bg-amber-50">
@@ -427,16 +475,38 @@ export default function PedidosPage() {
                 <tfoot>
                   <tr className="font-semibold">
                     <td className="px-5 py-4" colSpan={4}>Total ({grupos.length})</td>
-                    <td className="px-4 py-4 text-right">{brl(totalPreco)}</td>
-                    <td className="px-4 py-4 text-right">{brl(totalPreco - totalTaxa - totalFrete)}<Pc v={pCel(totalPreco - totalTaxa - totalFrete, totalPreco)} /></td>
-                    <td className="px-4 py-4 text-right">{brl(totalTaxa)}<Pc v={pCel(totalTaxa, totalPreco)} /></td>
-                    <td className="px-4 py-4 text-right">{brl(totalFrete)}<Pc v={pCel(totalFrete, totalPreco)} /></td>
-                    <td className="px-4 py-4 text-right text-slate-500">{brl(totalFreteComprador)}</td>
-                    <td className="px-4 py-4 text-right">{brl(totalImpostos)}<Pc v={pCel(totalImpostos, totalPreco)} /></td>
-                    <td className="px-4 py-4 text-right">{brl(totalCusto)}<Pc v={pCel(totalCusto, totalPreco)} /></td>
-                    <td className={`px-4 py-4 text-right ${cor(totalSobra)}`}>{brl(totalSobra)}</td>
-                    <td className="px-4 py-4 text-right">{margemTotal != null ? pct(margemTotal) : "—"}</td>
-                    <td className="px-5 py-4 text-right">{roiTotal != null ? pct(roiTotal) : "—"}</td>
+                    {(() => {
+                      const repT = totalPreco - totalTaxa - totalFrete;
+                      return (
+                        <>
+                          <td className="px-4 py-4 text-right">
+                            <Tip titulo="Venda total" nota="Soma das vendas listadas.">{brl(totalPreco)}</Tip>
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <Tip titulo="Repasse total" linhas={[["Venda", brl(totalPreco)], ["− Comissão", brl(totalTaxa)], ["− Frete", brl(totalFrete)], ["= Repasse", brl(repT)]]}>
+                              {brl(repT)}
+                              <Pc v={pCel(repT, totalPreco)} />
+                            </Tip>
+                          </td>
+                          <td className="px-4 py-4 text-right">{brl(totalTaxa)}<Pc v={pCel(totalTaxa, totalPreco)} /></td>
+                          <td className="px-4 py-4 text-right">{brl(totalFrete)}<Pc v={pCel(totalFrete, totalPreco)} /></td>
+                          <td className="px-4 py-4 text-right text-slate-500">{brl(totalFreteComprador)}</td>
+                          <td className="px-4 py-4 text-right">{brl(totalImpostos)}<Pc v={pCel(totalImpostos, totalPreco)} /></td>
+                          <td className="px-4 py-4 text-right">{brl(totalCusto)}<Pc v={pCel(totalCusto, totalPreco)} /></td>
+                          <td className={`px-4 py-4 text-right ${cor(totalSobra)}`}>
+                            <Tip titulo="Sobrou total" linhas={[["Venda", brl(totalPreco)], ["− Comissão", brl(totalTaxa)], ["− Frete", brl(totalFrete)], ["− Impostos", brl(totalImpostos)], ["− Custo", brl(totalCusto)], ["= Sobrou", brl(totalSobra)]]}>
+                              {brl(totalSobra)}
+                            </Tip>
+                          </td>
+                          <td className="px-4 py-4 text-right">
+                            <Tip titulo="Margem de contribuição" linhas={[["Sobrou", brl(totalSobra)], ["÷ Venda", brl(totalPreco)]]}>{margemTotal != null ? pct(margemTotal) : "—"}</Tip>
+                          </td>
+                          <td className="px-5 py-4 text-right">
+                            <Tip titulo="ROI" linhas={[["Sobrou", brl(totalSobra)], ["÷ Custo", brl(totalCusto)]]}>{roiTotal != null ? pct(roiTotal) : "—"}</Tip>
+                          </td>
+                        </>
+                      );
+                    })()}
                   </tr>
                 </tfoot>
               </table>
@@ -446,6 +516,39 @@ export default function PedidosPage() {
             Repasse = venda – comissão – frete (o que o marketplace libera). Sobrou = venda − comissão − frete − impostos − custo. Margem de contribuição = sobrou ÷ venda. Retorno sobre o investimento (ROI) = sobrou ÷ custo do produto.
           </p>
         </>
+      )}
+    </div>
+  );
+}
+
+type TipLinha = [string, string];
+// Balãozinho que explica de onde veio o número (aparece ao passar o mouse).
+function Tip({ titulo, linhas, nota, children, className = "" }: { titulo: string; linhas?: TipLinha[]; nota?: string; children: ReactNode; className?: string }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  return (
+    <div
+      className={`inline-block cursor-help ${className}`}
+      onMouseEnter={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        setPos({ x: Math.min(r.left + r.width / 2, window.innerWidth - 170), y: r.top });
+      }}
+      onMouseLeave={() => setPos(null)}
+    >
+      {children}
+      {pos && (
+        <div
+          className="pointer-events-none fixed z-[100] w-80 -translate-x-1/2 -translate-y-full rounded-lg bg-slate-900 px-3 py-2.5 text-left text-xs font-normal normal-case leading-snug text-white shadow-xl"
+          style={{ left: Math.max(170, pos.x), top: pos.y - 8 }}
+        >
+          <div className="mb-1 font-semibold">{titulo}</div>
+          {linhas?.map(([k, v], i) => (
+            <div key={i} className="flex justify-between gap-3 font-mono text-[11px]">
+              <span className="text-slate-300">{k}</span>
+              <span>{v}</span>
+            </div>
+          ))}
+          {nota && <div className="mt-1 text-slate-300">{nota}</div>}
+        </div>
       )}
     </div>
   );
