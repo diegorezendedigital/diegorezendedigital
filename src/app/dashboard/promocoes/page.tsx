@@ -120,10 +120,12 @@ export default function PromocoesPage() {
     const mp = mps.find((m) => m.id === a.marketplace_id);
     const pctTaxa = a.fee_percent != null ? Number(a.fee_percent) : mp ? Number(mp.commission_percent) + Number(mp.extra_percent) : 12;
     const fixo = a.fee_fixed != null ? Number(a.fee_fixed) : mp ? Number(mp.fixed_fee) : 6;
-    const e = entradaDoAnuncio(a, prod, emp, pctTaxa, fixo);
-    if (!e) return null;
+    let e: NonNullable<ReturnType<typeof entradaDoAnuncio>> | null = entradaDoAnuncio(a, prod, emp, pctTaxa, fixo);
+    // Sem custo cadastrado, taxa, frete e imposto continuam sendo calculados; só lucro e margem ficam em aberto.
+    const semCusto = !e;
+    if (!e) e = { custo: 0, credito: 0, feePct: pctTaxa, feeFixo: fixo, frete: Number(a.shipping_cost) || 0, empresa: emp ?? null };
     const r = calcularLucro(preco, e);
-    return { taxa: r.taxaMarketplace, imposto: r.impostos, frete: e.frete, custo: e.custo, lucro: r.lucro, margem: r.margem, ok: r.margem >= Number(a.target_margin) };
+    return { taxa: r.taxaMarketplace, imposto: r.impostos, frete: e.frete, custo: e.custo, semCusto, lucro: r.lucro, margem: r.margem, ok: !semCusto && r.margem >= Number(a.target_margin) };
   }
 
   const precoEscolhido = (i: Item): number => {
@@ -397,7 +399,11 @@ export default function PromocoesPage() {
                     <tr key={i.id} className="border-b border-slate-100 align-top">
                       <td className="max-w-[300px] p-3">
                         <div className="truncate" title={a?.title}>{a?.title ?? "Anúncio fora do sistema"}</div>
-                        <div className="font-mono text-[11px] text-slate-500">{i.id}</div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-[11px] text-slate-500">
+                          <span title="Mercado Livre" className="inline-flex h-4 min-w-[20px] items-center justify-center rounded-full bg-[#FFE600] px-1 text-[9px] font-bold text-[#333]">ML</span>
+                          <span className="font-sans text-xs text-slate-600">{contas.find((x) => x.ml_user_id === aberta.ml_user_id)?.conta ?? ""}</span>
+                          <span>· {i.id}</span>
+                        </div>
                       </td>
                       <td className="p-3 text-right">{brl(a ? Number(a.price) : i.original_price ?? 0)}</td>
                       <td className="p-3 font-mono text-xs text-slate-600">
@@ -418,13 +424,13 @@ export default function PromocoesPage() {
                       <td className="p-3 text-right text-slate-700">{s ? brl(s.taxa) : "—"}</td>
                       <td className="p-3 text-right text-slate-700">{s ? brl(s.frete) : "—"}</td>
                       <td className="p-3 text-right text-slate-700">{s ? brl(s.imposto) : "—"}</td>
-                      <td className="p-3 text-right text-slate-700">{s ? brl(s.custo) : <span className="text-amber-700">sem custo</span>}</td>
-                      <td className={`p-3 text-right font-semibold ${s && s.lucro < 0 ? "text-red-700" : "text-emerald-800"}`}>
-                        {s ? `${s.lucro < 0 ? "− " : "+ "}${brl(Math.abs(s.lucro))}` : "—"}
+                      <td className="p-3 text-right text-slate-700">{s && !s.semCusto ? brl(s.custo) : <span className="text-amber-700">sem custo</span>}</td>
+                      <td className={`p-3 text-right font-semibold ${s && !s.semCusto && s.lucro < 0 ? "text-red-700" : "text-emerald-800"}`}>
+                        {s && !s.semCusto ? `${s.lucro < 0 ? "− " : "+ "}${brl(Math.abs(s.lucro))}` : "—"}
                       </td>
                       <td className={`p-3 text-right ${s && !s.ok ? "text-red-700" : ""}`} title={a ? `Meta: ${pct(Number(a.target_margin))}` : "Importe o anúncio e ligue a um produto para calcular"}>
-                        {s ? pct(s.margem) : "—"}
-                        {s && <div className={`text-[11px] ${s.lucro < 0 ? "text-red-700" : s.ok ? "text-emerald-700" : "text-amber-700"}`}>{s.lucro < 0 ? "prejuízo" : s.ok ? "atinge a meta" : "abaixo da meta"}</div>}
+                        {s && !s.semCusto ? pct(s.margem) : "—"}
+                        {s && !s.semCusto && <div className={`text-[11px] ${s.lucro < 0 ? "text-red-700" : s.ok ? "text-emerald-700" : "text-amber-700"}`}>{s.lucro < 0 ? "prejuízo" : s.ok ? "atinge a meta" : "abaixo da meta"}</div>}
                       </td>
                       <td className="p-3">
                         <span className={`badge ${st[1]}`}>{st[0]}</span>
