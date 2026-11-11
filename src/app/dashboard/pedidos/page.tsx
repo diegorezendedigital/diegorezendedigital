@@ -119,7 +119,7 @@ export default function PedidosPage() {
         <Resumo t="Faturamento" v={brl(totalPreco)} />
         <Resumo t="Sobrou" v={brl(totalSobra)} cls={cor(totalSobra)} />
         <Resumo
-          t="Margem / s. investimento"
+          t="Margem / ROI"
           v={`${totalPreco > 0 ? pct((totalSobra / totalPreco) * 100) : "—"} / ${totalCusto > 0 ? pct((totalSobra / totalCusto) * 100) : "—"}`}
         />
       </div>
@@ -150,7 +150,7 @@ export default function PedidosPage() {
                 <th className="p-3 text-right">Custo</th>
                 <th className="p-3 text-right">Sobrou</th>
                 <th className="p-3 text-right">Margem contrib.</th>
-                <th className="p-3 text-right">Margem s/ invest.</th>
+                <th className="p-3 text-right">ROI</th>
               </tr>
             </thead>
             <tbody>
@@ -193,7 +193,7 @@ export default function PedidosPage() {
         )}
       </div>
       <p className="text-xs text-slate-500">
-        Sobrou = venda − comissão − frete − impostos − custo. Margem de contribuição = sobrou ÷ venda. Margem sobre o investimento = sobrou ÷ custo do produto.
+        Sobrou = venda − comissão − frete − impostos − custo. Margem de contribuição = sobrou ÷ venda. Retorno sobre o investimento (ROI) = sobrou ÷ custo do produto.
       </p>
     </div>
   );
