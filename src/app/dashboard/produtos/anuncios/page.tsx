@@ -161,18 +161,29 @@ export default function AnunciosPage() {
     let criados = 0;
     let atualizados = 0;
     try {
+      // Todos os anúncios (ativos, pausados e em revisão) de cada conta, 300 por chamada.
       for (const conta of contas) {
-        let offset = 0;
-        for (;;) {
-          const r = await apiFetch<{ created: number; updated: number; total: number; next_offset: number; has_more: boolean }>("/api/ml/listings", {
-            method: "POST",
-            body: JSON.stringify({ offset, ml_user_id: conta.ml_user_id }),
-          });
-          criados += r.created;
-          atualizados += r.updated;
-          offset = r.next_offset;
-          setProgresso(`${conta.nickname ?? conta.ml_user_id}: ${Math.min(offset, r.total)} de ${r.total} anúncios…`);
-          if (!r.has_more) break;
+        let lidos = 0;
+        for (const status of ["active", "paused", "under_review"]) {
+          let scroll: string | null = null;
+          for (;;) {
+            let r: { created: number; updated: number; processed: number; total: number; scroll_id: string | null; has_more: boolean };
+            try {
+              r = await apiFetch("/api/ml/listings", {
+                method: "POST",
+                body: JSON.stringify({ ml_user_id: conta.ml_user_id, status, scroll_id: scroll }),
+              });
+            } catch (e) {
+              if (status === "active") throw e;
+              break; // pausados / em revisão são extras: se falhar, segue com o resto
+            }
+            criados += r.created;
+            atualizados += r.updated;
+            lidos += r.processed;
+            scroll = r.scroll_id;
+            setProgresso(`${conta.nickname ?? conta.ml_user_id} (${status}): ${lidos} anúncios lidos…`);
+            if (!r.has_more) break;
+          }
         }
       }
       setAviso(`${criados} anúncios novos e ${atualizados} atualizados. Anúncios com SKU igual ao de um produto do armazém já vieram ligados a ele.`);
