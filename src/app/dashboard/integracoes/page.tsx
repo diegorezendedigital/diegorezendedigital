@@ -48,12 +48,15 @@ export default function IntegracoesPage() {
     setAvisoML("");
     try {
       const { url } = await apiFetch<{ url: string }>("/api/ml/connect", { method: "POST" });
+      setLinkML(url);
+      setAvisoML("Abrindo o Mercado Livre para autorizar…");
       window.location.href = url;
     } catch (e) {
       setErroML(mensagemErro(e));
     }
   }
 
+  const [linkML, setLinkML] = useState("");
   const [confirmando, setConfirmando] = useState<string | null>(null);
 
   // Remove a conta (sem janela de confirmação do navegador, que alguns navegadores bloqueiam).
@@ -148,6 +151,12 @@ export default function IntegracoesPage() {
                 </div>
 
                 {avisoML && <p className="text-sm text-emerald-800">{avisoML}</p>}
+                {linkML && (
+                  <p className="text-sm">
+                    Se o Mercado Livre não abriu sozinho,{" "}
+                    <a className="font-semibold underline" href={linkML} target="_top" rel="noreferrer">clique aqui para autorizar</a>.
+                  </p>
+                )}
                 {erroML && <p className="text-sm text-red-700">{erroML}</p>}
 
                 <div className="card overflow-x-auto p-0">
