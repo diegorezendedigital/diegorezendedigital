@@ -90,6 +90,7 @@ export type Sale = {
   external_id: string | null;
   listing_id?: string | null;
   order_number?: string | null;
+  pack_id?: string | null;
   title?: string | null;
   buyer_state?: string | null;
   ml_user_id?: string | null;

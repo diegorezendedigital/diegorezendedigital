@@ -19,6 +19,7 @@ type OrderItem = {
 };
 type Order = {
   id: number;
+  pack_id?: number | null;
   date_created: string;
   shipping?: { id?: number | null };
   order_items: OrderItem[];
@@ -198,6 +199,23 @@ export async function POST(req: Request) {
       );
     }
 
+    // Pacote: vários pedidos comprados juntos dividem o MESMO envio; o frete conta uma vez só (no pedido de menor número).
+    const lideres = new Map<number, number>();
+    {
+      const packs = Array.from(new Set(orders.map((o) => o.pack_id).filter((x): x is number => !!x)));
+      for (const pk of packs) {
+        let ids = orders.filter((o) => o.pack_id === pk).map((o) => o.id);
+        try {
+          const pr = await mlGet<{ orders?: { id: number }[] }>(token, `/packs/${pk}`);
+          if (pr.orders?.length) ids = ids.concat(pr.orders.map((x) => Number(x.id)));
+        } catch {
+          /* usa só os pedidos desta página */
+        }
+        lideres.set(pk, Math.min(...ids));
+      }
+    }
+    const ehLider = (o: Order) => !o.pack_id || lideres.get(o.pack_id) === o.id;
+
     // 3) Vendas: uma linha por item do pedido (preço, custo e taxa já multiplicados pela quantidade).
     const vendas = orders.flatMap((o) =>
       o.order_items.map((oi, idx) => {
@@ -211,7 +229,7 @@ export async function POST(req: Request) {
         const empresa = (an?.company_id && empresas.get(an.company_id)) || (empresaPadrao as Company | null);
         const preco = (Number(oi.unit_price) || 0) * q;
         const taxa = (Number(oi.sale_fee) || 0) * q;
-        const freteVenda = idx === 0 ? frete.get(o.id) ?? 0 : 0;
+        const freteVenda = idx === 0 && ehLider(o) ? frete.get(o.id) ?? 0 : 0;
         const imposto = empresa
           ? Math.max(0, calcularLucro(preco, { custo, credito, feePct: 0, feeFixo: taxa, frete: freteVenda, empresa }).impostos)
           : 0;
@@ -232,7 +250,8 @@ export async function POST(req: Request) {
           title: oi.item.title || oi.item.id,
           sku: skuDoItem.get(oi.item.id) || prod?.sku || null,
           buyer_state: estado.get(o.id) ?? null,
-          buyer_shipping: idx === 0 ? freteComprador.get(o.id) ?? 0 : 0,
+          buyer_shipping: idx === 0 && ehLider(o) ? freteComprador.get(o.id) ?? 0 : 0,
+          pack_id: o.pack_id ? String(o.pack_id) : null,
           ml_user_id: conn.ml_user_id,
         };
       })
@@ -244,11 +263,11 @@ export async function POST(req: Request) {
     if (vendas.length) {
       const { data: ja } = await admin
         .from("sales")
-        .select("id, external_id, cost_price")
+        .select("id, external_id, cost_price, cost_manual")
         .eq("store_id", storeId)
         .in("external_id", vendas.map((v) => v.external_id));
-      const existentes = new Map<string, { id: string; cost_price: number }>(
-        (ja ?? []).map((x) => [x.external_id as string, { id: x.id as string, cost_price: Number(x.cost_price) }])
+      const existentes = new Map<string, { id: string; cost_price: number; cost_manual: boolean }>(
+        (ja ?? []).map((x) => [x.external_id as string, { id: x.id as string, cost_price: Number(x.cost_price), cost_manual: !!x.cost_manual }])
       );
       const novas = vendas.filter((v) => {
         const e = existentes.get(v.external_id);
@@ -275,6 +294,9 @@ export async function POST(req: Request) {
               buyer_shipping: v.buyer_shipping,
               ml_user_id: v.ml_user_id,
               listing_id: v.listing_id,
+              pack_id: v.pack_id,
+              // frete não é custo: corrige o frete (e o imposto que depende dele), exceto em vendas com custo manual
+              ...(existentes.get(v.external_id)?.cost_manual ? {} : { shipping_cost: v.shipping_cost, tax_amount: v.tax_amount }),
             })
             .eq("id", (existentes.get(v.external_id) as { id: string }).id)
         )

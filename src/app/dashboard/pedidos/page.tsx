@@ -10,6 +10,7 @@ type Linha = {
   id: string;
   data: string;
   pedido: string;
+  pack: string;
   produto: string;
   sku: string;
   uf: string;
@@ -136,7 +137,7 @@ export default function PedidosPage() {
       for (let de0 = 0; de0 < 20000; de0 += 1000) {
         let consulta = supabase.from("sales").select("*");
         consulta = buscaAtiva
-          ? consulta.or(`order_number.ilike.%${buscaAtiva}%,title.ilike.%${buscaAtiva}%,sku.ilike.%${buscaAtiva}%,external_id.ilike.%${buscaAtiva}%,buyer_state.ilike.${buscaAtiva}`)
+          ? consulta.or(`order_number.ilike.%${buscaAtiva}%,pack_id.ilike.%${buscaAtiva}%,title.ilike.%${buscaAtiva}%,sku.ilike.%${buscaAtiva}%,external_id.ilike.%${buscaAtiva}%,buyer_state.ilike.${buscaAtiva}`)
           : consulta.gte("sold_at", inicio).lte("sold_at", fim);
         const r = await consulta.order("sold_at", { ascending: false }).range(de0, de0 + 999);
         if (r.error) throw new Error(r.error.message);
@@ -159,6 +160,7 @@ export default function PedidosPage() {
           return {
             id: s.id,
             data: s.sold_at,
+            pack: s.pack_id || "",
             pedido: s.order_number || (s.external_id ?? "").split(":")[0] || "—",
             produto: s.title || (s.listing_id && titulos.get(s.listing_id)) || "—",
             sku: s.sku || (s.product_id && skus.get(s.product_id)) || "",
@@ -189,13 +191,13 @@ export default function PedidosPage() {
 
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return (linhas ?? []).filter((l) => !q || l.pedido.toLowerCase().includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q);
+    return (linhas ?? []).filter((l) => !q || l.pedido.toLowerCase().includes(q) || l.pack.includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q);
   }, [linhas, busca]);
 
   // Um pedido com vários produtos vira uma linha só (valores somados, produtos listados dentro dela).
   const grupos = useMemo(() => {
     const mapa = new Map<string, Linha[]>();
-    visiveis.forEach((l) => mapa.set(l.pedido, [...(mapa.get(l.pedido) ?? []), l]));
+    visiveis.forEach((l) => mapa.set(l.pack || l.pedido, [...(mapa.get(l.pack || l.pedido) ?? []), l]));
     return Array.from(mapa.values()).map((itens) => {
       const p = itens[0];
       const preco = soma(itens, "preco");
@@ -203,6 +205,8 @@ export default function PedidosPage() {
       const sobra = soma(itens, "sobra");
       return {
         ...p,
+        pedido: p.pack || p.pedido,
+        pedidosML: Array.from(new Set(itens.map((i) => i.pedido))),
         itens,
         preco,
         custo,
@@ -359,6 +363,7 @@ export default function PedidosPage() {
                             {new Date(l.data).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                             {l.conta ? ` · ${l.conta}` : ""}
                           </div>
+                          {l.pedidosML.length > 1 && <div className="mt-0.5 font-mono text-[10px] text-slate-400">pedidos {l.pedidosML.map((x) => x.slice(-6)).join(" · ")}</div>}
                         </td>
                         <td className="max-w-[340px] px-4 py-5 leading-snug">
                           {l.itens.map((i) => (
