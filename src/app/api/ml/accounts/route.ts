@@ -25,13 +25,27 @@ export async function GET(req: Request) {
         /* segue sem apelido */
       }
     }
+    // Status: consegue renovar o acesso? (renova se preciso; falha = precisa reconectar)
+    const status = await Promise.all(
+      contas.map(async (c) => {
+        try {
+          return (await getAccessToken(user.id, c.ml_user_id)) ? "ativo" : "reconectar";
+        } catch {
+          return "reconectar";
+        }
+      })
+    );
+    const atuais = await listConnections(user.id);
     return NextResponse.json({
-      accounts: contas.map((c) => ({
+      accounts: atuais.map((c, i) => ({
         ml_user_id: c.ml_user_id,
         nickname: c.nickname,
+        store_name: (c as { store_name?: string | null }).store_name ?? null,
         company_id: c.company_id,
         last_synced_at: c.last_synced_at,
         connected_at: c.connected_at,
+        expires_at: c.expires_at,
+        status: status[i] ?? "reconectar",
       })),
     });
   } catch (e) {

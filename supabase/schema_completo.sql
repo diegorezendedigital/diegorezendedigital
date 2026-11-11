@@ -423,3 +423,7 @@ notify pgrst, 'reload schema';
 -- SKU do anúncio na hora da venda
 alter table public.sales add column if not exists sku text;
 notify pgrst, 'reload schema';
+
+-- Nome que o usuário dá a cada loja/conta conectada (aparece na tela Integrações)
+alter table public.ml_connections add column if not exists store_name text;
+notify pgrst, 'reload schema';

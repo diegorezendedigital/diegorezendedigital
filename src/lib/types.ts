@@ -163,6 +163,9 @@ export type ContaML = {
   company_id: string | null;
   last_synced_at: string | null;
   connected_at: string;
+  store_name?: string | null;
+  expires_at?: string;
+  status?: "ativo" | "reconectar";
 };
 
 export type CustoProduto = {
