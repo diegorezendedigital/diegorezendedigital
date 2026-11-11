@@ -419,3 +419,7 @@ alter table public.store_secrets enable row level security; -- sem políticas: o
 alter table public.sales add column if not exists cost_manual boolean not null default false;
 
 notify pgrst, 'reload schema';
+
+-- SKU do anúncio na hora da venda
+alter table public.sales add column if not exists sku text;
+notify pgrst, 'reload schema';

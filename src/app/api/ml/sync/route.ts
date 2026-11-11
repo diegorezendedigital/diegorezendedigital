@@ -200,6 +200,7 @@ export async function POST(req: Request) {
           external_id: `${o.id}:${oi.item.id}`,
           order_number: String(o.id),
           title: oi.item.title || oi.item.id,
+          sku: oi.item.seller_sku || prod?.sku || null,
           buyer_state: estado.get(o.id) ?? null,
           ml_user_id: conn.ml_user_id,
         };
@@ -235,7 +236,7 @@ export async function POST(req: Request) {
         congeladas.map((v) =>
           admin
             .from("sales")
-            .update({ order_number: v.order_number, title: v.title, buyer_state: v.buyer_state, ml_user_id: v.ml_user_id, listing_id: v.listing_id })
+            .update({ order_number: v.order_number, title: v.title, sku: v.sku, buyer_state: v.buyer_state, ml_user_id: v.ml_user_id, listing_id: v.listing_id })
             .eq("id", (existentes.get(v.external_id) as { id: string }).id)
         )
       );

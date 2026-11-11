@@ -10,6 +10,7 @@ type Linha = {
   data: string;
   pedido: string;
   produto: string;
+  sku: string;
   uf: string;
   conta: string;
   preco: number;
@@ -60,13 +61,15 @@ export default function PedidosPage() {
     setErro("");
     try {
       const desde = new Date(Date.now() - Number(dias) * 24 * 3600 * 1000).toISOString();
-      const [v, a, c] = await Promise.all([
+      const [v, a, pr, c] = await Promise.all([
         supabase.from("sales").select("*").gte("sold_at", desde).order("sold_at", { ascending: false }).limit(2000),
         supabase.from("listings").select("id, title"),
+        supabase.from("products").select("id, sku"),
         supabase.from("ml_connections").select("ml_user_id, nickname"),
       ]);
       if (v.error) throw new Error(v.error.message);
       const titulos = new Map<string, string>((a.data ?? []).map((x: { id: string; title: string }) => [x.id, x.title]));
+      const skus = new Map<string, string>((pr.data ?? []).map((x: { id: string; sku: string }) => [x.id, x.sku]));
       const contas = new Map<string, string>((c.data ?? []).map((x: { ml_user_id: string; nickname: string | null }) => [x.ml_user_id, x.nickname ?? x.ml_user_id]));
       setLinhas(
         ((v.data ?? []) as Sale[]).map((s) => {
@@ -78,6 +81,7 @@ export default function PedidosPage() {
             data: s.sold_at,
             pedido: s.order_number || (s.external_id ?? "").split(":")[0] || "—",
             produto: s.title || (s.listing_id && titulos.get(s.listing_id)) || "—",
+            sku: s.sku || (s.product_id && skus.get(s.product_id)) || "",
             uf: s.buyer_state || "—",
             conta: (s.ml_user_id && contas.get(s.ml_user_id)) || "",
             preco,
@@ -104,7 +108,7 @@ export default function PedidosPage() {
 
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return (linhas ?? []).filter((l) => !q || l.pedido.includes(q) || l.produto.toLowerCase().includes(q) || l.uf.toLowerCase() === q);
+    return (linhas ?? []).filter((l) => !q || l.pedido.includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q);
   }, [linhas, busca]);
 
   const totalPreco = soma(visiveis, "preco");
@@ -136,7 +140,7 @@ export default function PedidosPage() {
           </select>
         </div>
         <div className="min-w-[220px] flex-1">
-          <label className="label">Buscar (nº do pedido, produto ou UF)</label>
+          <label className="label">Buscar (nº do pedido, produto, SKU ou UF)</label>
           <input className="input" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="ex.: 2000012345, fone, SP" />
         </div>
       </div>
@@ -169,6 +173,7 @@ export default function PedidosPage() {
               <tr className="border-b border-slate-200 text-left font-mono text-[11px] uppercase tracking-wider text-slate-500">
                 <th className="p-3">Pedido</th>
                 <th className="p-3">Produto</th>
+                <th className="p-3">SKU</th>
                 <th className="p-3">UF</th>
                 <th className="p-3 text-right">Venda</th>
                 <th className="p-3 text-right">Comissão</th>
@@ -192,6 +197,7 @@ export default function PedidosPage() {
                     </div>
                   </td>
                   <td className="max-w-[260px] p-3">{l.produto}</td>
+                  <td className="p-3 font-mono text-xs">{l.sku || "—"}</td>
                   <td className="p-3">{l.uf}</td>
                   <td className="p-3 text-right">{brl(l.preco)}</td>
                   <td className="p-3 text-right">{brl(l.comissao)}</td>
@@ -215,7 +221,7 @@ export default function PedidosPage() {
                 </tr>
                 {editId === l.id && (
                   <tr className="border-b border-slate-100 bg-amber-50">
-                    <td className="p-3" colSpan={11}>
+                    <td className="p-3" colSpan={12}>
                       <div className="flex flex-wrap items-end gap-2">
                         <div>
                           <label className="label">Custo total desta venda (R$)</label>
@@ -237,7 +243,7 @@ export default function PedidosPage() {
             </tbody>
             <tfoot>
               <tr className="font-semibold">
-                <td className="p-3" colSpan={3}>Total ({visiveis.length})</td>
+                <td className="p-3" colSpan={4}>Total ({visiveis.length})</td>
                 <td className="p-3 text-right">{brl(totalPreco)}</td>
                 <td className="p-3 text-right">{brl(soma(visiveis, "comissao"))}</td>
                 <td className="p-3 text-right">{brl(soma(visiveis, "frete"))}</td>
