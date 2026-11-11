@@ -21,6 +21,7 @@ const menus: Menu[] = [
   { label: "Calculadora", href: "/dashboard/calculadora" },
   { label: "Relatórios", href: "/dashboard/relatorios" },
   { label: "DRE", href: "/dashboard/dre" },
+  { label: "Integrações", href: "/dashboard/integracoes" },
   { label: "Configurações", href: "/dashboard/configuracoes" },
 ];
 

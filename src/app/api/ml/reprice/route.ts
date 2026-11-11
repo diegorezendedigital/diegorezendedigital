@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     const aplicar = body.apply === true;
     if (ids.length === 0) return NextResponse.json({ error: "Escolha pelo menos um anúncio" }, { status: 400 });
 
-    if (!(await getConnection(user.id))) return NextResponse.json({ error: "Conecte sua conta do Mercado Livre primeiro (Configurações)" }, { status: 400 });
+    if (!(await getConnection(user.id))) return NextResponse.json({ error: "Conecte sua conta do Mercado Livre primeiro (Integrações)" }, { status: 400 });
 
     const admin = supabaseAdmin();
     const { data } = await admin.from("listings").select("*").eq("store_id", user.id).in("id", ids);

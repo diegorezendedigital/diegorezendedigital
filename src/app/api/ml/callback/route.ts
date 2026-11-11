@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 // O Mercado Livre volta aqui com ?code=...&state=... depois que o vendedor autoriza.
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const voltar = (qs: string) => NextResponse.redirect(new URL(`/dashboard/configuracoes?${qs}`, url));
+  const voltar = (qs: string) => NextResponse.redirect(new URL(`/dashboard/integracoes?${qs}`, url));
 
   try {
     if (url.searchParams.get("error")) return voltar("erro=negado");

@@ -123,7 +123,7 @@ export default function PedidosPage() {
         <h1 className="page-title">Pedidos</h1>
         <p className="mt-1 text-sm text-slate-600">
           Cada venda com taxa, frete, imposto e custo, e quanto sobrou. As vendas chegam pela sincronização em{" "}
-          <Link href="/dashboard/configuracoes" className="underline">Configurações</Link>.
+          <Link href="/dashboard/integracoes" className="underline">Integrações</Link>.
         </p>
       </div>
 
@@ -166,7 +166,7 @@ export default function PedidosPage() {
         {!linhas ? (
           <p className="p-4 text-sm text-slate-500">Carregando…</p>
         ) : visiveis.length === 0 ? (
-          <p className="p-4 text-sm text-slate-500">Nenhum pedido no período. Sincronize as vendas em Configurações.</p>
+          <p className="p-4 text-sm text-slate-500">Nenhum pedido no período. Sincronize as vendas em Integrações.</p>
         ) : (
           <table className="w-full min-w-[1100px] text-sm">
             <thead>

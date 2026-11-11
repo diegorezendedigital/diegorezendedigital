@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const storeId = user.id;
     const body = await req.json().catch(() => ({}));
     const conn = await getConnection(storeId, body.ml_user_id ? String(body.ml_user_id) : null);
-    if (!conn) return NextResponse.json({ error: "Conecte sua conta do Mercado Livre primeiro (Configurações)" }, { status: 400 });
+    if (!conn) return NextResponse.json({ error: "Conecte sua conta do Mercado Livre primeiro (Integrações)" }, { status: 400 });
     const token = await getAccessToken(storeId, conn.ml_user_id);
     if (!token) return NextResponse.json({ error: "Conexão com o Mercado Livre expirada" }, { status: 400 });
 

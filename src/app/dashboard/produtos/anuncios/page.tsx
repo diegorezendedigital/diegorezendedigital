@@ -94,7 +94,7 @@ export default function AnunciosPage() {
     setErro("");
     setAviso("");
     if (contas.length === 0) {
-      setErro("Conecte uma conta do Mercado Livre em Configurações primeiro.");
+      setErro("Conecte uma conta do Mercado Livre em Integrações primeiro.");
       return;
     }
     setImportando(true);
