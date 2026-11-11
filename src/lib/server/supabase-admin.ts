@@ -5,7 +5,12 @@ export function supabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("Configure NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY");
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  // O Next.js guarda em cache as consultas GET feitas com fetch, o que mostrava dados velhos (conta removida que "continuava",
+  // apelido que não aparecia). no-store garante que cada consulta lê o banco de verdade.
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }) },
+  });
 }
 
 // Descobre quem está logado a partir do "Authorization: Bearer <token>" enviado pelo navegador.
