@@ -65,6 +65,7 @@ export default function IntegracoesPage() {
       setConfirmando(null);
       setContas((l) => l.filter((x) => x.ml_user_id !== c.ml_user_id));
       setVersao((v) => v + 1);
+      carregarContas(); // confere com o banco: se a conta ainda existir, ela volta para a lista
       setAvisoML(`Conta ${c.store_name || c.nickname || c.ml_user_id} removida. Anúncios e vendas já importados continuam guardados.`);
     } catch (e) {
       setErroML(mensagemErro(e));
