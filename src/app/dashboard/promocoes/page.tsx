@@ -79,6 +79,7 @@ export default function PromocoesPage() {
   const [confirmaLote, setConfirmaLote] = useState(false);
   const [historico, setHistorico] = useState<AcaoPromo[]>([]);
   const [rodandoAuto, setRodandoAuto] = useState(false);
+  const [busca, setBusca] = useState("");
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -221,8 +222,21 @@ export default function PromocoesPage() {
     }
   }
 
+  // Pesquisa (várias entradas separadas por vírgula): nome ou SKU do anúncio, ou código MLB; e nome da promoção
+  const termos = useMemo(() => busca.split(/[,\n]/).map((t) => t.trim().toLowerCase()).filter(Boolean), [busca]);
+  const itensFiltrados = useMemo(() => {
+    if (termos.length === 0) return itens;
+    return itens.filter((i) => {
+      const a = porItem.get(i.id);
+      const skuProd = a?.product_id ? prodPorId.get(a.product_id)?.sku ?? "" : "";
+      const texto = `${a?.title ?? ""} ${i.id} ${a?.sku ?? ""} ${skuProd}`.toLowerCase();
+      return termos.some((t) => texto.includes(t));
+    });
+  }, [itens, termos, porItem, prodPorId]);
+  const promoCasa = (nome: string) => termos.length === 0 || termos.some((t) => nome.toLowerCase().includes(t));
+
   // Candidatos cuja margem, no preço escolhido, atinge a meta do anúncio
-  const lucrativos = itens.filter((i) => {
+  const lucrativos = itensFiltrados.filter((i) => {
     if (i.status !== "candidate") return false;
     const s = simular(porItem.get(i.id), precoEscolhido(i));
     return !!s && s.ok;
@@ -249,6 +263,20 @@ export default function PromocoesPage() {
           Promoções que o Mercado Livre oferece às suas contas. Para cada anúncio o sistema calcula o lucro e a margem no preço da promoção, com o custo do armazém, a taxa, o frete e os
           impostos do CNPJ, e mostra se ainda atinge a sua meta.
         </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          className="input max-w-xl"
+          placeholder="Pesquisar promoção, nome do anúncio, SKU ou código MLB (separe várias entradas com vírgula)"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+        />
+        {busca && (
+          <button type="button" className="text-sm font-medium text-brand hover:underline" onClick={() => setBusca("")}>
+            Limpar
+          </button>
+        )}
       </div>
 
       <div className="card flex flex-wrap items-center justify-between gap-3">
@@ -289,7 +317,7 @@ export default function PromocoesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {c.promocoes.map((p) => {
+                  {c.promocoes.filter((p) => promoCasa(p.name) || (aberta?.promo.id === p.id && aberta.ml_user_id === c.ml_user_id)).map((p) => {
                     const ativa = aberta?.promo.id === p.id && aberta.ml_user_id === c.ml_user_id;
                     return (
                       <tr key={p.id} className={`border-b border-slate-100 ${ativa ? "bg-brand-light" : ""}`}>
@@ -319,7 +347,7 @@ export default function PromocoesPage() {
               {aberta.promo.name} <span className="text-sm font-normal text-slate-500">· {TIPOS[aberta.promo.type] ?? aberta.promo.type}</span>
             </h2>
             <div className="flex flex-wrap items-center gap-2">
-              {total != null && <span className="font-mono text-xs text-slate-500">{itens.length} de {total} anúncios</span>}
+              {total != null && <span className="font-mono text-xs text-slate-500">{itensFiltrados.length} de {total} anúncios</span>}
               {lucrativos.length > 0 &&
                 (confirmaLote ? (
                   <span className="text-sm">
@@ -354,12 +382,12 @@ export default function PromocoesPage() {
                 </tr>
               </thead>
               <tbody>
-                {itens.length === 0 && !carregandoItens && (
+                {itensFiltrados.length === 0 && !carregandoItens && (
                   <tr>
-                    <td className="p-4 text-slate-500" colSpan={11}>Nenhum anúncio nesta promoção.</td>
+                    <td className="p-4 text-slate-500" colSpan={11}>{termos.length > 0 ? "Nenhum anúncio carregado bate com a pesquisa." + (depois ? " Clique em “Carregar mais anúncios” para procurar nos demais." : "") : "Nenhum anúncio nesta promoção."}</td>
                   </tr>
                 )}
-                {itens.map((i) => {
+                {itensFiltrados.map((i) => {
                   const a = porItem.get(i.id);
                   const preco = precoEscolhido(i);
                   const s = simular(a, preco);
