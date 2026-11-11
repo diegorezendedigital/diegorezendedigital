@@ -125,7 +125,7 @@ export default function PromocoesPage() {
     const semCusto = !e;
     if (!e) e = { custo: 0, credito: 0, feePct: pctTaxa, feeFixo: fixo, frete: Number(a.shipping_cost) || 0, empresa: emp ?? null };
     const r = calcularLucro(preco, e);
-    return { taxa: r.taxaMarketplace, imposto: r.impostos, frete: e.frete, custo: e.custo, semCusto, lucro: r.lucro, margem: r.margem, ok: !semCusto && r.margem >= Number(a.target_margin) };
+    return { repasse: preco - r.taxaMarketplace - e.frete, taxa: r.taxaMarketplace, imposto: r.impostos, frete: e.frete, custo: e.custo, semCusto, lucro: r.lucro, margem: r.margem, ok: !semCusto && r.margem >= Number(a.target_margin) };
   }
 
   const precoEscolhido = (i: Item): number => {
@@ -375,6 +375,7 @@ export default function PromocoesPage() {
                   <th className="p-3">Preço na promoção</th>
                   <th className="p-3 text-right">Taxa</th>
                   <th className="p-3 text-right">Frete</th>
+                  <th className="p-3 text-right" title="Preço na promoção – taxa – frete: o que o Mercado Livre libera para você">Repasse</th>
                   <th className="p-3 text-right">Imposto</th>
                   <th className="p-3 text-right">Custo</th>
                   <th className="p-3 text-right">Sobra</th>
@@ -386,7 +387,7 @@ export default function PromocoesPage() {
               <tbody>
                 {itensFiltrados.length === 0 && !carregandoItens && (
                   <tr>
-                    <td className="p-4 text-slate-500" colSpan={11}>{termos.length > 0 ? "Nenhum anúncio carregado bate com a pesquisa." + (depois ? " Clique em “Carregar mais anúncios” para procurar nos demais." : "") : "Nenhum anúncio nesta promoção."}</td>
+                    <td className="p-4 text-slate-500" colSpan={12}>{termos.length > 0 ? "Nenhum anúncio carregado bate com a pesquisa." + (depois ? " Clique em “Carregar mais anúncios” para procurar nos demais." : "") : "Nenhum anúncio nesta promoção."}</td>
                   </tr>
                 )}
                 {itensFiltrados.map((i) => {
@@ -423,6 +424,7 @@ export default function PromocoesPage() {
                       </td>
                       <td className="p-3 text-right text-slate-700">{s ? brl(s.taxa) : "—"}</td>
                       <td className="p-3 text-right text-slate-700">{s ? brl(s.frete) : "—"}</td>
+                      <td className="p-3 text-right font-medium text-slate-900" title={s ? `${brl(preco)} − taxa ${brl(s.taxa)} − frete ${brl(s.frete)} = ${brl(s.repasse)}` : undefined}>{s ? brl(s.repasse) : "—"}</td>
                       <td className="p-3 text-right text-slate-700">{s ? brl(s.imposto) : "—"}</td>
                       <td className="p-3 text-right text-slate-700">{s && !s.semCusto ? brl(s.custo) : <span className="text-amber-700">sem custo</span>}</td>
                       <td className={`p-3 text-right font-semibold ${s && !s.semCusto && s.lucro < 0 ? "text-red-700" : "text-emerald-800"}`}>
