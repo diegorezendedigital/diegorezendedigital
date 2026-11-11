@@ -54,13 +54,18 @@ export default function IntegracoesPage() {
     }
   }
 
+  const [confirmando, setConfirmando] = useState<string | null>(null);
+
+  // Remove a conta (sem janela de confirmação do navegador, que alguns navegadores bloqueiam).
   async function desconectarML(c: ContaML) {
-    if (!confirm(`Desconectar ${c.nickname ?? c.ml_user_id}? Os anúncios e vendas já importados ficam guardados, mas o preço automático dessa conta é desligado.`)) return;
     setErroML("");
+    setAvisoML("");
     try {
       await apiFetch("/api/ml/disconnect", { method: "POST", body: JSON.stringify({ ml_user_id: c.ml_user_id }) });
-      setAvisoML("Conta desconectada.");
-      carregarContas();
+      setConfirmando(null);
+      setContas((l) => l.filter((x) => x.ml_user_id !== c.ml_user_id));
+      setVersao((v) => v + 1);
+      setAvisoML(`Conta ${c.store_name || c.nickname || c.ml_user_id} removida. Anúncios e vendas já importados continuam guardados.`);
     } catch (e) {
       setErroML(mensagemErro(e));
     }
@@ -200,7 +205,15 @@ export default function IntegracoesPage() {
                           <td className="p-3 font-mono text-xs">{expira(c)}</td>
                           <td className="whitespace-nowrap p-3">
                             <button className="mr-4 text-brand hover:underline" onClick={conectarML}>Reconectar</button>
-                            <button className="text-red-700 hover:underline" onClick={() => desconectarML(c)}>Desconectar</button>
+                            {confirmando === c.ml_user_id ? (
+                              <span className="text-xs">
+                                Remover esta conta?{" "}
+                                <button className="font-semibold text-red-700 hover:underline" onClick={() => desconectarML(c)}>Sim, remover</button>{" "}
+                                <button className="text-slate-600 hover:underline" onClick={() => setConfirmando(null)}>Não</button>
+                              </span>
+                            ) : (
+                              <button className="text-red-700 hover:underline" onClick={() => setConfirmando(c.ml_user_id)}>Remover</button>
+                            )}
                           </td>
                         </tr>
                       ))}
