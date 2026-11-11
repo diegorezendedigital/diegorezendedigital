@@ -477,3 +477,8 @@ create index if not exists sales_pack_idx on public.sales (store_id, pack_id);
 -- SKU do anúncio (vem do Mercado Livre), usado para ligar o anúncio ao produto do armazém de mesmo SKU.
 alter table public.listings add column if not exists sku text;
 create index if not exists listings_sku_idx on public.listings (store_id, sku);
+-- Tipo do produto do armazém: único, multi-variantes ou kit / produto aleatório.
+alter table public.products add column if not exists tipo text not null default 'unico';
+do $$ begin
+  alter table public.products add constraint products_tipo_check check (tipo in ('unico', 'multi', 'kit'));
+exception when duplicate_object then null; end $$;

@@ -18,6 +18,9 @@ export default function ArmazemPage() {
   const [mapaMp, setMapaMp] = useState<Record<string, Record<string, number>>>({});
   const [statusMap, setStatusMap] = useState<"todos" | "sim" | "nao">("todos");
   const [mpFiltro, setMpFiltro] = useState<string>("todos");
+  const [aba, setAba] = useState<"todos" | "unico" | "multi" | "kit">("todos");
+  const [campoBusca, setCampoBusca] = useState<"tudo" | "sku" | "nome" | "ean">("tudo");
+  const [estoqueFiltro, setEstoqueFiltro] = useState<"todos" | "com" | "sem">("todos");
   const [histId, setHistId] = useState<string | null>(null);
   const [hist, setHist] = useState<CustoProduto[]>([]);
   const [histCusto, setHistCusto] = useState("");
@@ -74,25 +77,47 @@ export default function ArmazemPage() {
     carregar();
   }, [carregar]);
 
-  // Mapeado = o produto tem pelo menos um anúncio ligado (no marketplace escolhido, ou em qualquer um)
+  // Mapeado = o produto tem pelo menos um anúncio ligado (no marketplace escolhido, ou em qualquer um).
+  // Escolher um marketplace sem escolher o status mostra os mapeados nele.
   const mapeadoEm = useCallback(
     (id: string, mp: string) => (mp === "todos" ? (anuncios[id] ?? 0) > 0 : (mapaMp[id]?.[mp] ?? 0) > 0),
     [anuncios, mapaMp]
   );
-  const contagem = useMemo(() => {
-    const sim = produtos.filter((p) => mapeadoEm(p.id, mpFiltro)).length;
-    return { todos: produtos.length, sim, nao: produtos.length - sim };
-  }, [produtos, mapeadoEm, mpFiltro]);
+  const statusEfetivo = statusMap === "todos" && mpFiltro !== "todos" ? "sim" : statusMap;
+  const tipoDe = (p: Product) => p.tipo ?? "unico";
 
-  const visiveis = useMemo(() => {
-    const q = busca.trim().toLowerCase();
+  // Filtros (acima das abas). Pesquisa aceita várias entradas separadas por vírgula.
+  const filtrados = useMemo(() => {
+    const termos = busca
+      .split(/[,\n]/)
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
     return produtos.filter((p) => {
-      if (statusMap === "sim" && !mapeadoEm(p.id, mpFiltro)) return false;
-      if (statusMap === "nao" && mapeadoEm(p.id, mpFiltro)) return false;
-      if (!q) return true;
-      return p.name.toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q) || (p.ean ?? "").includes(q);
+      if (statusEfetivo === "sim" && !mapeadoEm(p.id, mpFiltro)) return false;
+      if (statusEfetivo === "nao" && mapeadoEm(p.id, mpFiltro)) return false;
+      if (estoqueFiltro === "com" && !(Number(p.stock_qty) > 0)) return false;
+      if (estoqueFiltro === "sem" && Number(p.stock_qty) > 0) return false;
+      if (termos.length === 0) return true;
+      const nome = p.name.toLowerCase();
+      const sku = (p.sku ?? "").toLowerCase();
+      const ean = p.ean ?? "";
+      return termos.some((t) =>
+        campoBusca === "sku" ? sku.includes(t) : campoBusca === "nome" ? nome.includes(t) : campoBusca === "ean" ? ean.includes(t) : nome.includes(t) || sku.includes(t) || ean.includes(t)
+      );
     });
-  }, [produtos, busca, statusMap, mpFiltro, mapeadoEm]);
+  }, [produtos, busca, campoBusca, statusEfetivo, mpFiltro, estoqueFiltro, mapeadoEm]);
+
+  const contagem = useMemo(
+    () => ({
+      todos: filtrados.length,
+      unico: filtrados.filter((p) => tipoDe(p) === "unico").length,
+      multi: filtrados.filter((p) => tipoDe(p) === "multi").length,
+      kit: filtrados.filter((p) => tipoDe(p) === "kit").length,
+    }),
+    [filtrados]
+  );
+  const visiveis = useMemo(() => (aba === "todos" ? filtrados : filtrados.filter((p) => tipoDe(p) === aba)), [filtrados, aba]);
+  const filtrando = busca.trim() !== "" || statusMap !== "todos" || mpFiltro !== "todos" || estoqueFiltro !== "todos";
 
   const semDigitos = (s: string | null) => String(s ?? "").replace(/\D/g, "");
 
@@ -397,46 +422,56 @@ export default function ArmazemPage() {
       {erro && <p className="text-sm text-red-700">{erro}</p>}
       {aviso && <p className="text-sm text-emerald-800">{aviso}</p>}
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <div className="flex gap-6 border-b border-slate-200">
-          {([
-            ["todos", "Todos", contagem.todos],
-            ["sim", "Mapeados", contagem.sim],
-            ["nao", "Não mapeados", contagem.nao],
-          ] as const).map(([id, nome, qtd]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setStatusMap(id)}
-              className={`-mb-px border-b-2 px-1 pb-3 text-sm ${statusMap === id ? "border-brand font-semibold text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800"}`}
-            >
-              {nome} <span className={`ml-1 rounded-full px-2 py-0.5 text-xs ${id === "nao" && qtd > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>{qtd}</span>
-            </button>
-          ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-[320px] flex-1 items-center overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/20 md:max-w-xl">
+          <select className="h-10 border-0 border-r border-slate-200 bg-transparent px-3 text-sm outline-none" value={campoBusca} onChange={(e) => setCampoBusca(e.target.value as typeof campoBusca)} aria-label="Pesquisar em">
+            <option value="tudo">Nome / SKU / EAN</option>
+            <option value="nome">Nome</option>
+            <option value="sku">SKU</option>
+            <option value="ean">EAN</option>
+          </select>
+          <input className="h-10 min-w-0 flex-1 bg-transparent px-3 text-sm outline-none" placeholder="Separe várias entradas com vírgula" value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-slate-500">Marketplace:</span>
-          {([
-            ["todos", "Todos"],
-            ["mercado_livre", "Mercado Livre"],
-            ["shopee", "Shopee"],
-            ["tiktok", "TikTok Shop"],
-          ] as const).map(([id, nome]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setMpFiltro(id)}
-              className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${mpFiltro === id ? "bg-brand text-white" : "bg-white text-slate-600 shadow-soft hover:bg-brand-light"}`}
-            >
-              {nome}
-            </button>
-          ))}
-        </div>
+        <select className="input h-10 w-auto py-0" value={statusMap} onChange={(e) => setStatusMap(e.target.value as typeof statusMap)} aria-label="Status mapeado">
+          <option value="todos">Status mapeado</option>
+          <option value="sim">Mapeado</option>
+          <option value="nao">Não mapeado</option>
+        </select>
+        <select className="input h-10 w-auto py-0" value={mpFiltro} onChange={(e) => setMpFiltro(e.target.value)} aria-label="Marketplace">
+          <option value="todos">Marketplace</option>
+          <option value="mercado_livre">Mercado Livre</option>
+          <option value="shopee">Shopee</option>
+          <option value="tiktok">TikTok Shop</option>
+        </select>
+        <select className="input h-10 w-auto py-0" value={estoqueFiltro} onChange={(e) => setEstoqueFiltro(e.target.value as typeof estoqueFiltro)} aria-label="Status de estoque">
+          <option value="todos">Status de estoque</option>
+          <option value="com">Com estoque</option>
+          <option value="sem">Sem estoque</option>
+        </select>
+        {filtrando && (
+          <button type="button" className="text-sm font-medium text-brand hover:underline" onClick={() => { setBusca(""); setStatusMap("todos"); setMpFiltro("todos"); setEstoqueFiltro("todos"); setCampoBusca("tudo"); }}>
+            Limpar filtros
+          </button>
+        )}
+        <span className="ml-auto font-mono text-xs text-slate-500">{visiveis.length} de {produtos.length} produtos</span>
       </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <input className="input max-w-xs" placeholder="Buscar por nome, SKU ou EAN" value={busca} onChange={(e) => setBusca(e.target.value)} />
-        <span className="font-mono text-xs text-slate-500">{visiveis.length} de {produtos.length} produtos</span>
+      <div className="flex flex-wrap gap-2">
+        {([
+          ["todos", "Tudo", contagem.todos],
+          ["unico", "Único", contagem.unico],
+          ["multi", "Multi-variantes", contagem.multi],
+          ["kit", "KIT / Produto aleatório", contagem.kit],
+        ] as const).map(([id, nome, qtd]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setAba(id)}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${aba === id ? "bg-brand text-white" : "bg-white text-slate-600 shadow-soft hover:bg-brand-light"}`}
+          >
+            {nome} <span className={`ml-1 text-xs ${aba === id ? "text-white/70" : "text-slate-400"}`}>{qtd}</span>
+          </button>
+        ))}
       </div>
 
       <div className="card overflow-x-auto p-0">
@@ -445,6 +480,7 @@ export default function ArmazemPage() {
             <tr>
               <th className="th">SKU</th>
               <th className="th">Produto</th>
+              <th className="th">Tipo</th>
               <th className="th">CNPJ de compra</th>
               <th className="th">Custo un.</th>
               <th className="th">Créditos un.</th>
@@ -458,7 +494,7 @@ export default function ArmazemPage() {
           <tbody className="divide-y divide-slate-100">
             {visiveis.length === 0 && (
               <tr>
-                <td className="td text-slate-500" colSpan={10}>
+                <td className="td text-slate-500" colSpan={11}>
                   {produtos.length === 0 ? "Nenhum produto ainda. Use “Novo produto”, a planilha ou o XML da nota." : "Nada encontrado para essa busca."}
                 </td>
               </tr>
@@ -471,6 +507,21 @@ export default function ArmazemPage() {
                 <tr>
                   <td className="td font-mono text-xs">{p.sku}</td>
                   <td className="td">{p.name}</td>
+                  <td className="td">
+                    <select
+                      className="input py-1"
+                      value={p.tipo ?? "unico"}
+                      onChange={async (e) => {
+                        const { error } = await supabase.from("products").update({ tipo: e.target.value }).eq("id", p.id);
+                        if (error) setErro(error.message);
+                        else carregar();
+                      }}
+                    >
+                      <option value="unico">Único</option>
+                      <option value="multi">Multi-variantes</option>
+                      <option value="kit">KIT / Aleatório</option>
+                    </select>
+                  </td>
                   <td className="td">
                     <select className="input py-1" value={p.company_id ?? ""} onChange={(e) => trocarEmpresa(p, e.target.value)}>
                       <option value="">—</option>
@@ -547,7 +598,7 @@ export default function ArmazemPage() {
                 </tr>
                 {aberto && (
                   <tr className="bg-slate-50">
-                    <td className="td" colSpan={10}>
+                    <td className="td" colSpan={11}>
                       <div className="space-y-2 py-1">
                         <p className="text-xs text-slate-600">
                           Histórico de custo. Cada venda usa o custo vigente na data dela. Ao alterar o custo acima, uma linha nova é criada com a data de hoje.

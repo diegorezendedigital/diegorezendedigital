@@ -29,6 +29,7 @@ export type Product = {
   cost_updated_at: string | null;
   promo_auto?: boolean;
   promo_min_margin?: number | null;
+  tipo?: "unico" | "multi" | "kit";
 };
 
 export type Company = {
