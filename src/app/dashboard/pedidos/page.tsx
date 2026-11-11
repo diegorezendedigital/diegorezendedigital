@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiFetch, supabase } from "@/lib/supabase/client";
+import { sincronizarVendas } from "@/lib/sincronizar";
 import { Sale, brl, mensagemErro, pct } from "@/lib/types";
 
 type Linha = {
@@ -31,10 +32,30 @@ export default function PedidosPage() {
   const [erro, setErro] = useState("");
   const [dias, setDias] = useState("30");
   const [busca, setBusca] = useState("");
+  const [reprocessando, setReprocessando] = useState(false);
+  const [progresso, setProgresso] = useState("");
+  const [aviso, setAviso] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [custoManual, setCustoManual] = useState("");
   const [senha, setSenha] = useState("");
   const [salvando, setSalvando] = useState(false);
+
+  async function reprocessar() {
+    setErro("");
+    setAviso("");
+    setReprocessando(true);
+    try {
+      const r = await sincronizarVendas(Number(dias) > 90 ? 90 : Number(dias), setProgresso);
+      if (r.contas === 0) setErro("Nenhuma conta do Mercado Livre conectada. Conecte em Integrações.");
+      else setAviso(`Pedidos reprocessados: ${r.vendas} vendas novas ou completadas. O custo de vendas que já tinham custo não foi alterado.`);
+      await carregar();
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setReprocessando(false);
+      setProgresso("");
+    }
+  }
 
   async function salvarCusto(l: Linha) {
     setErro("");
@@ -128,6 +149,7 @@ export default function PedidosPage() {
       </div>
 
       {erro && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erro}</p>}
+      {aviso && <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">{aviso}</p>}
 
       <div className="card flex flex-wrap items-end gap-3">
         <div>
@@ -136,12 +158,18 @@ export default function PedidosPage() {
             <option value="7">Últimos 7 dias</option>
             <option value="30">Últimos 30 dias</option>
             <option value="90">Últimos 90 dias</option>
-            <option value="365">Últimos 12 meses</option>
+            <option value="365">Últimos 12 meses (reprocessa até 90 dias)</option>
           </select>
         </div>
         <div className="min-w-[220px] flex-1">
           <label className="label">Buscar (nº do pedido, produto, SKU ou UF)</label>
           <input className="input" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="ex.: 2000012345, fone, SP" />
+        </div>
+        <div className="ml-auto flex flex-col items-end gap-1">
+          <button className="btn" onClick={reprocessar} disabled={reprocessando}>
+            {reprocessando ? "Reprocessando…" : "Reprocessar pedidos"}
+          </button>
+          {progresso && <span className="font-mono text-[11px] text-slate-500">{progresso}</span>}
         </div>
       </div>
 
