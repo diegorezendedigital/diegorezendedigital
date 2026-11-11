@@ -278,7 +278,7 @@ export default function PromocoesPage() {
             <div className="card overflow-x-auto p-0">
               <table className="w-full min-w-[760px] text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-left font-mono text-[11px] uppercase tracking-wider text-slate-500">
+                  <tr className="border-b border-slate-200 text-left text-[13px] font-medium text-slate-500">
                     <th className="p-3">Promoção</th>
                     <th className="p-3">Tipo</th>
                     <th className="p-3">Status</th>
@@ -338,7 +338,7 @@ export default function PromocoesPage() {
           <div className="card overflow-x-auto p-0">
             <table className="w-full min-w-[1280px] text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-left font-mono text-[11px] uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-slate-200 text-left text-[13px] font-medium text-slate-500">
                   <th className="p-3">Anúncio</th>
                   <th className="p-3 text-right">Preço atual</th>
                   <th className="p-3">Faixa permitida</th>
@@ -435,7 +435,7 @@ export default function PromocoesPage() {
           <div className="card overflow-x-auto p-0">
             <table className="w-full min-w-[760px] text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-left font-mono text-[11px] uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-slate-200 text-left text-[13px] font-medium text-slate-500">
                   <th className="p-3">Data</th>
                   <th className="p-3">Anúncio</th>
                   <th className="p-3">Promoção</th>

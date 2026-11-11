@@ -15,33 +15,33 @@
 }
 
 @layer components {
-  /* Painel sem sombra: separação por linha fina */
+  /* Painel claro, cantos grandes e sombra suave (sem bordas) */
   .card {
-    @apply rounded-md border border-slate-200 bg-white p-4;
+    @apply rounded-3xl bg-white p-5 shadow-card;
   }
   .btn {
-    @apply inline-flex items-center justify-center rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 transition-colors hover:border-slate-400 hover:bg-slate-100 disabled:opacity-50;
+    @apply inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-soft transition-colors hover:bg-brand-light disabled:opacity-50;
   }
   .input {
-    @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-brand focus:ring-1 focus:ring-brand;
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20;
   }
   .label {
-    @apply mb-1 block font-mono text-[11px] uppercase tracking-wider text-slate-500;
+    @apply mb-1 block text-xs font-medium text-slate-500;
   }
   .th {
-    @apply whitespace-nowrap px-3 py-2.5 text-left font-mono text-[11px] font-medium uppercase tracking-wider text-slate-500;
+    @apply whitespace-nowrap px-3 py-2.5 text-left text-[13px] font-medium text-slate-500;
   }
   .td {
     @apply whitespace-nowrap px-3 py-2.5 text-sm;
   }
   .page-title {
-    @apply font-display text-2xl font-medium tracking-tight text-slate-900;
+    @apply font-display text-3xl font-semibold tracking-tight text-slate-900;
   }
   .badge {
-    @apply inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide;
+    @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold;
   }
 }
 
@@ -51,6 +51,6 @@ html {
 
 /* Linha tracejada do "recibo" na página de apresentação */
 .receipt-tick {
-  background-image: repeating-linear-gradient(90deg, #d8ddd0, #d8ddd0 6px, transparent 6px, transparent 12px);
+  background-image: repeating-linear-gradient(90deg, #E4DEFA, #E4DEFA 6px, transparent 6px, transparent 12px);
   height: 1px;
 }

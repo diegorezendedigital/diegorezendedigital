@@ -311,11 +311,11 @@ export default function PedidosPage() {
         <Pizza
           total={totalPreco}
           partes={[
-            { nome: "Custo dos produtos", valor: totalCusto, cor: "#A3A399" },
-            { nome: "Taxa do marketplace", valor: totalTaxa, cor: "#C99A2E" },
-            { nome: "Frete pago por você", valor: totalFrete, cor: "#B65E3B" },
-            { nome: "Impostos", valor: totalImpostos, cor: "#767669" },
-            { nome: "Sobrou", valor: Math.max(0, totalSobra), cor: "#0F3D2E" },
+            { nome: "Custo dos produtos", valor: totalCusto, cor: "#D9D2F5" },
+            { nome: "Taxa do marketplace", valor: totalTaxa, cor: "#B7A8FF" },
+            { nome: "Frete pago por você", valor: totalFrete, cor: "#8E78FF" },
+            { nome: "Impostos", valor: totalImpostos, cor: "#5B3DF5" },
+            { nome: "Sobrou", valor: Math.max(0, totalSobra), cor: "#1D1840" },
           ]}
         />
       </div>
@@ -337,7 +337,7 @@ export default function PedidosPage() {
             ) : (
               <table className="w-full min-w-[1400px] text-[15px]">
                 <thead>
-                  <tr className="border-b border-slate-200 text-left font-mono text-[11px] uppercase tracking-wider text-slate-500">
+                  <tr className="border-b border-slate-200 text-left text-[13px] font-medium text-slate-500">
                     <th className="px-5 py-4">Pedido</th>
                     <th className="px-4 py-4">Produto</th>
                     <th className="px-4 py-4">SKU</th>
@@ -561,7 +561,7 @@ const Pc = ({ v }: { v: string | null }) => (v ? <div className="font-mono text-
 function Resumo({ t, v, cls = "", sub }: { t: string; v: string; cls?: string; sub?: string }) {
   return (
     <div className="card">
-      <div className="font-mono text-[11px] uppercase tracking-wider text-slate-500">{t}</div>
+      <div className="text-[13px] font-medium text-slate-500">{t}</div>
       <div className={`mt-1 text-2xl font-semibold ${cls}`}>{v}</div>
       {sub && <div className="mt-0.5 font-mono text-[11px] text-slate-500">{sub}</div>}
     </div>
@@ -579,14 +579,20 @@ function Pizza({ total, partes }: { total: number; partes: Parte[] }) {
   return (
     <div className="card flex items-center gap-5">
       {soma > 0 ? (
-        <svg viewBox="0 0 180 180" className="h-40 w-40 shrink-0 -rotate-90" role="img" aria-label="Para onde vai o faturamento">
+        <div className="relative h-40 w-40 shrink-0">
+        <svg viewBox="0 0 180 180" className="h-40 w-40 -rotate-90" role="img" aria-label="Para onde vai o faturamento">
           {partes.map((p) => {
             const fatia = (p.valor / soma) * C;
-            const el = <circle key={p.nome} cx="90" cy="90" r={R} fill="none" stroke={p.cor} strokeWidth="30" strokeDasharray={`${fatia} ${C - fatia}`} strokeDashoffset={-acumulado} />;
+            const el = <circle key={p.nome} cx="90" cy="90" r={R} fill="none" stroke={p.cor} strokeWidth="24" strokeDasharray={`${fatia} ${C - fatia}`} strokeDashoffset={-acumulado} />;
             acumulado += fatia;
             return el;
           })}
         </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-2xl font-semibold">{total > 0 ? pct((partes[partes.length - 1].valor / total) * 100) : "—"}</span>
+          <span className="text-xs text-slate-500">sobrou</span>
+        </div>
+        </div>
       ) : (
         <p className="w-40 shrink-0 text-center text-sm text-slate-500">Sem vendas neste período.</p>
       )}

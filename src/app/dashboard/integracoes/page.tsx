@@ -162,7 +162,7 @@ export default function IntegracoesPage() {
                 <div className="card overflow-x-auto p-0">
                   <table className="w-full min-w-[980px] text-sm">
                     <thead>
-                      <tr className="border-b border-slate-200 text-left font-mono text-[11px] uppercase tracking-wider text-slate-500">
+                      <tr className="border-b border-slate-200 text-left text-[13px] font-medium text-slate-500">
                         <th className="p-3">Nome da sua loja</th>
                         <th className="p-3">Site</th>
                         <th className="p-3">Conta / ID</th>

@@ -92,17 +92,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen">
-      <header ref={barra} className="sticky top-0 z-30 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex min-h-[3.5rem] max-w-7xl flex-wrap items-stretch gap-x-8 px-5">
-          <Link href="/dashboard/produtos/armazem" className="flex shrink-0 items-center font-display text-lg font-semibold tracking-tight">
-            Margem<span className="text-gold">Certa</span>
+      <header ref={barra} className="sticky top-0 z-30 px-3 pt-3">
+        <div className="mx-auto flex min-h-[3.5rem] max-w-7xl flex-wrap items-center gap-x-6 rounded-3xl bg-white px-5 py-1.5 shadow-card">
+          <Link href="/dashboard/produtos/armazem" className="flex shrink-0 items-center gap-2 font-display text-lg font-bold tracking-tight">
+            <svg width="28" height="28" viewBox="0 0 30 30" aria-hidden="true">
+              <circle cx="15" cy="15" r="15" fill="#5B3DF5" />
+              <path d="M7.5 19.5 L12.5 12 L16 16 L22.5 8.5" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="22.5" cy="8.5" r="2" fill="#FFD66B" />
+            </svg>
+            margem certa
           </Link>
 
-          <nav className="flex flex-1 flex-wrap items-stretch gap-1 py-0">
+          <nav className="flex flex-1 flex-wrap items-center gap-1 py-0">
             {todos.map((m) => {
               const on = ativo(m);
-              const base = `flex items-center gap-1 whitespace-nowrap border-b-2 px-3 py-4 text-sm ${
-                on ? "border-brand font-medium text-slate-900" : "border-transparent text-slate-600 hover:text-slate-900"
+              const base = `flex items-center gap-1 whitespace-nowrap rounded-full px-4 py-2 text-sm ${
+                on ? "bg-brand font-semibold text-white" : "font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900"
               }`;
               if (!m.filhos) {
                 return (
@@ -132,13 +137,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </svg>
                   </button>
                   {abertoAqui && (
-                    <div role="menu" className="absolute left-0 top-full min-w-[220px] rounded-b-md border border-t-0 border-slate-200 bg-white py-1">
+                    <div role="menu" className="absolute left-0 top-full z-40 mt-1 min-w-[220px] rounded-2xl bg-white py-2 shadow-card">
                       {m.filhos.map((f) => (
                         <Link
                           key={f.href}
                           href={f.href}
                           role="menuitem"
-                          className={`block px-4 py-2 text-sm hover:bg-slate-100 ${
+                          className={`mx-1 block rounded-xl px-4 py-2 text-sm hover:bg-slate-100 ${
                             pathname === f.href ? "font-medium text-brand" : "text-slate-700"
                           }`}
                         >

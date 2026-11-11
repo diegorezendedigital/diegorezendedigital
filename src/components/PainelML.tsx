@@ -189,7 +189,7 @@ export default function PainelML() {
 function Metric({ t, v, s }: { t: string; v: string; s?: number }) {
   return (
     <div className="rounded-md border border-slate-200 p-3">
-      <div className="font-mono text-[11px] uppercase tracking-wider text-slate-500">{t}</div>
+      <div className="text-[13px] font-medium text-slate-500">{t}</div>
       <div className="text-xl font-semibold">{v}</div>
       {s != null && <div className="text-xs text-slate-500">{s} ocorrências</div>}
     </div>
