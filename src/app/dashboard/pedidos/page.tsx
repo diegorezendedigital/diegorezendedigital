@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase/client";
+import { apiFetch, supabase } from "@/lib/supabase/client";
 import { Sale, brl, mensagemErro, pct } from "@/lib/types";
 
 type Linha = {
@@ -19,6 +19,7 @@ type Linha = {
   custo: number;
   sobra: number;
   margem: number; // sobre o preço de venda
+  manual: boolean;
   roi: number | null; // sobre o custo (investimento)
 };
 
@@ -29,6 +30,31 @@ export default function PedidosPage() {
   const [erro, setErro] = useState("");
   const [dias, setDias] = useState("30");
   const [busca, setBusca] = useState("");
+  const [editId, setEditId] = useState<string | null>(null);
+  const [custoManual, setCustoManual] = useState("");
+  const [senha, setSenha] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function salvarCusto(l: Linha) {
+    setErro("");
+    const v = Number(custoManual.replace(/\./g, "").replace(",", "."));
+    if (!(v > 0)) {
+      setErro("Informe o custo total desta venda (maior que zero).");
+      return;
+    }
+    setSalvando(true);
+    try {
+      await apiFetch("/api/vendas/custo", { method: "POST", body: JSON.stringify({ sale_id: l.id, custo: v, senha }) });
+      setEditId(null);
+      setCustoManual("");
+      setSenha("");
+      await carregar();
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setSalvando(false);
+    }
+  }
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -60,6 +86,7 @@ export default function PedidosPage() {
             impostos: Number(s.tax_amount) || 0,
             custo,
             sobra,
+            manual: !!s.cost_manual,
             margem: preco > 0 ? (sobra / preco) * 100 : 0,
             roi: custo > 0 ? (sobra / custo) * 100 : null,
           };
@@ -155,7 +182,8 @@ export default function PedidosPage() {
             </thead>
             <tbody>
               {visiveis.map((l) => (
-                <tr key={l.id} className="border-b border-slate-100 align-top">
+                <Fragment key={l.id}>
+                <tr className="border-b border-slate-100 align-top">
                   <td className="p-3">
                     <div className="font-mono text-xs">{l.pedido}</div>
                     <div className="text-[11px] text-slate-500">
@@ -169,11 +197,42 @@ export default function PedidosPage() {
                   <td className="p-3 text-right">{brl(l.comissao)}</td>
                   <td className="p-3 text-right">{brl(l.frete)}</td>
                   <td className="p-3 text-right">{brl(l.impostos)}</td>
-                  <td className="p-3 text-right">{l.custo > 0 ? brl(l.custo) : <span className="text-amber-700">sem custo</span>}</td>
+                  <td className="p-3 text-right">
+                    {l.custo > 0 ? (
+                      <>
+                        {brl(l.custo)}
+                        {l.manual && <div className="text-[11px] text-slate-500">manual</div>}
+                      </>
+                    ) : (
+                      <button className="text-amber-700 underline" onClick={() => { setEditId(editId === l.id ? null : l.id); setCustoManual(""); setSenha(""); }}>
+                        sem custo · informar
+                      </button>
+                    )}
+                  </td>
                   <td className={`p-3 text-right font-semibold ${cor(l.sobra)}`}>{brl(l.sobra)}</td>
                   <td className={`p-3 text-right ${cor(l.margem)}`}>{pct(l.margem)}</td>
                   <td className={`p-3 text-right ${l.roi == null ? "" : cor(l.roi)}`}>{l.roi == null ? "—" : pct(l.roi)}</td>
                 </tr>
+                {editId === l.id && (
+                  <tr className="border-b border-slate-100 bg-amber-50">
+                    <td className="p-3" colSpan={11}>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <div>
+                          <label className="label">Custo total desta venda (R$)</label>
+                          <input className="input w-36 py-1" inputMode="decimal" value={custoManual} onChange={(e) => setCustoManual(e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="label">Senha master</label>
+                          <input type="password" className="input w-40 py-1" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="off" />
+                        </div>
+                        <button className="btn" onClick={() => salvarCusto(l)} disabled={salvando}>{salvando ? "Salvando…" : "Salvar custo"}</button>
+                        <button className="btn-ghost" onClick={() => setEditId(null)}>Cancelar</button>
+                        <span className="text-xs text-slate-600">Vale só para esta venda (custo × quantidade já somados). A senha é criada em Configurações.</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
             <tfoot>

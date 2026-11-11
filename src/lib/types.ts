@@ -88,6 +88,7 @@ export type Sale = {
   title?: string | null;
   buyer_state?: string | null;
   ml_user_id?: string | null;
+  cost_manual?: boolean;
 };
 
 export type Expense = {

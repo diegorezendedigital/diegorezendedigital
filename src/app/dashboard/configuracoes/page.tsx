@@ -78,6 +78,30 @@ export default function ConfiguracoesPage() {
     carregarContas();
   }, [carregarContas]);
 
+  const [senhaDefinida, setSenhaDefinida] = useState<boolean | null>(null);
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [senhaNova, setSenhaNova] = useState("");
+  const [msgSenha, setMsgSenha] = useState("");
+
+  useEffect(() => {
+    apiFetch<{ definida: boolean }>("/api/senha-master")
+      .then((r) => setSenhaDefinida(r.definida))
+      .catch(() => setSenhaDefinida(null));
+  }, []);
+
+  async function salvarSenha() {
+    setMsgSenha("");
+    try {
+      await apiFetch("/api/senha-master", { method: "POST", body: JSON.stringify({ nova: senhaNova, atual: senhaAtual }) });
+      setSenhaDefinida(true);
+      setSenhaAtual("");
+      setSenhaNova("");
+      setMsgSenha("Senha master salva.");
+    } catch (e) {
+      setMsgSenha(mensagemErro(e));
+    }
+  }
+
   async function conectarML() {
     setErroML("");
     setAvisoML("");
@@ -231,6 +255,27 @@ export default function ConfiguracoesPage() {
       {erro && <p className="text-sm text-red-700">{erro}</p>}
 
       <PainelML />
+
+      <section className="space-y-3">
+        <h2 className="font-mono text-xs uppercase tracking-wider text-slate-500">Senha master</h2>
+        <div className="card flex flex-wrap items-end gap-3">
+          <p className="basis-full text-sm text-slate-600">
+            Pede esta senha para informar à mão o custo de uma venda que ficou sem custo. Ela é guardada criptografada e nunca aparece na tela.
+          </p>
+          {senhaDefinida && (
+            <div>
+              <label className="label">Senha atual</label>
+              <input type="password" className="input w-48" value={senhaAtual} onChange={(e) => setSenhaAtual(e.target.value)} autoComplete="off" />
+            </div>
+          )}
+          <div>
+            <label className="label">{senhaDefinida ? "Nova senha" : "Criar senha (mín. 6 caracteres)"}</label>
+            <input type="password" className="input w-48" value={senhaNova} onChange={(e) => setSenhaNova(e.target.value)} autoComplete="new-password" />
+          </div>
+          <button className="btn" onClick={salvarSenha}>{senhaDefinida ? "Trocar senha" : "Salvar senha"}</button>
+          {msgSenha && <span className="text-sm text-slate-700">{msgSenha}</span>}
+        </div>
+      </section>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
