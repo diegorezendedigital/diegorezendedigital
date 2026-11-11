@@ -43,9 +43,9 @@ export default function PedidosPage() {
   const [erro, setErro] = useState("");
   const [de, setDe] = useState(hojeBR());
   const [ate, setAte] = useState(hojeBR());
-  const [aba, setAba] = useState<"lista" | "resumo">("lista");
   const [busca, setBusca] = useState("");
   const [reprocessando, setReprocessando] = useState(false);
+  const [reprocessandoCustos, setReprocessandoCustos] = useState(false);
   const [progresso, setProgresso] = useState("");
   const [aviso, setAviso] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
@@ -68,6 +68,29 @@ export default function PedidosPage() {
     } finally {
       setReprocessando(false);
       setProgresso("");
+    }
+  }
+
+  async function reprocessarCustos() {
+    setErro("");
+    setAviso("");
+    setReprocessandoCustos(true);
+    try {
+      const r = await apiFetch<{ analisadas: number; reprocessadas: number; mantidas: number; manuais: number; semCusto: number; parcial: boolean }>("/api/vendas/reprocessar-custos", {
+        method: "POST",
+        body: JSON.stringify({ de, ate }),
+      });
+      setAviso(
+        `Custos reprocessados no período: ${r.reprocessadas} de ${r.analisadas} vendas atualizadas com o custo da data da venda. ` +
+          `${r.mantidas} já estavam corretas ou não têm custo cadastrado na data, ${r.manuais} com custo manual (não mudam)` +
+          (r.semCusto > 0 ? `, ${r.semCusto} continuam sem custo (sem produto ligado ou sem custo cadastrado).` : ".") +
+          (r.parcial ? " A rodada foi parcial; clique de novo para continuar." : "")
+      );
+      await carregar();
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setReprocessandoCustos(false);
     }
   }
 
@@ -188,9 +211,14 @@ export default function PedidosPage() {
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <button className="btn" onClick={reprocessar} disabled={reprocessando}>
-            {reprocessando ? "Reprocessando…" : "Reprocessar pedidos"}
-          </button>
+          <div className="flex gap-2">
+            <button className="btn-ghost" onClick={reprocessarCustos} disabled={reprocessando || reprocessandoCustos} title="Recalcula o custo das vendas do período com o custo cadastrado na data de cada venda">
+              {reprocessandoCustos ? "Reprocessando custos…" : "Reprocessar custos"}
+            </button>
+            <button className="btn" onClick={reprocessar} disabled={reprocessando || reprocessandoCustos}>
+              {reprocessando ? "Reprocessando…" : "Reprocessar pedidos"}
+            </button>
+          </div>
           {progresso && <span className="font-mono text-[11px] text-slate-500">{progresso}</span>}
         </div>
       </div>
@@ -226,27 +254,19 @@ export default function PedidosPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Resumo t="Pedidos" v={String(visiveis.length)} />
-        <Resumo t="Faturamento" v={brl(totalPreco)} />
-        <Resumo t="Sobrou" v={brl(totalSobra)} cls={cor(totalSobra)} />
-        <Resumo t="Margem / ROI" v={`${margemTotal != null ? pct(margemTotal) : "—"} / ${roiTotal != null ? pct(roiTotal) : "—"}`} />
-      </div>
-
-      <div className="flex gap-6 border-b border-slate-200">
-        {(["lista", "resumo"] as const).map((x) => (
-          <button
-            key={x}
-            onClick={() => setAba(x)}
-            className={`-mb-px border-b-2 pb-2 text-sm ${aba === x ? "border-brand font-medium text-brand" : "border-transparent text-slate-500 hover:text-slate-800"}`}
-          >
-            {x === "lista" ? "Pedidos" : "Resumo"}
-          </button>
-        ))}
-      </div>
-
-      {aba === "resumo" ? (
-        <Painel
+      <div className="grid gap-4 xl:grid-cols-[1fr_400px]">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+          <Resumo t="Pedidos" v={String(visiveis.length)} />
+          <Resumo t="Faturamento" v={brl(totalPreco)} />
+          <Resumo t="Sobrou" v={brl(totalSobra)} cls={cor(totalSobra)} />
+          <Resumo t="Taxa do marketplace" v={brl(totalTaxa)} />
+          <Resumo t="Frete pago por você" v={brl(totalFrete)} />
+          <Resumo t="Frete pago pelo comprador" v={brl(totalFreteComprador)} />
+          <Resumo t="Impostos" v={brl(totalImpostos)} />
+          <Resumo t="Custo dos produtos" v={brl(totalCusto)} />
+          <Resumo t="Margem / ROI" v={`${margemTotal != null ? pct(margemTotal) : "—"} / ${roiTotal != null ? pct(roiTotal) : "—"}`} />
+        </div>
+        <Pizza
           total={totalPreco}
           partes={[
             { nome: "Custo dos produtos", valor: totalCusto, cor: "#A3A399" },
@@ -255,18 +275,10 @@ export default function PedidosPage() {
             { nome: "Impostos", valor: totalImpostos, cor: "#767669" },
             { nome: "Sobrou", valor: Math.max(0, totalSobra), cor: "#0F3D2E" },
           ]}
-          itens={[
-            ["Faturamento", brl(totalPreco)],
-            ["Quantidade de pedidos", String(visiveis.length)],
-            ["Total de taxa", brl(totalTaxa)],
-            ["Total de frete pago por você", brl(totalFrete)],
-            ["Frete pago pelo comprador", brl(totalFreteComprador)],
-            ["Total de impostos", brl(totalImpostos)],
-            ["Custo dos produtos", brl(totalCusto)],
-            ["Sobrou", brl(totalSobra)],
-          ]}
         />
-      ) : (
+      </div>
+
+      {(
         <>
           {semCusto > 0 && (
             <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
@@ -390,53 +402,37 @@ function Resumo({ t, v, cls = "" }: { t: string; v: string; cls?: string }) {
 
 type Parte = { nome: string; valor: number; cor: string };
 
-// Resumo do período: totais e um gráfico de pizza de para onde vai cada real do faturamento.
-function Painel({ total, partes, itens }: { total: number; partes: Parte[]; itens: [string, string][] }) {
+// Para onde vai cada real do faturamento do período (pizza minimalista).
+function Pizza({ total, partes }: { total: number; partes: Parte[] }) {
   const soma = partes.reduce((a, p) => a + p.valor, 0);
-  const R = 90;
+  const R = 70;
   const C = 2 * Math.PI * R;
   let acumulado = 0;
   return (
-    <div className="grid gap-6 md:grid-cols-[minmax(280px,360px)_1fr]">
-      <div className="card flex flex-col items-center gap-5">
-        {soma > 0 ? (
-          <svg viewBox="0 0 220 220" className="h-56 w-56 -rotate-90" role="img" aria-label="Para onde vai o faturamento">
-            {partes.map((p) => {
-              const fatia = (p.valor / soma) * C;
-              const el = (
-                <circle key={p.nome} cx="110" cy="110" r={R} fill="none" stroke={p.cor} strokeWidth="38" strokeDasharray={`${fatia} ${C - fatia}`} strokeDashoffset={-acumulado} />
-              );
-              acumulado += fatia;
-              return el;
-            })}
-          </svg>
-        ) : (
-          <p className="py-16 text-sm text-slate-500">Sem vendas neste período.</p>
-        )}
-        <ul className="w-full space-y-1.5 text-sm">
-          {partes.map((p) => (
-            <li key={p.nome} className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: p.cor }} />
-                {p.nome}
-              </span>
-              <span className="font-mono text-xs text-slate-600">
-                {brl(p.valor)} · {total > 0 ? pct((p.valor / total) * 100) : "—"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className="card h-fit">
-        <dl className="divide-y divide-slate-100">
-          {itens.map(([k, v]) => (
-            <div key={k} className="flex items-center justify-between py-3">
-              <dt className="text-slate-600">{k}</dt>
-              <dd className="text-lg font-semibold">{v}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
+    <div className="card flex items-center gap-5">
+      {soma > 0 ? (
+        <svg viewBox="0 0 180 180" className="h-40 w-40 shrink-0 -rotate-90" role="img" aria-label="Para onde vai o faturamento">
+          {partes.map((p) => {
+            const fatia = (p.valor / soma) * C;
+            const el = <circle key={p.nome} cx="90" cy="90" r={R} fill="none" stroke={p.cor} strokeWidth="30" strokeDasharray={`${fatia} ${C - fatia}`} strokeDashoffset={-acumulado} />;
+            acumulado += fatia;
+            return el;
+          })}
+        </svg>
+      ) : (
+        <p className="w-40 shrink-0 text-center text-sm text-slate-500">Sem vendas neste período.</p>
+      )}
+      <ul className="min-w-0 flex-1 space-y-1.5 text-sm">
+        {partes.map((p) => (
+          <li key={p.nome} className="flex items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.cor }} />
+              <span className="truncate">{p.nome}</span>
+            </span>
+            <span className="shrink-0 font-mono text-xs text-slate-600">{total > 0 ? pct((p.valor / total) * 100) : "—"}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
