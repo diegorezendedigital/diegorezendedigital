@@ -192,6 +192,33 @@ export default function PedidosPage() {
     return (linhas ?? []).filter((l) => !q || l.pedido.toLowerCase().includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q);
   }, [linhas, busca]);
 
+  // Um pedido com vários produtos vira uma linha só (valores somados, produtos listados dentro dela).
+  const grupos = useMemo(() => {
+    const mapa = new Map<string, Linha[]>();
+    visiveis.forEach((l) => mapa.set(l.pedido, [...(mapa.get(l.pedido) ?? []), l]));
+    return Array.from(mapa.values()).map((itens) => {
+      const p = itens[0];
+      const preco = soma(itens, "preco");
+      const custo = soma(itens, "custo");
+      const sobra = soma(itens, "sobra");
+      return {
+        ...p,
+        itens,
+        preco,
+        custo,
+        sobra,
+        comissao: soma(itens, "comissao"),
+        frete: soma(itens, "frete"),
+        freteComprador: soma(itens, "freteComprador"),
+        impostos: soma(itens, "impostos"),
+        manual: itens.some((i) => i.manual),
+        margem: preco > 0 ? (sobra / preco) * 100 : 0,
+        roi: custo > 0 ? (sobra / custo) * 100 : null,
+        pendente: itens.find((i) => !(i.custo > 0)),
+      };
+    });
+  }, [visiveis]);
+
   const totalPreco = soma(visiveis, "preco");
   const totalCusto = soma(visiveis, "custo");
   const totalSobra = soma(visiveis, "sobra");
@@ -267,7 +294,7 @@ export default function PedidosPage() {
 
       <div className="grid gap-4 xl:grid-cols-[1fr_400px]">
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-          <Resumo t="Pedidos" v={String(visiveis.length)} />
+          <Resumo t="Pedidos" v={String(grupos.length)} />
           <Resumo t="Faturamento" v={brl(totalPreco)} />
           <Resumo t="Sobrou" v={brl(totalSobra)} cls={cor(totalSobra)} />
           <Resumo t="Taxa do marketplace" v={brl(totalTaxa)} sub={pDe(totalTaxa, totalPreco)} />
@@ -323,7 +350,7 @@ export default function PedidosPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visiveis.map((l) => (
+                  {grupos.map((l) => (
                     <Fragment key={l.id}>
                       <tr className="border-b border-slate-100 align-top">
                         <td className="px-5 py-5">
@@ -333,8 +360,17 @@ export default function PedidosPage() {
                             {l.conta ? ` · ${l.conta}` : ""}
                           </div>
                         </td>
-                        <td className="max-w-[340px] px-4 py-5 leading-snug">{l.produto}</td>
-                        <td className="px-4 py-5 font-mono text-xs">{l.sku || "—"}</td>
+                        <td className="max-w-[340px] px-4 py-5 leading-snug">
+                          {l.itens.map((i) => (
+                            <div key={i.id} className={l.itens.length > 1 ? "mb-1.5 last:mb-0" : ""}>
+                              {i.produto}
+                              {l.itens.length > 1 && i.sku && <span className="ml-2 font-mono text-[11px] text-slate-500">{i.sku}</span>}
+                            </div>
+                          ))}
+                        </td>
+                        <td className="px-4 py-5 font-mono text-xs">
+                          {l.itens.length > 1 ? `${l.itens.length} itens` : l.sku || "—"}
+                        </td>
                         <td className="px-4 py-5">{l.uf}</td>
                         <td className="px-4 py-5 text-right">{brl(l.preco)}</td>
                         <td className="px-4 py-5 text-right">{brl(l.comissao)}<Pc v={pCel(l.comissao, l.preco)} /></td>
@@ -342,15 +378,16 @@ export default function PedidosPage() {
                         <td className="px-4 py-5 text-right text-slate-500">{brl(l.freteComprador)}</td>
                         <td className="px-4 py-5 text-right">{brl(l.impostos)}<Pc v={pCel(l.impostos, l.preco)} /></td>
                         <td className="px-4 py-5 text-right">
-                          {l.custo > 0 ? (
+                          {l.custo > 0 && (
                             <>
                               {brl(l.custo)}
                               <Pc v={pCel(l.custo, l.preco)} />
                               {l.manual && <div className="text-[11px] text-slate-500">manual</div>}
                             </>
-                          ) : (
-                            <button className="text-amber-700 underline" onClick={() => { setEditId(editId === l.id ? null : l.id); setCustoManual(""); setSenha(""); }}>
-                              sem custo · informar
+                          )}
+                          {l.pendente && (
+                            <button className="block w-full text-right text-amber-700 underline" onClick={() => { const id = l.pendente!.id; setEditId(editId === id ? null : id); setCustoManual(""); setSenha(""); }}>
+                              {l.itens.length > 1 ? "item sem custo · informar" : "sem custo · informar"}
                             </button>
                           )}
                         </td>
@@ -358,7 +395,7 @@ export default function PedidosPage() {
                         <td className={`px-4 py-5 text-right ${cor(l.margem)}`}>{pct(l.margem)}</td>
                         <td className={`px-5 py-5 text-right ${l.roi == null ? "" : cor(l.roi)}`}>{l.roi == null ? "—" : pct(l.roi)}</td>
                       </tr>
-                      {editId === l.id && (
+                      {l.pendente && editId === l.pendente.id && (
                         <tr className="border-b border-slate-100 bg-amber-50">
                           <td className="px-5 py-4" colSpan={13}>
                             <div className="flex flex-wrap items-end gap-2">
@@ -370,7 +407,7 @@ export default function PedidosPage() {
                                 <label className="label">Senha master</label>
                                 <input type="password" className="input w-40 py-1" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="off" />
                               </div>
-                              <button className="btn" onClick={() => salvarCusto(l)} disabled={salvando}>{salvando ? "Salvando…" : "Salvar custo"}</button>
+                              <button className="btn" onClick={() => salvarCusto(l.pendente!)} disabled={salvando}>{salvando ? "Salvando…" : "Salvar custo"}</button>
                               <button className="btn-ghost" onClick={() => setEditId(null)}>Cancelar</button>
                               <span className="text-xs text-slate-600">Vale só para esta venda (custo × quantidade já somados). A senha é criada em Configurações.</span>
                             </div>
@@ -382,7 +419,7 @@ export default function PedidosPage() {
                 </tbody>
                 <tfoot>
                   <tr className="font-semibold">
-                    <td className="px-5 py-4" colSpan={4}>Total ({visiveis.length})</td>
+                    <td className="px-5 py-4" colSpan={4}>Total ({grupos.length})</td>
                     <td className="px-4 py-4 text-right">{brl(totalPreco)}</td>
                     <td className="px-4 py-4 text-right">{brl(totalTaxa)}<Pc v={pCel(totalTaxa, totalPreco)} /></td>
                     <td className="px-4 py-4 text-right">{brl(totalFrete)}<Pc v={pCel(totalFrete, totalPreco)} /></td>
