@@ -343,6 +343,7 @@ export default function PedidosPage() {
                     <th className="px-4 py-4">SKU</th>
                     <th className="px-4 py-4">UF</th>
                     <th className="px-4 py-4 text-right">Venda</th>
+                    <th className="px-4 py-4 text-right" title="Venda – comissão – frete: o que o marketplace libera para você">Repasse</th>
                     <th className="px-4 py-4 text-right">Comissão</th>
                     <th className="px-4 py-4 text-right">Frete</th>
                     <th className="px-4 py-4 text-right" title="Informativo: não entra na conta do lucro">Frete comprador</th>
@@ -378,6 +379,7 @@ export default function PedidosPage() {
                         </td>
                         <td className="px-4 py-5">{l.uf}</td>
                         <td className="px-4 py-5 text-right">{brl(l.preco)}</td>
+                        <td className="px-4 py-5 text-right font-medium">{brl(l.preco - l.comissao - l.frete)}<Pc v={pCel(l.preco - l.comissao - l.frete, l.preco)} /></td>
                         <td className="px-4 py-5 text-right">{brl(l.comissao)}<Pc v={pCel(l.comissao, l.preco)} /></td>
                         <td className="px-4 py-5 text-right">{brl(l.frete)}<Pc v={pCel(l.frete, l.preco)} /></td>
                         <td className="px-4 py-5 text-right text-slate-500">{brl(l.freteComprador)}</td>
@@ -402,7 +404,7 @@ export default function PedidosPage() {
                       </tr>
                       {l.pendente && editId === l.pendente.id && (
                         <tr className="border-b border-slate-100 bg-amber-50">
-                          <td className="px-5 py-4" colSpan={13}>
+                          <td className="px-5 py-4" colSpan={14}>
                             <div className="flex flex-wrap items-end gap-2">
                               <div>
                                 <label className="label">Custo total desta venda (R$)</label>
@@ -426,6 +428,7 @@ export default function PedidosPage() {
                   <tr className="font-semibold">
                     <td className="px-5 py-4" colSpan={4}>Total ({grupos.length})</td>
                     <td className="px-4 py-4 text-right">{brl(totalPreco)}</td>
+                    <td className="px-4 py-4 text-right">{brl(totalPreco - totalTaxa - totalFrete)}<Pc v={pCel(totalPreco - totalTaxa - totalFrete, totalPreco)} /></td>
                     <td className="px-4 py-4 text-right">{brl(totalTaxa)}<Pc v={pCel(totalTaxa, totalPreco)} /></td>
                     <td className="px-4 py-4 text-right">{brl(totalFrete)}<Pc v={pCel(totalFrete, totalPreco)} /></td>
                     <td className="px-4 py-4 text-right text-slate-500">{brl(totalFreteComprador)}</td>
@@ -440,7 +443,7 @@ export default function PedidosPage() {
             )}
           </div>
           <p className="text-xs text-slate-500">
-            Sobrou = venda − comissão − frete − impostos − custo. Margem de contribuição = sobrou ÷ venda. Retorno sobre o investimento (ROI) = sobrou ÷ custo do produto.
+            Repasse = venda – comissão – frete (o que o marketplace libera). Sobrou = venda − comissão − frete − impostos − custo. Margem de contribuição = sobrou ÷ venda. Retorno sobre o investimento (ROI) = sobrou ÷ custo do produto.
           </p>
         </>
       )}

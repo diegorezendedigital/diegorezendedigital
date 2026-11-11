@@ -295,8 +295,9 @@ export async function POST(req: Request) {
               ml_user_id: v.ml_user_id,
               listing_id: v.listing_id,
               pack_id: v.pack_id,
-              // frete não é custo: corrige o frete (e o imposto que depende dele), exceto em vendas com custo manual
-              ...(existentes.get(v.external_id)?.cost_manual ? {} : { shipping_cost: v.shipping_cost, tax_amount: v.tax_amount }),
+              // frete não é custo: sempre corrige o frete; o imposto só em vendas sem custo manual (o custo manual não entra no cálculo daqui)
+              shipping_cost: v.shipping_cost,
+              ...(existentes.get(v.external_id)?.cost_manual ? {} : { tax_amount: v.tax_amount }),
             })
             .eq("id", (existentes.get(v.external_id) as { id: string }).id)
         )
