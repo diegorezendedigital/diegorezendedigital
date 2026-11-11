@@ -118,7 +118,7 @@ export default function PromocoesPage() {
     const e = entradaDoAnuncio(a, prod, emp, pctTaxa, fixo);
     if (!e) return null;
     const r = calcularLucro(preco, e);
-    return { lucro: r.lucro, margem: r.margem, ok: r.margem >= Number(a.target_margin) };
+    return { taxa: r.taxaMarketplace, imposto: r.impostos, frete: e.frete, custo: e.custo, lucro: r.lucro, margem: r.margem, ok: r.margem >= Number(a.target_margin) };
   }
 
   const precoEscolhido = (i: Item): number => {
@@ -306,14 +306,18 @@ export default function PromocoesPage() {
           </div>
 
           <div className="card overflow-x-auto p-0">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[1280px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-left font-mono text-[11px] uppercase tracking-wider text-slate-500">
                   <th className="p-3">Anúncio</th>
                   <th className="p-3 text-right">Preço atual</th>
                   <th className="p-3">Faixa permitida</th>
                   <th className="p-3">Preço na promoção</th>
-                  <th className="p-3 text-right">Lucro</th>
+                  <th className="p-3 text-right">Taxa</th>
+                  <th className="p-3 text-right">Frete</th>
+                  <th className="p-3 text-right">Imposto</th>
+                  <th className="p-3 text-right">Custo</th>
+                  <th className="p-3 text-right">Sobra</th>
                   <th className="p-3 text-right">Margem</th>
                   <th className="p-3">Status</th>
                   <th className="p-3"></th>
@@ -322,7 +326,7 @@ export default function PromocoesPage() {
               <tbody>
                 {itens.length === 0 && !carregandoItens && (
                   <tr>
-                    <td className="p-4 text-slate-500" colSpan={8}>Nenhum anúncio nesta promoção.</td>
+                    <td className="p-4 text-slate-500" colSpan={11}>Nenhum anúncio nesta promoção.</td>
                   </tr>
                 )}
                 {itens.map((i) => {
@@ -353,9 +357,16 @@ export default function PromocoesPage() {
                           />
                         )}
                       </td>
-                      <td className={`p-3 text-right font-medium ${s && s.lucro < 0 ? "text-red-700" : "text-emerald-800"}`}>{s ? brl(s.lucro) : "—"}</td>
+                      <td className="p-3 text-right text-slate-700">{s ? brl(s.taxa) : "—"}</td>
+                      <td className="p-3 text-right text-slate-700">{s ? brl(s.frete) : "—"}</td>
+                      <td className="p-3 text-right text-slate-700">{s ? brl(s.imposto) : "—"}</td>
+                      <td className="p-3 text-right text-slate-700">{s ? brl(s.custo) : <span className="text-amber-700">sem custo</span>}</td>
+                      <td className={`p-3 text-right font-semibold ${s && s.lucro < 0 ? "text-red-700" : "text-emerald-800"}`}>
+                        {s ? `${s.lucro < 0 ? "− " : "+ "}${brl(Math.abs(s.lucro))}` : "—"}
+                      </td>
                       <td className={`p-3 text-right ${s && !s.ok ? "text-red-700" : ""}`} title={a ? `Meta: ${pct(Number(a.target_margin))}` : "Importe o anúncio e ligue a um produto para calcular"}>
                         {s ? pct(s.margem) : "—"}
+                        {s && <div className={`text-[11px] ${s.lucro < 0 ? "text-red-700" : s.ok ? "text-emerald-700" : "text-amber-700"}`}>{s.lucro < 0 ? "prejuízo" : s.ok ? "atinge a meta" : "abaixo da meta"}</div>}
                       </td>
                       <td className="p-3">
                         <span className={`badge ${st[1]}`}>{st[0]}</span>
@@ -382,7 +393,7 @@ export default function PromocoesPage() {
             </button>
           )}
           <p className="text-xs text-slate-500">
-            Margem = lucro líquido ÷ preço da promoção, depois de custo, taxa, frete e impostos. Anúncios sem custo (sem produto ligado) não têm lucro calculado e ficam de fora do
+            Sobra = preço da promoção − taxa − frete − imposto − custo. Margem = sobra ÷ preço da promoção. Em promoções em que o Mercado Livre paga parte do desconto, o valor que você recebe pode ser maior que o calculado aqui. Anúncios sem custo (sem produto ligado) não têm lucro calculado e ficam de fora do
             “Entrar com os lucrativos”.
           </p>
         </section>
