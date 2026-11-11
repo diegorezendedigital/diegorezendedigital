@@ -48,6 +48,7 @@ export async function POST(req: Request) {
         start_date: i.start_date ?? null,
         end_date: i.end_date ?? null,
         meli_percentage: i.meli_percentage ?? null,
+        seller_percentage: i.seller_percentage ?? null,
       })),
       total: r.paging?.total ?? null,
       search_after: r.paging?.searchAfter ?? r.paging?.search_after ?? null,

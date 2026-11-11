@@ -7,7 +7,10 @@ type Resultado = { atualizados: number; semDados: number; gratisParaComprador: n
 // 1) anúncio sem frete grátis → o comprador paga, frete do vendedor = 0;
 // 2) com frete grátis → média do frete REAL pago nas últimas vendas desse anúncio (já com o desconto de reputação).
 // `forcar` = também sobrescreve o frete que você digitou à mão.
-export async function atualizarFretes(storeId: string, opts: { forcar?: boolean } = {}): Promise<Resultado> {
+// `consultarML` = pergunta ao Mercado Livre o frete de cada anúncio (/shipping_options/free: custo do frete já com o desconto de reputação),
+// o que funciona também para anúncios que nunca venderam. Mais lento (uma consulta por anúncio): a sincronização de pedidos não usa.
+export async function atualizarFretes(storeId: string, opts: { forcar?: boolean; consultarML?: boolean } = {}): Promise<Resultado> {
+  const inicio = Date.now();
   const admin = supabaseAdmin();
   const { data: anuncios, error } = await admin
     .from("listings")
@@ -42,9 +45,35 @@ export async function atualizarFretes(storeId: string, opts: { forcar?: boolean 
     }
   }
 
+  // Frete direto do Mercado Livre, por anúncio (8 consultas em paralelo)
+  const doML = new Map<string, number>();
+  if (opts.consultarML) {
+    const tokens = new Map<string, string | null>();
+    for (let i = 0; i < lista.length; i += 8) {
+      if (Date.now() - inicio > 40000) break;
+      await Promise.all(
+        lista.slice(i, i + 8).map(async (a) => {
+          const conta = (a.ml_user_id as string | null) ?? "";
+          if (!tokens.has(conta)) tokens.set(conta, await getAccessToken(storeId, conta || null));
+          const token = tokens.get(conta);
+          if (!token || !conta) return;
+          try {
+            const f = await mlGet<{ coverage?: { all_country?: { list_cost?: number } } }>(token, `/users/${conta}/shipping_options/free?item_id=${a.external_id}`);
+            const custo = f.coverage?.all_country?.list_cost;
+            if (typeof custo === "number" && custo >= 0) doML.set(a.external_id as string, custo);
+          } catch {
+            /* sem essa informação: cai nas vendas */
+          }
+        })
+      );
+    }
+  }
+
   for (const a of lista) {
     let valor: number | null = null;
-    if (gratis.get(a.external_id as string) === false) {
+    if (doML.has(a.external_id as string)) {
+      valor = doML.get(a.external_id as string) as number;
+    } else if (gratis.get(a.external_id as string) === false) {
       valor = 0;
       r.gratisParaComprador++;
     } else {

@@ -28,6 +28,8 @@ type Item = {
   suggested_price: number | null;
   start_date: string | null;
   end_date: string | null;
+  meli_percentage?: number | null;
+  seller_percentage?: number | null;
 };
 type Aberta = { ml_user_id: string; promo: Promo };
 
@@ -61,6 +63,12 @@ const STATUS_ITEM: Record<string, [string, string]> = {
 
 const dia = (s: string | null) => (s ? new Date(s).toLocaleDateString("pt-BR") : "—");
 
+// Percentual sobre o preço da promoção, embaixo do valor
+function Sub({ v, base }: { v: number; base: number }) {
+  if (!(base > 0) || !(v !== 0)) return null;
+  return <div className="font-mono text-[11px] font-normal text-slate-500">{((v / base) * 100).toFixed(1).replace(".", ",")}%</div>;
+}
+
 export default function PromocoesPage() {
   const [contas, setContas] = useState<ContaPromos[] | null>(null);
   const [anuncios, setAnuncios] = useState<Listing[]>([]);
@@ -80,6 +88,7 @@ export default function PromocoesPage() {
   const [historico, setHistorico] = useState<AcaoPromo[]>([]);
   const [rodandoAuto, setRodandoAuto] = useState(false);
   const [busca, setBusca] = useState("");
+  const [soBonus, setSoBonus] = useState(false);
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -113,7 +122,14 @@ export default function PromocoesPage() {
   const empresaPadrao = empresas.find((c) => c.is_default) ?? null;
 
   // Lucro e margem do anúncio se o preço for `preco`
-  function simular(a: Listing | undefined, preco: number) {
+  // Bônus do Mercado Livre: parte do desconto que o próprio ML paga (meli_percentage, sobre o preço original)
+  function bonusDe(i: Item, a?: Listing): number {
+    const pctML = Number(i.meli_percentage) || 0;
+    const base = Number(i.original_price) || (a ? Number(a.price) : 0);
+    return pctML > 0 && base > 0 ? Math.round(base * pctML) / 100 : 0;
+  }
+
+  function simular(a: Listing | undefined, preco: number, bonus = 0) {
     if (!a || !(preco > 0)) return null;
     const prod = a.product_id ? prodPorId.get(a.product_id) : undefined;
     const emp = (a.company_id && empresas.find((c) => c.id === a.company_id)) || empresaPadrao;
@@ -125,7 +141,9 @@ export default function PromocoesPage() {
     const semCusto = !e;
     if (!e) e = { custo: 0, credito: 0, feePct: pctTaxa, feeFixo: fixo, frete: Number(a.shipping_cost) || 0, empresa: emp ?? null };
     const r = calcularLucro(preco, e);
-    return { repasse: preco - r.taxaMarketplace - e.frete, taxa: r.taxaMarketplace, imposto: r.impostos, frete: e.frete, custo: e.custo, semCusto, lucro: r.lucro, margem: r.margem, ok: !semCusto && r.margem >= Number(a.target_margin) };
+    const lucro = r.lucro + bonus;
+    const margem = preco > 0 ? (lucro / preco) * 100 : 0;
+    return { repasse: preco - r.taxaMarketplace - e.frete + bonus, bonus, taxa: r.taxaMarketplace, imposto: r.impostos, frete: e.frete, custo: e.custo, semCusto, lucro, margem, ok: !semCusto && margem >= Number(a.target_margin) };
   }
 
   const precoEscolhido = (i: Item): number => {
@@ -227,20 +245,23 @@ export default function PromocoesPage() {
   // Pesquisa (várias entradas separadas por vírgula): nome ou SKU do anúncio, ou código MLB; e nome da promoção
   const termos = useMemo(() => busca.split(/[,\n]/).map((t) => t.trim().toLowerCase()).filter(Boolean), [busca]);
   const itensFiltrados = useMemo(() => {
-    if (termos.length === 0) return itens;
+    if (termos.length === 0 && !soBonus) return itens;
     return itens.filter((i) => {
+      if (soBonus && !(Number(i.meli_percentage) > 0)) return false;
+      if (termos.length === 0) return true;
       const a = porItem.get(i.id);
       const skuProd = a?.product_id ? prodPorId.get(a.product_id)?.sku ?? "" : "";
       const texto = `${a?.title ?? ""} ${i.id} ${a?.sku ?? ""} ${skuProd}`.toLowerCase();
       return termos.some((t) => texto.includes(t));
     });
-  }, [itens, termos, porItem, prodPorId]);
+  }, [itens, termos, soBonus, porItem, prodPorId]);
+  const qtdBonus = useMemo(() => itens.filter((i) => Number(i.meli_percentage) > 0).length, [itens]);
   const promoCasa = (nome: string) => termos.length === 0 || termos.some((t) => nome.toLowerCase().includes(t));
 
   // Candidatos cuja margem, no preço escolhido, atinge a meta do anúncio
   const lucrativos = itensFiltrados.filter((i) => {
     if (i.status !== "candidate") return false;
-    const s = simular(porItem.get(i.id), precoEscolhido(i));
+    const s = simular(porItem.get(i.id), precoEscolhido(i), bonusDe(i, porItem.get(i.id)));
     return !!s && s.ok;
   });
 
@@ -349,6 +370,14 @@ export default function PromocoesPage() {
               {aberta.promo.name} <span className="text-sm font-normal text-slate-500">· {TIPOS[aberta.promo.type] ?? aberta.promo.type}</span>
             </h2>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSoBonus((v) => !v)}
+                className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${soBonus ? "bg-brand text-white" : "bg-white text-slate-600 shadow-soft hover:bg-brand-light"}`}
+                title="Mostra só os anúncios em que o Mercado Livre paga parte do desconto"
+              >
+                Com bônus do ML <span className={`ml-1 text-xs ${soBonus ? "text-white/70" : "text-slate-400"}`}>{qtdBonus}</span>
+              </button>
               {total != null && <span className="font-mono text-xs text-slate-500">{itensFiltrados.length} de {total} anúncios</span>}
               {lucrativos.length > 0 &&
                 (confirmaLote ? (
@@ -375,7 +404,8 @@ export default function PromocoesPage() {
                   <th className="p-3">Preço na promoção</th>
                   <th className="p-3 text-right">Taxa</th>
                   <th className="p-3 text-right">Frete</th>
-                  <th className="p-3 text-right" title="Preço na promoção – taxa – frete: o que o Mercado Livre libera para você">Repasse</th>
+                  <th className="p-3 text-right" title="Parte do desconto que o próprio Mercado Livre paga a você nesta promoção">Bônus ML</th>
+                  <th className="p-3 text-right" title="Preço na promoção – taxa – frete + bônus do Mercado Livre: o que o Mercado Livre libera para você">Repasse</th>
                   <th className="p-3 text-right">Imposto</th>
                   <th className="p-3 text-right">Custo</th>
                   <th className="p-3 text-right">Sobra</th>
@@ -387,13 +417,14 @@ export default function PromocoesPage() {
               <tbody>
                 {itensFiltrados.length === 0 && !carregandoItens && (
                   <tr>
-                    <td className="p-4 text-slate-500" colSpan={12}>{termos.length > 0 ? "Nenhum anúncio carregado bate com a pesquisa." + (depois ? " Clique em “Carregar mais anúncios” para procurar nos demais." : "") : "Nenhum anúncio nesta promoção."}</td>
+                    <td className="p-4 text-slate-500" colSpan={13}>{termos.length > 0 || soBonus ? "Nenhum anúncio carregado bate com o filtro." + (depois ? " Clique em “Carregar mais anúncios” para procurar nos demais." : "") : "Nenhum anúncio nesta promoção."}</td>
                   </tr>
                 )}
                 {itensFiltrados.map((i) => {
                   const a = porItem.get(i.id);
                   const preco = precoEscolhido(i);
-                  const s = simular(a, preco);
+                  const bonus = bonusDe(i, a);
+                  const s = simular(a, preco, bonus);
                   const st = STATUS_ITEM[i.status] ?? [i.status, "bg-slate-100 text-slate-600"];
                   const dentro = i.status === "started" || i.status === "pending" || i.status === "programmed";
                   return (
@@ -422,11 +453,18 @@ export default function PromocoesPage() {
                           />
                         )}
                       </td>
-                      <td className="p-3 text-right text-slate-700">{s ? brl(s.taxa) : "—"}</td>
-                      <td className="p-3 text-right text-slate-700">{s ? brl(s.frete) : "—"}</td>
-                      <td className="p-3 text-right font-medium text-slate-900" title={s ? `${brl(preco)} − taxa ${brl(s.taxa)} − frete ${brl(s.frete)} = ${brl(s.repasse)}` : undefined}>{s ? brl(s.repasse) : "—"}</td>
-                      <td className="p-3 text-right text-slate-700">{s ? brl(s.imposto) : "—"}</td>
-                      <td className="p-3 text-right text-slate-700">{s && !s.semCusto ? brl(s.custo) : <span className="text-amber-700">sem custo</span>}</td>
+                      <td className="p-3 text-right text-slate-700">{s ? brl(s.taxa) : "—"}{s && <Sub v={s.taxa} base={preco} />}</td>
+                      <td className="p-3 text-right text-slate-700">{s ? brl(s.frete) : "—"}{s && <Sub v={s.frete} base={preco} />}</td>
+                      <td className="p-3 text-right text-slate-700" title={bonus > 0 ? `O Mercado Livre paga ${Number(i.meli_percentage)}% do preço original (${brl(Number(i.original_price) || Number(a?.price) || 0)})` : "Esta promoção não tem bônus do Mercado Livre"}>
+                        {bonus > 0 ? <span className="font-medium text-emerald-700">+ {brl(bonus)}</span> : "—"}
+                        {bonus > 0 && <Sub v={bonus} base={preco} />}
+                      </td>
+                      <td className="p-3 text-right font-medium text-slate-900" title={s ? `${brl(preco)} − taxa ${brl(s.taxa)} − frete ${brl(s.frete)}${bonus > 0 ? ` + bônus ${brl(bonus)}` : ""} = ${brl(s.repasse)}` : undefined}>
+                        {s ? brl(s.repasse) : "—"}
+                        {s && <Sub v={s.repasse} base={preco} />}
+                      </td>
+                      <td className="p-3 text-right text-slate-700">{s ? brl(s.imposto) : "—"}{s && <Sub v={s.imposto} base={preco} />}</td>
+                      <td className="p-3 text-right text-slate-700">{s && !s.semCusto ? brl(s.custo) : <span className="text-amber-700">sem custo</span>}{s && !s.semCusto && <Sub v={s.custo} base={preco} />}</td>
                       <td className={`p-3 text-right font-semibold ${s && !s.semCusto && s.lucro < 0 ? "text-red-700" : "text-emerald-800"}`}>
                         {s && !s.semCusto ? `${s.lucro < 0 ? "− " : "+ "}${brl(Math.abs(s.lucro))}` : "—"}
                       </td>

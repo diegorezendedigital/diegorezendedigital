@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   try {
     const body = await req.json().catch(() => ({}));
-    return NextResponse.json(await atualizarFretes(user.id, { forcar: !!body.forcar }));
+    return NextResponse.json(await atualizarFretes(user.id, { forcar: !!body.forcar, consultarML: true }));
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erro ao puxar o frete" }, { status: 500 });
   }
