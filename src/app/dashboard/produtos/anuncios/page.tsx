@@ -90,6 +90,19 @@ export default function AnunciosPage() {
   }, [anuncios, prodPorId, empPorId, empresaPadrao, busca, filtro, mps]);
 
   /* ---------- Importação do Mercado Livre ---------- */
+  // TEMPORÁRIO: descobre quais consultas do Mercado Livre trazem comissão e frete de anúncios sem vendas.
+  async function testarFrete() {
+    setErro("");
+    setAviso("Testando consultas ao Mercado Livre…");
+    try {
+      const r = await apiFetch("/api/ml/diag-frete", { method: "POST", body: JSON.stringify({}) });
+      setAviso("Teste feito. Os resultados foram registrados; avise o Claude.");
+      console.log(r);
+    } catch (e) {
+      setErro(mensagemErro(e));
+    }
+  }
+
   async function puxarFrete() {
     setErro("");
     setAviso("");
@@ -211,6 +224,9 @@ export default function AnunciosPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {progresso && <span className="font-mono text-xs text-slate-500">{progresso}</span>}
+          <button className="btn-ghost" onClick={testarFrete} disabled={trabalhando || importando}>
+            Teste: frete e taxa
+          </button>
           <button className="btn-ghost" onClick={puxarFrete} disabled={trabalhando || importando}>
             Puxar frete do Mercado Livre
           </button>
