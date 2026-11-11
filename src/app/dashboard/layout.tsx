@@ -160,8 +160,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
-      <main className={`mx-auto p-5 ${pathname.startsWith("/dashboard/pedidos") ? "max-w-none px-6" : "max-w-7xl"}`}>{children}</main>
-      <div className="pointer-events-none fixed bottom-1.5 left-2 font-mono text-[10px] leading-tight text-slate-400">
+      <main className={`mx-auto p-5 ${pathname.startsWith("/dashboard/pedidos") ? "max-w-none px-6" : "max-w-7xl"} pb-12`}>{children}</main>
+      <div className="pointer-events-none fixed bottom-2 left-2 z-50 rounded bg-white/90 px-2 py-1 font-mono text-[11px] leading-tight text-slate-600 shadow-sm ring-1 ring-slate-200">
         v{process.env.NEXT_PUBLIC_APP_VERSION} · atualizado em{" "}
         {process.env.NEXT_PUBLIC_BUILD_TIME
           ? new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleString("pt-BR", {
