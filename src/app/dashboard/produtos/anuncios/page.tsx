@@ -307,8 +307,6 @@ export default function AnunciosPage() {
               <th className="th">Máx.</th>
               <th className="th">Sugerido</th>
               <th className="th">Auto</th>
-              <th className="th" title="Entrar sozinho nas promoções do Mercado Livre que dão a margem mínima">Promo auto</th>
-              <th className="th" title="Margem líquida mínima para aceitar uma promoção">Margem mín. promo %</th>
               <th className="th"></th>
             </tr>
           </thead>
@@ -459,28 +457,6 @@ export default function AnunciosPage() {
                     disabled={!l.product_id}
                     title={l.product_id ? "Reajustar o preço automaticamente todo dia" : "Ligue um produto do armazém primeiro"}
                     onChange={(e) => salvar(l, { auto_price: e.target.checked })}
-                  />
-                </td>
-                <td className="td">
-                  <input
-                    type="checkbox"
-                    checked={!!l.promo_auto}
-                    disabled={!l.product_id}
-                    title={l.product_id ? "Entrar sozinho nas promoções que dão a margem mínima" : "Ligue um produto do armazém primeiro"}
-                    onChange={(e) => salvar(l, { promo_auto: e.target.checked })}
-                  />
-                </td>
-                <td className="td">
-                  <input
-                    key={`pm${l.id}${l.promo_min_margin ?? ""}`}
-                    className="input w-16 py-1"
-                    inputMode="decimal"
-                    placeholder="10"
-                    defaultValue={l.promo_min_margin != null ? campo(Number(l.promo_min_margin)) : ""}
-                    onBlur={(e) => {
-                      const v = numeroOuNulo(e.target.value);
-                      if (v !== (l.promo_min_margin == null ? null : Number(l.promo_min_margin))) salvar(l, { promo_min_margin: v });
-                    }}
                   />
                 </td>
                 <td className="td">

@@ -151,6 +151,16 @@ export default function ArmazemPage() {
     else await carregarHistorico(c.product_id);
   }
 
+  async function salvarPromo(p: Product, alteracao: { promo_auto?: boolean; promo_min_margin?: number | null }) {
+    setErro("");
+    const { error } = await supabase.from("products").update(alteracao).eq("id", p.id);
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+    carregar();
+  }
+
   async function trocarEmpresa(p: Product, id: string) {
     const { error } = await supabase.from("products").update({ company_id: id || null }).eq("id", p.id);
     if (error) setErro(error.message);
@@ -358,13 +368,15 @@ export default function ArmazemPage() {
               <th className="th">Créditos un.</th>
               <th className="th">Estoque</th>
               <th className="th">Anúncios</th>
+              <th className="th" title="Entrar sozinho nas promoções do Mercado Livre que dão a margem mínima deste SKU">Promo auto</th>
+              <th className="th" title="Margem líquida mínima para aceitar uma promoção. Pode ser negativa (ex.: -5) para aceitar prejuízo.">Margem mín. promo %</th>
               <th className="th"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {visiveis.length === 0 && (
               <tr>
-                <td className="td text-slate-500" colSpan={8}>
+                <td className="td text-slate-500" colSpan={10}>
                   {produtos.length === 0 ? "Nenhum produto ainda. Use “Novo produto”, a planilha ou o XML da nota." : "Nada encontrado para essa busca."}
                 </td>
               </tr>
@@ -407,6 +419,28 @@ export default function ArmazemPage() {
                     />
                   </td>
                   <td className="td font-mono text-xs">{anuncios[p.id] ?? 0}</td>
+                  <td className="td">
+                    <input
+                      type="checkbox"
+                      checked={!!p.promo_auto}
+                      title="Entrar sozinho nas promoções que dão a margem mínima deste SKU"
+                      onChange={(e) => salvarPromo(p, { promo_auto: e.target.checked })}
+                    />
+                  </td>
+                  <td className="td">
+                    <input
+                      key={`pm${p.id}${p.promo_min_margin ?? ""}`}
+                      className="input w-20 py-1"
+                      inputMode="decimal"
+                      placeholder="10"
+                      defaultValue={p.promo_min_margin != null ? campo(Number(p.promo_min_margin)) : ""}
+                      onBlur={(e) => {
+                        const txt = e.target.value.trim();
+                        const v = txt === "" ? null : num(txt);
+                        if (v !== (p.promo_min_margin == null ? null : Number(p.promo_min_margin))) salvarPromo(p, { promo_min_margin: v });
+                      }}
+                    />
+                  </td>
                   <td className="td whitespace-nowrap">
                     <button onClick={() => abrirHistorico(p)} className="mr-3 text-xs text-brand hover:underline">Histórico</button>
                     <button onClick={() => remover(p)} className="text-xs text-red-700 hover:underline">Excluir</button>
@@ -414,7 +448,7 @@ export default function ArmazemPage() {
                 </tr>
                 {aberto && (
                   <tr className="bg-slate-50">
-                    <td className="td" colSpan={8}>
+                    <td className="td" colSpan={10}>
                       <div className="space-y-2 py-1">
                         <p className="text-xs text-slate-600">
                           Histórico de custo. Cada venda usa o custo vigente na data dela. Ao alterar o custo acima, uma linha nova é criada com a data de hoje.

@@ -51,7 +51,7 @@ export async function GET(req: Request) {
 
   // Promoções do Mercado Livre: entra sozinho onde a margem mínima é atingida.
   const promos = { avaliados: 0, entraram: 0, recusados: 0, erros: 0 };
-  const { data: comPromo } = await admin.from("listings").select("store_id").eq("promo_auto", true);
+  const { data: comPromo } = await admin.from("products").select("store_id").eq("promo_auto", true);
   for (const storeId of Array.from(new Set<string>((comPromo ?? []).map((x) => x.store_id as string)))) {
     const restante = 55000 - (Date.now() - inicio);
     if (restante < 10000) return NextResponse.json({ ...resumo, promocoes: promos, parcial: true });

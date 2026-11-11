@@ -27,6 +27,8 @@ export type Product = {
   pis_credit: number;
   cofins_credit: number;
   cost_updated_at: string | null;
+  promo_auto?: boolean;
+  promo_min_margin?: number | null;
 };
 
 export type Company = {

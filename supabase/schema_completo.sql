@@ -460,3 +460,10 @@ create policy "Store owner can view own promo actions" on public.promo_actions
   for select to authenticated using (store_id = (select auth.uid()));
 
 notify pgrst, 'reload schema';
+
+-- Margem mínima e participação automática em promoções por SKU (produto do armazém). A margem pode ser negativa.
+alter table public.products
+  add column if not exists promo_auto boolean not null default false,
+  add column if not exists promo_min_margin numeric;
+
+notify pgrst, 'reload schema';

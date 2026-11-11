@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Listing } from "@/lib/types";
+import type { Listing, Product } from "@/lib/types";
 import { calcularLucro } from "@/lib/pricing";
 import { entradaDoAnuncio } from "@/lib/anuncio";
 import { getAccessToken, listConnections, mlGet, mlPost } from "./ml";
@@ -19,7 +19,7 @@ type ItemBruto = {
   suggested_discounted_price?: number;
 };
 
-// Para cada anúncio com "promoção automática" ligado: se o Mercado Livre o convida para uma promoção e a margem no preço
+// Para cada anúncio cujo SKU (produto do armazém) tem "promoção automática" ligada: se o Mercado Livre o convida para uma promoção e a margem no preço
 // da promoção (taxa, frete, imposto e custo já descontados) atinge a margem mínima definida, ele entra sozinho.
 // Entra sempre no MAIOR preço permitido (menor desconto), que é o que mais protege a margem.
 export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: string, limiteMs = 50000): Promise<ResumoPromo> {
@@ -27,16 +27,12 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
   const r: ResumoPromo = { avaliados: 0, entraram: 0, recusados: 0, erros: 0, parcial: false };
   const restante = () => limiteMs - (Date.now() - inicio);
 
-  const { data } = await admin
-    .from("listings")
-    .select("*")
-    .eq("store_id", storeId)
-    .eq("marketplace_id", "mercado_livre")
-    .eq("promo_auto", true);
-  const anuncios = (data ?? []) as (Listing & { promo_min_margin: number | null })[];
-  if (!anuncios.length) return r;
-
   const ctx = await carregarContexto(admin, storeId);
+  // A regra é por SKU: o produto do armazém define se participa e qual a margem mínima (que pode ser negativa).
+  const regra = (pid: string | null) => (pid ? (ctx.produtos.get(pid) as (Product & { promo_auto?: boolean; promo_min_margin?: number | null }) | undefined) : undefined);
+  const { data } = await admin.from("listings").select("*").eq("store_id", storeId).eq("marketplace_id", "mercado_livre");
+  const anuncios = ((data ?? []) as Listing[]).filter((a) => !!regra(a.product_id)?.promo_auto);
+  if (!anuncios.length) return r;
   const contas = await listConnections(storeId);
 
   for (const conta of contas) {
@@ -91,7 +87,8 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
           r.avaliados++;
 
           const preco = it.max_discounted_price ?? it.suggested_discounted_price ?? it.price ?? null;
-          const minimo = a.promo_min_margin != null ? Number(a.promo_min_margin) : MARGEM_MINIMA_PADRAO;
+          const rg = regra(a.product_id);
+          const minimo = rg?.promo_min_margin != null ? Number(rg.promo_min_margin) : MARGEM_MINIMA_PADRAO;
           const prod = a.product_id ? ctx.produtos.get(a.product_id) : undefined;
           const emp = (a.company_id && ctx.empresas.get(a.company_id)) || ctx.empresaPadrao;
           const entrada = entradaDoAnuncio(a, prod, emp || null, Number(a.fee_percent ?? 12), Number(a.fee_fixed ?? 6));

@@ -253,7 +253,7 @@ export default function PromocoesPage() {
 
       <div className="card flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-sm text-slate-600">
-          <strong>Promoção automática:</strong> em <Link href="/dashboard/produtos/anuncios" className="underline">Anúncios Marketplace</Link>, marque “Promo auto” e defina a margem mínima (padrão 10%).
+          <strong>Promoção automática:</strong> em <Link href="/dashboard/produtos/armazem" className="underline">Produtos armazém</Link>, marque “Promo auto” em cada SKU e defina a margem mínima dele (padrão 10%; pode ser negativa para aceitar prejuízo, ex.: -5).
           Todo dia o sistema entra sozinho nas promoções do Mercado Livre em que a margem, depois de taxa, frete, imposto e custo, atinge o mínimo. Ele sempre escolhe o maior preço permitido, com menos desconto.
         </p>
         <button className="btn" onClick={rodarAuto} disabled={rodandoAuto}>{rodandoAuto ? "Avaliando…" : "Rodar promoções automáticas agora"}</button>
