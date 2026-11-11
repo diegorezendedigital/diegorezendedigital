@@ -214,13 +214,16 @@ export default function ConfiguracoesPage() {
                   ))}
                 </select>
               </div>
-              <button className="btn-ghost" onClick={() => desconectarML(c)}>Desconectar</button>
+              <button className="btn-ghost" title="Autoriza de novo esta conta (use depois de mudar as permissões do app ou se o acesso expirar)" onClick={conectarML}>
+                Reconectar
+              </button>
+              <button className="btn-ghost text-red-700" onClick={() => desconectarML(c)}>Desconectar</button>
             </div>
           </div>
         ))}
 
         <p className="text-xs text-slate-500">
-          Para conectar outra conta, entre antes no Mercado Livre com ela (ou use uma janela anônima); senão o Mercado Livre reaproveita a conta que já estiver aberta no navegador.
+          Reconectar autoriza de novo a conta que estiver aberta no Mercado Livre neste navegador (ela mantém o CNPJ escolhido). Para conectar outra conta, entre antes no Mercado Livre com ela (ou use uma janela anônima); senão o Mercado Livre reaproveita a conta que já estiver aberta.
           Os anúncios novos dessa conta já entram ligados ao CNPJ escolhido aqui.
         </p>
       </section>

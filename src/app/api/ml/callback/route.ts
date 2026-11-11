@@ -34,7 +34,7 @@ export async function GET(req: Request) {
       {
         store_id: storeId,
         ml_user_id: String(t.user_id),
-        nickname: apelido,
+        ...(apelido ? { nickname: apelido } : {}),
         access_token: t.access_token,
         refresh_token: t.refresh_token,
         expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
