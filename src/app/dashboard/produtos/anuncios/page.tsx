@@ -32,6 +32,8 @@ export default function AnunciosPage() {
   const [mps, setMps] = useState<Marketplace[]>([]);
   const [contas, setContas] = useState<ContaML[]>([]);
   const [filtro, setFiltro] = useState<Filtro>("todos");
+  const [mpAtivo, setMpAtivo] = useState("mercado_livre");
+  const [mapa, setMapa] = useState<"todos" | "nao" | "sim">("todos");
   const [busca, setBusca] = useState("");
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
@@ -41,14 +43,25 @@ export default function AnunciosPage() {
   const [resultados, setResultados] = useState<Resultado[]>([]);
 
   const carregar = useCallback(async () => {
-    const [l, p, c, m] = await Promise.all([
-      supabase.from("listings").select("*").order("title"),
+    // O banco devolve no máximo 1000 linhas por consulta: busca os anúncios em blocos.
+    const todosAnuncios: Listing[] = [];
+    let erroAnuncios = "";
+    for (let i = 0; i < 20000; i += 1000) {
+      const r = await supabase.from("listings").select("*").order("title").order("id").range(i, i + 999);
+      if (r.error) {
+        erroAnuncios = r.error.message;
+        break;
+      }
+      todosAnuncios.push(...((r.data ?? []) as Listing[]));
+      if ((r.data ?? []).length < 1000) break;
+    }
+    const [p, c, m] = await Promise.all([
       supabase.from("products").select("*").order("name"),
       supabase.from("companies").select("*").order("created_at"),
       supabase.from("marketplaces").select("*"),
     ]);
-    if (l.error) setErro(l.error.message);
-    setAnuncios((l.data ?? []) as Listing[]);
+    if (erroAnuncios) setErro(erroAnuncios);
+    setAnuncios(todosAnuncios);
     setProdutos((p.data ?? []) as Product[]);
     setEmpresas((c.data ?? []) as Company[]);
     setMps((m.data ?? []) as Marketplace[]);
@@ -75,6 +88,7 @@ export default function AnunciosPage() {
   const linhas = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return anuncios
+      .filter((l) => l.marketplace_id === mpAtivo)
       .map((l) => {
         const prod = l.product_id ? prodPorId.get(l.product_id) : undefined;
         const emp = (l.company_id && empPorId.get(l.company_id)) || empresaPadrao;
@@ -82,12 +96,24 @@ export default function AnunciosPage() {
       })
       .filter(({ l, a }) => {
         if (q && !l.title.toLowerCase().includes(q) && !l.external_id.toLowerCase().includes(q)) return false;
+        if (mapa === "nao" && l.product_id) return false;
+        if (mapa === "sim" && !l.product_id) return false;
         if (filtro === "sem_produto") return !l.product_id;
         if (filtro === "auto") return l.auto_price;
         if (filtro === "margem_baixa") return !!a && a.margem < Number(l.target_margin);
         return true;
       });
-  }, [anuncios, prodPorId, empPorId, empresaPadrao, busca, filtro, mps]);
+  }, [anuncios, prodPorId, empPorId, empresaPadrao, busca, filtro, mps, mpAtivo, mapa]);
+
+  // Abas: uma por marketplace; dentro dela, Todos / Não mapeado / Mapeado (com contagem)
+  const abasMp = useMemo(() => {
+    // Mercado Livre e Shopee sempre aparecem; os demais só quando já têm anúncios.
+    const lista = mps.filter((m) => m.id === "mercado_livre" || m.id === "shopee" || anuncios.some((l) => l.marketplace_id === m.id)).sort((a, b) => (a.id === "mercado_livre" ? -1 : b.id === "mercado_livre" ? 1 : a.name.localeCompare(b.name)));
+    return lista.map((m) => ({ id: m.id, nome: m.name, total: anuncios.filter((l) => l.marketplace_id === m.id).length }));
+  }, [mps, anuncios]);
+  const doMp = useMemo(() => anuncios.filter((l) => l.marketplace_id === mpAtivo), [anuncios, mpAtivo]);
+  const qtdMapeado = doMp.filter((l) => !!l.product_id).length;
+  const nomeMpAtivo = mps.find((m) => m.id === mpAtivo)?.name ?? "marketplace";
 
   /* ---------- Importação do Mercado Livre ---------- */
   // TEMPORÁRIO: descobre quais consultas do Mercado Livre trazem comissão e frete de anúncios sem vendas.
@@ -314,6 +340,39 @@ export default function AnunciosPage() {
         </div>
       )}
 
+      <div className="flex flex-wrap gap-2">
+        {abasMp.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => { setMpAtivo(m.id); setMapa("todos"); }}
+            className={`rounded-full px-5 py-2 text-sm font-semibold transition-colors ${
+              mpAtivo === m.id ? "bg-brand text-white" : "bg-white text-slate-600 shadow-soft hover:bg-brand-light"
+            }`}
+          >
+            {m.nome}
+            <span className={`ml-2 text-xs ${mpAtivo === m.id ? "text-white/70" : "text-slate-400"}`}>{m.total}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-6 border-b border-slate-200">
+        {([
+          ["todos", "Todos", doMp.length],
+          ["nao", "Não mapeado", doMp.length - qtdMapeado],
+          ["sim", "Mapeado", qtdMapeado],
+        ] as const).map(([id, nome, qtd]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setMapa(id)}
+            className={`-mb-px border-b-2 px-1 pb-3 text-sm ${mapa === id ? "border-brand font-semibold text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800"}`}
+          >
+            {nome} <span className={`ml-1 rounded-full px-2 py-0.5 text-xs ${id === "nao" && qtd > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>{qtd}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <input className="input w-64" placeholder="Buscar por título ou código MLB" value={busca} onChange={(e) => setBusca(e.target.value)} />
@@ -324,7 +383,7 @@ export default function AnunciosPage() {
             <option value="margem_baixa">Abaixo da margem desejada</option>
           </select>
         </div>
-        <span className="font-mono text-xs text-slate-500">{linhas.length} de {anuncios.length} anúncios</span>
+        <span className="font-mono text-xs text-slate-500">{linhas.length} de {doMp.length} anúncios</span>
       </div>
 
       <div className="card overflow-x-auto p-0">
@@ -354,8 +413,10 @@ export default function AnunciosPage() {
             {linhas.length === 0 && (
               <tr>
                 <td className="td text-slate-500" colSpan={17}>
-                  {anuncios.length === 0
-                    ? "Nenhum anúncio ainda. Conecte o Mercado Livre e clique em “Importar do Mercado Livre”."
+                  {doMp.length === 0
+                    ? mpAtivo === "mercado_livre"
+                      ? "Nenhum anúncio ainda. Conecte o Mercado Livre e clique em “Importar do Mercado Livre”."
+                      : `Nenhum anúncio de ${nomeMpAtivo} ainda. A integração será ligada quando houver acesso à API.`
                     : "Nenhum anúncio neste filtro."}
                 </td>
               </tr>
