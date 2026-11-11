@@ -172,6 +172,7 @@ export async function POST(req: Request) {
     // 2) Frete que o vendedor paga em cada pedido (melhor esforço: se falhar, fica 0).
     const frete = new Map<number, number>();
     const estado = new Map<number, string>();
+    const freteComprador = new Map<number, number>();
     for (let i = 0; i < orders.length; i += 5) {
       await Promise.all(
         orders.slice(i, i + 5).map(async (o) => {
@@ -184,7 +185,8 @@ export async function POST(req: Request) {
             /* mantém 0 */
           }
           try {
-            const sh = await mlGet<{ receiver_address?: { state?: { id?: string; name?: string } } }>(token, `/shipments/${shipId}`);
+            const sh = await mlGet<{ receiver_address?: { state?: { id?: string; name?: string } }; shipping_option?: { cost?: number } }>(token, `/shipments/${shipId}`);
+            freteComprador.set(o.id, Number(sh.shipping_option?.cost) || 0);
             const st = sh.receiver_address?.state;
             const uf = (st?.id || "").replace(/^BR-/, "") || st?.name || "";
             if (uf) estado.set(o.id, uf);
@@ -229,6 +231,7 @@ export async function POST(req: Request) {
           title: oi.item.title || oi.item.id,
           sku: skuDoItem.get(oi.item.id) || prod?.sku || null,
           buyer_state: estado.get(o.id) ?? null,
+          buyer_shipping: idx === 0 ? freteComprador.get(o.id) ?? 0 : 0,
           ml_user_id: conn.ml_user_id,
         };
       })
@@ -268,6 +271,7 @@ export async function POST(req: Request) {
               title: v.title,
               ...(v.sku ? { sku: v.sku } : {}),
               buyer_state: v.buyer_state,
+              buyer_shipping: v.buyer_shipping,
               ml_user_id: v.ml_user_id,
               listing_id: v.listing_id,
             })

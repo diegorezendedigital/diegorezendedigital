@@ -160,7 +160,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl p-5">{children}</main>
+      <main className={`mx-auto p-5 ${pathname.startsWith("/dashboard/pedidos") ? "max-w-none px-6" : "max-w-7xl"}`}>{children}</main>
       <div className="pointer-events-none fixed bottom-1.5 left-2 font-mono text-[10px] leading-tight text-slate-400">
         v{process.env.NEXT_PUBLIC_APP_VERSION} · atualizado em{" "}
         {process.env.NEXT_PUBLIC_BUILD_TIME
