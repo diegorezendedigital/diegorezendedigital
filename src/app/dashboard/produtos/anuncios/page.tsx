@@ -361,7 +361,13 @@ export default function AnunciosPage() {
                 </td>
                 <td className="td font-medium">{brl(l.price)}</td>
                 <td className="td text-slate-700">{a ? brl(a.custo) : "—"}</td>
-                <td className="td text-slate-700">{a ? brl(a.taxa) : "—"}</td>
+                <td
+                  className="td text-slate-700"
+                  title={a ? `${pct(a.taxaPct)} do preço + ${brl(a.taxaFixo)} fixo${a.taxaDoML ? " (taxa do Mercado Livre)" : " (taxa padrão: ainda não puxada do Mercado Livre)"}` : ""}
+                >
+                  {a ? brl(a.taxa) : "—"}
+                  {a && <div className={`font-mono text-[10px] ${a.taxaDoML ? "text-emerald-700" : "text-amber-700"}`}>{pct(a.taxaPct)} + {brl(a.taxaFixo)}{a.taxaDoML ? "" : " · padrão"}</div>}
+                </td>
                 <td className="td">
                   <input
                     key={`f${l.id}${l.shipping_cost}`}

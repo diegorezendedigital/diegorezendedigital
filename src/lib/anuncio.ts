@@ -24,6 +24,9 @@ export function entradaDoAnuncio(
 export type Analise = {
   custo: number;
   taxa: number;
+  taxaPct: number;
+  taxaFixo: number;
+  taxaDoML: boolean;
   imposto: number;
   frete: number;
   lucro: number;
@@ -45,6 +48,9 @@ export function analisarAnuncio(
   return {
     custo: e.custo,
     taxa: r.taxaMarketplace,
+    taxaPct: pct,
+    taxaFixo: fixo,
+    taxaDoML: l.fee_percent != null,
     imposto: r.impostos,
     frete: e.frete,
     lucro: r.lucro,
