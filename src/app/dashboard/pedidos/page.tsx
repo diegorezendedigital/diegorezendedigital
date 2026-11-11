@@ -303,6 +303,7 @@ export default function PedidosPage() {
                     <th className="px-4 py-4 text-right">Venda</th>
                     <th className="px-4 py-4 text-right">Comissão</th>
                     <th className="px-4 py-4 text-right">Frete</th>
+                    <th className="px-4 py-4 text-right" title="Informativo: não entra na conta do lucro">Frete comprador</th>
                     <th className="px-4 py-4 text-right">Impostos</th>
                     <th className="px-4 py-4 text-right">Custo</th>
                     <th className="px-4 py-4 text-right">Sobrou</th>
@@ -327,6 +328,7 @@ export default function PedidosPage() {
                         <td className="px-4 py-5 text-right">{brl(l.preco)}</td>
                         <td className="px-4 py-5 text-right">{brl(l.comissao)}<Pc v={pCel(l.comissao, l.preco)} /></td>
                         <td className="px-4 py-5 text-right">{brl(l.frete)}<Pc v={pCel(l.frete, l.preco)} /></td>
+                        <td className="px-4 py-5 text-right text-slate-500">{brl(l.freteComprador)}</td>
                         <td className="px-4 py-5 text-right">{brl(l.impostos)}<Pc v={pCel(l.impostos, l.preco)} /></td>
                         <td className="px-4 py-5 text-right">
                           {l.custo > 0 ? (
@@ -347,7 +349,7 @@ export default function PedidosPage() {
                       </tr>
                       {editId === l.id && (
                         <tr className="border-b border-slate-100 bg-amber-50">
-                          <td className="px-5 py-4" colSpan={12}>
+                          <td className="px-5 py-4" colSpan={13}>
                             <div className="flex flex-wrap items-end gap-2">
                               <div>
                                 <label className="label">Custo total desta venda (R$)</label>
@@ -373,6 +375,7 @@ export default function PedidosPage() {
                     <td className="px-4 py-4 text-right">{brl(totalPreco)}</td>
                     <td className="px-4 py-4 text-right">{brl(totalTaxa)}<Pc v={pCel(totalTaxa, totalPreco)} /></td>
                     <td className="px-4 py-4 text-right">{brl(totalFrete)}<Pc v={pCel(totalFrete, totalPreco)} /></td>
+                    <td className="px-4 py-4 text-right text-slate-500">{brl(totalFreteComprador)}</td>
                     <td className="px-4 py-4 text-right">{brl(totalImpostos)}<Pc v={pCel(totalImpostos, totalPreco)} /></td>
                     <td className="px-4 py-4 text-right">{brl(totalCusto)}<Pc v={pCel(totalCusto, totalPreco)} /></td>
                     <td className={`px-4 py-4 text-right ${cor(totalSobra)}`}>{brl(totalSobra)}</td>
