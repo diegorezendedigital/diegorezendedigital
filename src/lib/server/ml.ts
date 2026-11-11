@@ -136,7 +136,10 @@ export async function getAccessToken(storeId: string, mlUserId?: string | null):
 export async function mlGet<T = any>(token: string, path: string): Promise<T> {
   const res = await fetch(`${ML_API}${path}`, { headers: { Authorization: `Bearer ${token}` } });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((json as { message?: string }).message || `Mercado Livre respondeu ${res.status}`);
+  if (!res.ok) {
+    const msg = (json as { message?: string }).message || `Mercado Livre respondeu ${res.status}`;
+    throw new Error(`${msg} [${res.status} ${path.split("?")[0]}]`);
+  }
   return json as T;
 }
 
