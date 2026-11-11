@@ -44,6 +44,12 @@ export default function PedidosPage() {
   const [de, setDe] = useState(hojeBR());
   const [ate, setAte] = useState(hojeBR());
   const [busca, setBusca] = useState("");
+  const [buscaAtiva, setBuscaAtiva] = useState("");
+  // Pesquisa em todas as datas: espera a pessoa parar de digitar.
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaAtiva(busca.trim().replace(/[,()%*]/g, " ").trim()), 400);
+    return () => clearTimeout(t);
+  }, [busca]);
   const [reprocessando, setReprocessando] = useState(false);
   const [reprocessandoCustos, setReprocessandoCustos] = useState(false);
   const [progresso, setProgresso] = useState("");
@@ -120,7 +126,7 @@ export default function PedidosPage() {
     try {
       const inicio = new Date(`${de}T00:00:00-03:00`).toISOString();
       const fim = new Date(`${ate}T23:59:59.999-03:00`).toISOString();
-      if (inicio > fim) {
+      if (!buscaAtiva && inicio > fim) {
         setErro("A data inicial é depois da final.");
         setLinhas([]);
         return;
@@ -128,7 +134,11 @@ export default function PedidosPage() {
       // O banco devolve no máximo 1000 linhas por consulta: busca em blocos.
       const vendas: Sale[] = [];
       for (let de0 = 0; de0 < 20000; de0 += 1000) {
-        const r = await supabase.from("sales").select("*").gte("sold_at", inicio).lte("sold_at", fim).order("sold_at", { ascending: false }).range(de0, de0 + 999);
+        let consulta = supabase.from("sales").select("*");
+        consulta = buscaAtiva
+          ? consulta.or(`order_number.ilike.%${buscaAtiva}%,title.ilike.%${buscaAtiva}%,sku.ilike.%${buscaAtiva}%,external_id.ilike.%${buscaAtiva}%,buyer_state.ilike.${buscaAtiva}`)
+          : consulta.gte("sold_at", inicio).lte("sold_at", fim);
+        const r = await consulta.order("sold_at", { ascending: false }).range(de0, de0 + 999);
         if (r.error) throw new Error(r.error.message);
         vendas.push(...((r.data ?? []) as Sale[]));
         if ((r.data ?? []).length < 1000) break;
@@ -171,7 +181,7 @@ export default function PedidosPage() {
       setErro(mensagemErro(e));
       setLinhas([]);
     }
-  }, [de, ate]);
+  }, [de, ate, buscaAtiva]);
 
   useEffect(() => {
     carregar();
@@ -179,7 +189,7 @@ export default function PedidosPage() {
 
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return (linhas ?? []).filter((l) => !q || l.pedido.includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q);
+    return (linhas ?? []).filter((l) => !q || l.pedido.toLowerCase().includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q);
   }, [linhas, busca]);
 
   const totalPreco = soma(visiveis, "preco");
@@ -251,6 +261,7 @@ export default function PedidosPage() {
         <div className="min-w-[240px] flex-1">
           <label className="label">Buscar (nº do pedido, produto, SKU ou UF)</label>
           <input className="input" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="ex.: 2000012345, jaqueta, SP" />
+          {busca.trim() && <div className="mt-1 text-[11px] text-slate-500">Pesquisando em todas as datas, ignorando o filtro de período.</div>}
         </div>
       </div>
 
