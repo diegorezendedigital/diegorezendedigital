@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiFetch, supabase } from "@/lib/supabase/client";
-import { Company, Listing, Marketplace, Product, brl, campo, mensagemErro, num, pct } from "@/lib/types";
+import { AcaoPromo, Company, Listing, Marketplace, Product, brl, campo, mensagemErro, num, pct } from "@/lib/types";
 import { entradaDoAnuncio } from "@/lib/anuncio";
 import { calcularLucro } from "@/lib/pricing";
 
@@ -77,17 +77,21 @@ export default function PromocoesPage() {
   const [precos, setPrecos] = useState<Record<string, string>>({});
   const [trabalhando, setTrabalhando] = useState("");
   const [confirmaLote, setConfirmaLote] = useState(false);
+  const [historico, setHistorico] = useState<AcaoPromo[]>([]);
+  const [rodandoAuto, setRodandoAuto] = useState(false);
 
   const carregar = useCallback(async () => {
     setErro("");
     try {
-      const [r, l, p, c, m] = await Promise.all([
+      const [r, l, p, c, m, h] = await Promise.all([
         apiFetch<{ contas: ContaPromos[] }>("/api/ml/promocoes"),
         supabase.from("listings").select("*"),
         supabase.from("products").select("*"),
         supabase.from("companies").select("*"),
         supabase.from("marketplaces").select("*"),
+        supabase.from("promo_actions").select("*").order("updated_at", { ascending: false }).limit(60),
       ]);
+      setHistorico((h.data ?? []) as AcaoPromo[]);
       setContas(r.contas);
       setAnuncios((l.data ?? []) as Listing[]);
       setProdutos((p.data ?? []) as Product[]);
@@ -126,6 +130,24 @@ export default function PromocoesPage() {
     if (digitado !== undefined && digitado !== "") return num(digitado);
     return i.suggested_price ?? i.max_price ?? i.price ?? 0;
   };
+
+  async function rodarAuto() {
+    setErro("");
+    setAviso("");
+    setRodandoAuto(true);
+    try {
+      const r = await apiFetch<{ avaliados: number; entraram: number; recusados: number; erros: number; parcial: boolean }>("/api/ml/promocoes/auto", { method: "POST" });
+      setAviso(
+        `Promoções automáticas: ${r.avaliados} anúncios avaliados, ${r.entraram} entraram, ${r.recusados} ficaram de fora por margem ou falta de custo, ${r.erros} com erro.` +
+          (r.parcial ? " A rodada foi parcial; rode de novo para continuar." : "")
+      );
+      await carregar();
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setRodandoAuto(false);
+    }
+  }
 
   async function abrir(ml_user_id: string, promo: Promo) {
     setAberta({ ml_user_id, promo });
@@ -227,6 +249,14 @@ export default function PromocoesPage() {
           Promoções que o Mercado Livre oferece às suas contas. Para cada anúncio o sistema calcula o lucro e a margem no preço da promoção, com o custo do armazém, a taxa, o frete e os
           impostos do CNPJ, e mostra se ainda atinge a sua meta.
         </p>
+      </div>
+
+      <div className="card flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-sm text-slate-600">
+          <strong>Promoção automática:</strong> em <Link href="/dashboard/produtos/anuncios" className="underline">Anúncios Marketplace</Link>, marque “Promo auto” e defina a margem mínima (padrão 10%).
+          Todo dia o sistema entra sozinho nas promoções do Mercado Livre em que a margem, depois de taxa, frete, imposto e custo, atinge o mínimo. Ele sempre escolhe o maior preço permitido, com menos desconto.
+        </p>
+        <button className="btn" onClick={rodarAuto} disabled={rodandoAuto}>{rodandoAuto ? "Avaliando…" : "Rodar promoções automáticas agora"}</button>
       </div>
 
       {erro && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erro}</p>}
@@ -396,6 +426,46 @@ export default function PromocoesPage() {
             Sobra = preço da promoção − taxa − frete − imposto − custo. Margem = sobra ÷ preço da promoção. Em promoções em que o Mercado Livre paga parte do desconto, o valor que você recebe pode ser maior que o calculado aqui. Anúncios sem custo (sem produto ligado) não têm lucro calculado e ficam de fora do
             “Entrar com os lucrativos”.
           </p>
+        </section>
+      )}
+
+      {historico.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="font-mono text-xs uppercase tracking-wider text-slate-500">Histórico da participação automática</h2>
+          <div className="card overflow-x-auto p-0">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left font-mono text-[11px] uppercase tracking-wider text-slate-500">
+                  <th className="p-3">Data</th>
+                  <th className="p-3">Anúncio</th>
+                  <th className="p-3">Promoção</th>
+                  <th className="p-3 text-right">Preço</th>
+                  <th className="p-3 text-right">Margem</th>
+                  <th className="p-3">Resultado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historico.map((h) => (
+                  <tr key={h.id} className="border-b border-slate-100 align-top">
+                    <td className="p-3 font-mono text-xs">{new Date(h.updated_at).toLocaleString("pt-BR")}</td>
+                    <td className="max-w-[260px] p-3">
+                      <div className="truncate">{porItem.get(h.item_id)?.title ?? "—"}</div>
+                      <div className="font-mono text-[11px] text-slate-500">{h.item_id}</div>
+                    </td>
+                    <td className="p-3">{h.promotion_name ?? h.promotion_id}</td>
+                    <td className="p-3 text-right">{h.price != null ? brl(Number(h.price)) : "—"}</td>
+                    <td className="p-3 text-right">{h.margin != null ? pct(Number(h.margin)) : "—"}</td>
+                    <td className="p-3">
+                      <span className={`badge ${h.status === "entrou" ? "bg-emerald-100 text-emerald-800" : h.status === "erro" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
+                        {h.status === "entrou" ? "Entrou" : h.status === "erro" ? "Erro" : "Ficou de fora"}
+                      </span>
+                      {h.message && <div className="mt-0.5 text-xs text-slate-600">{h.message}</div>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
     </div>

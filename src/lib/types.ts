@@ -67,6 +67,8 @@ export type Listing = {
   min_price: number | null;
   max_price: number | null;
   auto_price: boolean;
+  promo_auto?: boolean;
+  promo_min_margin?: number | null;
   last_repriced_at: string | null;
 };
 
@@ -177,4 +179,17 @@ export type CustoProduto = {
   pis_credit: number;
   cofins_credit: number;
   valid_from: string;
+};
+
+export type AcaoPromo = {
+  id: string;
+  item_id: string;
+  promotion_id: string;
+  promotion_name: string | null;
+  price: number | null;
+  margin: number | null;
+  min_margin: number | null;
+  status: "entrou" | "recusada" | "erro";
+  message: string | null;
+  updated_at: string;
 };
