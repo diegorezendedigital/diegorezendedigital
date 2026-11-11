@@ -18,6 +18,7 @@ const menus: Menu[] = [
     ],
   },
   { label: "Pedidos", href: "/dashboard/pedidos" },
+  { label: "Promoções", href: "/dashboard/promocoes" },
   { label: "Calculadora", href: "/dashboard/calculadora" },
   { label: "Relatórios", href: "/dashboard/relatorios" },
   { label: "DRE", href: "/dashboard/dre" },

@@ -96,6 +96,7 @@ export type MlConn = {
   last_synced_at: string | null;
   connected_at: string;
   nickname: string | null;
+  store_name?: string | null;
   company_id: string | null;
 };
 
@@ -144,10 +145,22 @@ export async function mlGet<T = any>(token: string, path: string): Promise<T> {
 }
 
 export async function mlPut<T = any>(token: string, path: string, body: unknown): Promise<T> {
+  return mlEnviar<T>("PUT", token, path, body);
+}
+
+export async function mlPost<T = any>(token: string, path: string, body: unknown): Promise<T> {
+  return mlEnviar<T>("POST", token, path, body);
+}
+
+export async function mlDelete<T = any>(token: string, path: string): Promise<T> {
+  return mlEnviar<T>("DELETE", token, path, undefined);
+}
+
+async function mlEnviar<T>(metodo: "PUT" | "POST" | "DELETE", token: string, path: string, body: unknown): Promise<T> {
   const res = await fetch(`${ML_API}${path}`, {
-    method: "PUT",
+    method: metodo,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
