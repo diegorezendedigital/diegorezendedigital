@@ -103,6 +103,32 @@ export default function AnunciosPage() {
     }
   }
 
+  async function vincularPorSku() {
+    setErro("");
+    setAviso("");
+    setTrabalhando(true);
+    try {
+      const r = await apiFetch<{ analisados: number; jaLigados: number; vinculados: number; semSku: number; semProduto: number; duplicados: number; parcial: boolean; semAcesso: number; skusSemProduto: string[] }>("/api/ml/vincular-sku", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setAviso(
+        `${r.vinculados} anúncios ligados ao produto de mesmo SKU. ${r.jaLigados} já estavam ligados` +
+          (r.semProduto > 0 ? `, ${r.semProduto} têm SKU sem produto igual no armazém (ex.: ${r.skusSemProduto.slice(0, 5).join(", ")})` : "") +
+          (r.semSku > 0 ? `, ${r.semSku} estão sem SKU no Mercado Livre` : "") +
+          (r.duplicados > 0 ? `, ${r.duplicados} com SKU repetido em mais de um produto (não ligados)` : "") +
+          (r.semAcesso > 0 ? `, ${r.semAcesso} de uma conta sem acesso (reconecte em Integrações)` : "") +
+          "." +
+          (r.parcial ? " A rodada foi parcial; clique de novo para continuar." : "")
+      );
+      await carregar();
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setTrabalhando(false);
+    }
+  }
+
   async function puxarFrete() {
     setErro("");
     setAviso("");
@@ -224,6 +250,9 @@ export default function AnunciosPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {progresso && <span className="font-mono text-xs text-slate-500">{progresso}</span>}
+          <button className="btn-ghost" onClick={vincularPorSku} disabled={trabalhando || importando} title="Liga cada anúncio sem produto ao produto do armazém que tem exatamente o mesmo SKU">
+            Vincular por SKU
+          </button>
           <button className="btn-ghost" onClick={testarFrete} disabled={trabalhando || importando}>
             Teste: frete e taxa
           </button>
@@ -337,6 +366,7 @@ export default function AnunciosPage() {
                       </p>
                       <p className="font-mono text-[11px] text-slate-500">
                         {l.external_id}
+                        {l.sku ? ` · SKU ${l.sku}` : ""}
                         {l.ml_user_id && contas.length > 1 ? ` · ${contas.find((c) => c.ml_user_id === l.ml_user_id)?.nickname ?? l.ml_user_id}` : ""}
                       </p>
                     </div>

@@ -85,6 +85,7 @@ export async function POST(req: Request) {
       thumbnail: it.thumbnail ?? null,
       category_id: it.category_id ?? null,
       listing_type_id: it.listing_type_id ?? null,
+      ...((it.seller_custom_field || "").trim() ? { sku: (it.seller_custom_field || "").trim() } : {}),
       fee_percent: taxas.get(it.id)?.pct ?? null,
       fee_fixed: taxas.get(it.id)?.fixo ?? null,
       last_synced_at: agora,
