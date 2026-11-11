@@ -15,6 +15,9 @@ export default function ArmazemPage() {
   const [empresas, setEmpresas] = useState<Company[]>([]);
   const [anuncios, setAnuncios] = useState<Record<string, number>>({});
   const [busca, setBusca] = useState("");
+  const [mapaMp, setMapaMp] = useState<Record<string, Record<string, number>>>({});
+  const [statusMap, setStatusMap] = useState<"todos" | "sim" | "nao">("todos");
+  const [mpFiltro, setMpFiltro] = useState<string>("todos");
   const [histId, setHistId] = useState<string | null>(null);
   const [hist, setHist] = useState<CustoProduto[]>([]);
   const [histCusto, setHistCusto] = useState("");
@@ -32,30 +35,64 @@ export default function ArmazemPage() {
   const entrada = useRef<HTMLInputElement | null>(null);
 
   const carregar = useCallback(async () => {
-    const [p, c, l] = await Promise.all([
-      supabase.from("products").select("*").order("name"),
-      supabase.from("companies").select("*").order("created_at"),
-      supabase.from("listings").select("product_id"),
-    ]);
-    if (p.error) setErro(p.error.message);
-    setProdutos((p.data ?? []) as Product[]);
+    // O banco devolve no máximo 1000 linhas por consulta: busca em blocos.
+    const todosProdutos: Product[] = [];
+    let erroProdutos = "";
+    for (let i = 0; i < 50000; i += 1000) {
+      const r = await supabase.from("products").select("*").order("name").order("id").range(i, i + 999);
+      if (r.error) {
+        erroProdutos = r.error.message;
+        break;
+      }
+      todosProdutos.push(...((r.data ?? []) as Product[]));
+      if ((r.data ?? []).length < 1000) break;
+    }
+    const ligacoes: { product_id: string | null; marketplace_id: string }[] = [];
+    for (let i = 0; i < 50000; i += 1000) {
+      const r = await supabase.from("listings").select("product_id, marketplace_id").order("id").range(i, i + 999);
+      if (r.error) break;
+      ligacoes.push(...((r.data ?? []) as { product_id: string | null; marketplace_id: string }[]));
+      if ((r.data ?? []).length < 1000) break;
+    }
+    const c = await supabase.from("companies").select("*").order("created_at");
+    if (erroProdutos) setErro(erroProdutos);
+    setProdutos(todosProdutos);
     setEmpresas((c.data ?? []) as Company[]);
     const cont: Record<string, number> = {};
-    (l.data ?? []).forEach((x: { product_id: string | null }) => {
-      if (x.product_id) cont[x.product_id] = (cont[x.product_id] || 0) + 1;
+    const porMp: Record<string, Record<string, number>> = {};
+    ligacoes.forEach((x) => {
+      if (!x.product_id) return;
+      cont[x.product_id] = (cont[x.product_id] || 0) + 1;
+      porMp[x.product_id] = porMp[x.product_id] ?? {};
+      porMp[x.product_id][x.marketplace_id] = (porMp[x.product_id][x.marketplace_id] || 0) + 1;
     });
     setAnuncios(cont);
+    setMapaMp(porMp);
   }, []);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
+  // Mapeado = o produto tem pelo menos um anúncio ligado (no marketplace escolhido, ou em qualquer um)
+  const mapeadoEm = useCallback(
+    (id: string, mp: string) => (mp === "todos" ? (anuncios[id] ?? 0) > 0 : (mapaMp[id]?.[mp] ?? 0) > 0),
+    [anuncios, mapaMp]
+  );
+  const contagem = useMemo(() => {
+    const sim = produtos.filter((p) => mapeadoEm(p.id, mpFiltro)).length;
+    return { todos: produtos.length, sim, nao: produtos.length - sim };
+  }, [produtos, mapeadoEm, mpFiltro]);
+
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    if (!q) return produtos;
-    return produtos.filter((p) => p.name.toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q) || (p.ean ?? "").includes(q));
-  }, [produtos, busca]);
+    return produtos.filter((p) => {
+      if (statusMap === "sim" && !mapeadoEm(p.id, mpFiltro)) return false;
+      if (statusMap === "nao" && mapeadoEm(p.id, mpFiltro)) return false;
+      if (!q) return true;
+      return p.name.toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q) || (p.ean ?? "").includes(q);
+    });
+  }, [produtos, busca, statusMap, mpFiltro, mapeadoEm]);
 
   const semDigitos = (s: string | null) => String(s ?? "").replace(/\D/g, "");
 
@@ -360,6 +397,43 @@ export default function ArmazemPage() {
       {erro && <p className="text-sm text-red-700">{erro}</p>}
       {aviso && <p className="text-sm text-emerald-800">{aviso}</p>}
 
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="flex gap-6 border-b border-slate-200">
+          {([
+            ["todos", "Todos", contagem.todos],
+            ["sim", "Mapeados", contagem.sim],
+            ["nao", "Não mapeados", contagem.nao],
+          ] as const).map(([id, nome, qtd]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setStatusMap(id)}
+              className={`-mb-px border-b-2 px-1 pb-3 text-sm ${statusMap === id ? "border-brand font-semibold text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800"}`}
+            >
+              {nome} <span className={`ml-1 rounded-full px-2 py-0.5 text-xs ${id === "nao" && qtd > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>{qtd}</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-slate-500">Marketplace:</span>
+          {([
+            ["todos", "Todos"],
+            ["mercado_livre", "Mercado Livre"],
+            ["shopee", "Shopee"],
+            ["tiktok", "TikTok Shop"],
+          ] as const).map(([id, nome]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setMpFiltro(id)}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${mpFiltro === id ? "bg-brand text-white" : "bg-white text-slate-600 shadow-soft hover:bg-brand-light"}`}
+            >
+              {nome}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex items-center justify-between gap-3">
         <input className="input max-w-xs" placeholder="Buscar por nome, SKU ou EAN" value={busca} onChange={(e) => setBusca(e.target.value)} />
         <span className="font-mono text-xs text-slate-500">{visiveis.length} de {produtos.length} produtos</span>
@@ -396,7 +470,7 @@ export default function ArmazemPage() {
                 <Fragment key={p.id}>
                 <tr>
                   <td className="td font-mono text-xs">{p.sku}</td>
-                  <td className="td max-w-[280px] truncate" title={p.name}>{p.name}</td>
+                  <td className="td">{p.name}</td>
                   <td className="td">
                     <select className="input py-1" value={p.company_id ?? ""} onChange={(e) => trocarEmpresa(p, e.target.value)}>
                       <option value="">—</option>
@@ -426,7 +500,24 @@ export default function ArmazemPage() {
                       onBlur={(e) => salvarCampo(p, "stock_qty", e.target.value)}
                     />
                   </td>
-                  <td className="td font-mono text-xs">{anuncios[p.id] ?? 0}</td>
+                  <td className="td">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-xs">{anuncios[p.id] ?? 0}</span>
+                      {(
+                        [
+                          ["mercado_livre", "ML", "Mercado Livre", "bg-[#FFE600] text-[#333]"],
+                          ["shopee", "SH", "Shopee", "bg-[#EE4D2D] text-white"],
+                          ["tiktok", "TT", "TikTok Shop", "bg-[#111] text-white"],
+                        ] as const
+                      )
+                        .filter(([id]) => (mapaMp[p.id]?.[id] ?? 0) > 0)
+                        .map(([id, sigla, nome, cls]) => (
+                          <span key={id} title={`Mapeado no ${nome} (${mapaMp[p.id][id]} anúncio${mapaMp[p.id][id] > 1 ? "s" : ""})`} className={`inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${cls}`}>
+                            {sigla}
+                          </span>
+                        ))}
+                    </div>
+                  </td>
                   <td className="td">
                     <input
                       type="checkbox"
