@@ -213,16 +213,18 @@ export default function ArmazemPage() {
       const agora = new Date().toISOString();
       const registros = linhas.map((l) => {
         const antigo = existentes.get(l.sku);
+        // Sem custo na planilha: produto novo entra com custo 0; produto existente mantém o custo e só atualiza nome e demais campos.
+        const custo = l.custo != null ? l.custo : antigo ? Number(antigo.cost_price) : 0;
         return {
           store_id: uid,
           sku: l.sku,
           name: l.nome,
-          cost_price: l.custo,
+          cost_price: custo,
           ean: l.ean ?? antigo?.ean ?? null,
           ncm: l.ncm ?? antigo?.ncm ?? null,
           stock_qty: l.estoque ?? antigo?.stock_qty ?? 0,
           company_id: (l.cnpj && porCnpj.get(semDigitos(l.cnpj))) || antigo?.company_id || null,
-          cost_updated_at: antigo && Number(antigo.cost_price) === l.custo ? antigo.cost_updated_at : agora,
+          cost_updated_at: antigo && Number(antigo.cost_price) === custo ? antigo.cost_updated_at : agora,
         };
       });
 
@@ -237,7 +239,13 @@ export default function ArmazemPage() {
       }
 
       const novos = linhas.filter((l) => !existentes.has(l.sku)).length;
-      setAviso(`${linhas.length} produtos importados (${novos} novos, ${linhas.length - novos} atualizados).`);
+      const semCusto = linhas.filter((l) => l.custo == null && !existentes.has(l.sku)).length;
+      const custoMudou = linhas.filter((l) => l.custo != null && existentes.has(l.sku) && Number(existentes.get(l.sku)?.cost_price) !== l.custo).length;
+      setAviso(
+        `${linhas.length} produtos importados (${novos} novos, ${linhas.length - novos} atualizados).` +
+          (semCusto > 0 ? ` ${semCusto} entraram sem custo.` : "") +
+          (custoMudou > 0 ? ` O custo foi substituído em ${custoMudou}; o custo anterior fica no Histórico.` : "")
+      );
       setLinhas([]);
       setArquivo("");
       if (entrada.current) entrada.current.value = "";

@@ -161,7 +161,8 @@ export async function POST(req: Request) {
       }
     }
     const custoEm = (prod: Product, data: string) => {
-      const lista = historico.get(prod.id) ?? [];
+      // Linhas de custo zero são "sem custo": não valem como histórico.
+      const lista = (historico.get(prod.id) ?? []).filter((h) => Number(h.cost_price) > 0);
       const t = new Date(data).getTime();
       const vigente = [...lista].reverse().find((h) => new Date(h.valid_from).getTime() <= t) ?? lista[0];
       return vigente

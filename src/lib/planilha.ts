@@ -4,7 +4,7 @@ export type LinhaProduto = {
   linha: number; // número da linha na planilha (para mensagens de erro)
   sku: string;
   nome: string;
-  custo: number;
+  custo: number | null; // null = sem custo na planilha (não mexe no custo que já existe)
   ean: string | null;
   ncm: string | null;
   estoque: number | null; // null = não informado (mantém o que já existe)
@@ -29,7 +29,7 @@ export async function baixarModelo(): Promise<void> {
     ["Como preencher"],
     ["SKU", "Obrigatório. Código único do produto no seu armazém. Se o SKU já existe, o produto é atualizado."],
     ["Nome", "Obrigatório."],
-    ["Custo", "Obrigatório. Custo de uma unidade, em reais (ex.: 39,90)."],
+    ["Custo", "Opcional. Custo de uma unidade, em reais (ex.: 39,90). Em branco: produto novo entra sem custo e produto existente mantém o custo atual, atualizando só nome e demais campos. Com custo: substitui o custo do SKU."],
     ["EAN", "Opcional. Código de barras, usado para casar com os itens do XML da nota."],
     ["NCM", "Opcional."],
     ["Estoque", "Opcional. Se ficar vazio, o estoque atual não muda."],
@@ -89,7 +89,8 @@ export async function lerPlanilha(arquivo: File): Promise<{ linhas: LinhaProduto
 
     if (!sku) return void erros.push(`Linha ${linha}: falta o SKU.`);
     if (!nome) return void erros.push(`Linha ${linha}: falta o nome.`);
-    if (custo == null || custo < 0) return void erros.push(`Linha ${linha}: custo inválido.`);
+    const custoTexto = texto(r["custo"]);
+    if (custoTexto != null && (custo == null || custo < 0)) return void erros.push(`Linha ${linha}: custo inválido (${custoTexto}).`);
     if (vistos.has(sku)) return void erros.push(`Linha ${linha}: o SKU ${sku} aparece mais de uma vez.`);
     vistos.add(sku);
 
@@ -97,7 +98,7 @@ export async function lerPlanilha(arquivo: File): Promise<{ linhas: LinhaProduto
       linha,
       sku,
       nome,
-      custo,
+      custo: custoTexto == null ? null : custo,
       ean: texto(r["ean"] ?? r["gtin"]),
       ncm: texto(r["ncm"]),
       estoque: paraNumero(r["estoque"]),
