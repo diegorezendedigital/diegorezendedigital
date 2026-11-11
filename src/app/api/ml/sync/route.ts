@@ -11,7 +11,7 @@ const PAGE = 25; // pedidos por chamada; a tela repete a chamada até terminar
 const MARKETPLACE_ID = "mercado_livre";
 
 type OrderItem = {
-  item: { id: string; title?: string; seller_sku?: string | null };
+  item: { id: string; title?: string; seller_sku?: string | null; seller_custom_field?: string | null };
   quantity: number;
   unit_price: number;
   sale_fee?: number;
@@ -61,6 +61,32 @@ export async function POST(req: Request) {
     orders.forEach((o) => o.order_items.forEach((oi) => itens.set(oi.item.id, oi)));
     const itemIds = Array.from(itens.keys());
 
+    // SKU de cada anúncio: o pedido traz seller_sku ou seller_custom_field; se vier vazio, consulta o anúncio
+    // (atributo SELLER_SKU). Sem SKU nenhum, fica em branco.
+    const skuDoItem = new Map<string, string>();
+    itens.forEach((oi, id) => {
+      const v = (oi.item.seller_sku || oi.item.seller_custom_field || "").trim();
+      if (v) skuDoItem.set(id, v);
+    });
+    const semSku = itemIds.filter((id) => !skuDoItem.has(id));
+    for (let i = 0; i < semSku.length; i += 20) {
+      try {
+        const lote = semSku.slice(i, i + 20);
+        const r = await mlGet<{ code?: number; body?: { id?: string; seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[] } }[]>(
+          token,
+          `/items?ids=${lote.join(",")}&attributes=id,seller_custom_field,attributes`
+        );
+        (Array.isArray(r) ? r : []).forEach((x) => {
+          const b = x.body;
+          if (!b?.id) return;
+          const v = (b.seller_custom_field || b.attributes?.find((a) => a.id === "SELLER_SKU")?.value_name || "").trim();
+          if (v) skuDoItem.set(b.id, v);
+        });
+      } catch {
+        /* sem SKU: segue sem ele */
+      }
+    }
+
     type Anuncio = { id: string; product_id: string | null; company_id: string | null; units: number };
     let anunciosCriados = 0;
     const anuncios = new Map<string, Anuncio>();
@@ -86,7 +112,7 @@ export async function POST(req: Request) {
 
       const faltam = itemIds.filter((id) => !anuncios.has(id));
       if (faltam.length) {
-        const skus = faltam.map((id) => itens.get(id)?.item.seller_sku || "").filter(Boolean);
+        const skus = faltam.map((id) => skuDoItem.get(id) || "").filter(Boolean);
         const porSku = new Map<string, string>();
         if (skus.length) {
           const { data: prods } = await admin.from("products").select("id, sku").eq("store_id", storeId).in("sku", skus);
@@ -101,7 +127,7 @@ export async function POST(req: Request) {
             ml_user_id: conn.ml_user_id,
             title: oi.item.title || id,
             price: Number(oi.unit_price) || 0,
-            product_id: (oi.item.seller_sku && porSku.get(oi.item.seller_sku)) || null,
+            product_id: (skuDoItem.get(oi.item.id) && porSku.get(skuDoItem.get(oi.item.id) as string)) || null,
             company_id: conn.company_id ?? (empresaPadrao as Company | null)?.id ?? null,
           };
         });
@@ -200,7 +226,7 @@ export async function POST(req: Request) {
           external_id: `${o.id}:${oi.item.id}`,
           order_number: String(o.id),
           title: oi.item.title || oi.item.id,
-          sku: oi.item.seller_sku || prod?.sku || null,
+          sku: skuDoItem.get(oi.item.id) || prod?.sku || null,
           buyer_state: estado.get(o.id) ?? null,
           ml_user_id: conn.ml_user_id,
         };
@@ -236,7 +262,14 @@ export async function POST(req: Request) {
         congeladas.map((v) =>
           admin
             .from("sales")
-            .update({ order_number: v.order_number, title: v.title, sku: v.sku, buyer_state: v.buyer_state, ml_user_id: v.ml_user_id, listing_id: v.listing_id })
+            .update({
+              order_number: v.order_number,
+              title: v.title,
+              ...(v.sku ? { sku: v.sku } : {}),
+              buyer_state: v.buyer_state,
+              ml_user_id: v.ml_user_id,
+              listing_id: v.listing_id,
+            })
             .eq("id", (existentes.get(v.external_id) as { id: string }).id)
         )
       );
