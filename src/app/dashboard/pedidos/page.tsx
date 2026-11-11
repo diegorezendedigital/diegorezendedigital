@@ -259,11 +259,11 @@ export default function PedidosPage() {
           <Resumo t="Pedidos" v={String(visiveis.length)} />
           <Resumo t="Faturamento" v={brl(totalPreco)} />
           <Resumo t="Sobrou" v={brl(totalSobra)} cls={cor(totalSobra)} />
-          <Resumo t="Taxa do marketplace" v={brl(totalTaxa)} />
-          <Resumo t="Frete pago por você" v={brl(totalFrete)} />
-          <Resumo t="Frete pago pelo comprador" v={brl(totalFreteComprador)} />
-          <Resumo t="Impostos" v={brl(totalImpostos)} />
-          <Resumo t="Custo dos produtos" v={brl(totalCusto)} />
+          <Resumo t="Taxa do marketplace" v={brl(totalTaxa)} sub={pDe(totalTaxa, totalPreco)} />
+          <Resumo t="Frete pago por você" v={brl(totalFrete)} sub={pDe(totalFrete, totalPreco)} />
+          <Resumo t="Frete pago pelo comprador" v={brl(totalFreteComprador)} sub={pDe(totalFreteComprador, totalPreco)} />
+          <Resumo t="Impostos" v={brl(totalImpostos)} sub={pDe(totalImpostos, totalPreco)} />
+          <Resumo t="Custo dos produtos" v={brl(totalCusto)} sub={pDe(totalCusto, totalPreco)} />
           <Resumo t="Margem / ROI" v={`${margemTotal != null ? pct(margemTotal) : "—"} / ${roiTotal != null ? pct(roiTotal) : "—"}`} />
         </div>
         <Pizza
@@ -325,13 +325,14 @@ export default function PedidosPage() {
                         <td className="px-4 py-5 font-mono text-xs">{l.sku || "—"}</td>
                         <td className="px-4 py-5">{l.uf}</td>
                         <td className="px-4 py-5 text-right">{brl(l.preco)}</td>
-                        <td className="px-4 py-5 text-right">{brl(l.comissao)}</td>
-                        <td className="px-4 py-5 text-right">{brl(l.frete)}</td>
-                        <td className="px-4 py-5 text-right">{brl(l.impostos)}</td>
+                        <td className="px-4 py-5 text-right">{brl(l.comissao)}<Pc v={pCel(l.comissao, l.preco)} /></td>
+                        <td className="px-4 py-5 text-right">{brl(l.frete)}<Pc v={pCel(l.frete, l.preco)} /></td>
+                        <td className="px-4 py-5 text-right">{brl(l.impostos)}<Pc v={pCel(l.impostos, l.preco)} /></td>
                         <td className="px-4 py-5 text-right">
                           {l.custo > 0 ? (
                             <>
                               {brl(l.custo)}
+                              <Pc v={pCel(l.custo, l.preco)} />
                               {l.manual && <div className="text-[11px] text-slate-500">manual</div>}
                             </>
                           ) : (
@@ -370,10 +371,10 @@ export default function PedidosPage() {
                   <tr className="font-semibold">
                     <td className="px-5 py-4" colSpan={4}>Total ({visiveis.length})</td>
                     <td className="px-4 py-4 text-right">{brl(totalPreco)}</td>
-                    <td className="px-4 py-4 text-right">{brl(totalTaxa)}</td>
-                    <td className="px-4 py-4 text-right">{brl(totalFrete)}</td>
-                    <td className="px-4 py-4 text-right">{brl(totalImpostos)}</td>
-                    <td className="px-4 py-4 text-right">{brl(totalCusto)}</td>
+                    <td className="px-4 py-4 text-right">{brl(totalTaxa)}<Pc v={pCel(totalTaxa, totalPreco)} /></td>
+                    <td className="px-4 py-4 text-right">{brl(totalFrete)}<Pc v={pCel(totalFrete, totalPreco)} /></td>
+                    <td className="px-4 py-4 text-right">{brl(totalImpostos)}<Pc v={pCel(totalImpostos, totalPreco)} /></td>
+                    <td className="px-4 py-4 text-right">{brl(totalCusto)}<Pc v={pCel(totalCusto, totalPreco)} /></td>
                     <td className={`px-4 py-4 text-right ${cor(totalSobra)}`}>{brl(totalSobra)}</td>
                     <td className="px-4 py-4 text-right">{margemTotal != null ? pct(margemTotal) : "—"}</td>
                     <td className="px-5 py-4 text-right">{roiTotal != null ? pct(roiTotal) : "—"}</td>
@@ -391,11 +392,16 @@ export default function PedidosPage() {
   );
 }
 
-function Resumo({ t, v, cls = "" }: { t: string; v: string; cls?: string }) {
+const pDe = (parte: number, base: number) => (base > 0 ? `${((parte / base) * 100).toFixed(1).replace(".", ",")}% do faturamento` : undefined);
+const pCel = (parte: number, base: number) => (base > 0 && parte > 0 ? `${((parte / base) * 100).toFixed(1).replace(".", ",")}%` : null);
+const Pc = ({ v }: { v: string | null }) => (v ? <div className="font-mono text-[11px] text-slate-500">{v}</div> : null);
+
+function Resumo({ t, v, cls = "", sub }: { t: string; v: string; cls?: string; sub?: string }) {
   return (
     <div className="card">
       <div className="font-mono text-[11px] uppercase tracking-wider text-slate-500">{t}</div>
       <div className={`mt-1 text-2xl font-semibold ${cls}`}>{v}</div>
+      {sub && <div className="mt-0.5 font-mono text-[11px] text-slate-500">{sub}</div>}
     </div>
   );
 }
