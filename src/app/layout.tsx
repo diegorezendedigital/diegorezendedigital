@@ -2,7 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "MargemCerta — Gestão de lucro para marketplaces",
+  title: "Diego Rezende Digital — Assessoria Marketplace",
   description: "Centralize seus produtos, calcule taxas de cada marketplace e acompanhe o lucro real das suas vendas.",
 };
 

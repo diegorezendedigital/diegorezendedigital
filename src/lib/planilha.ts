@@ -40,7 +40,7 @@ export async function baixarModelo(): Promise<void> {
   ajuda["!cols"] = [{ wch: 18 }, { wch: 90 }];
   XLSX.utils.book_append_sheet(wb, ajuda, "Instruções");
 
-  XLSX.writeFile(wb, "modelo-produtos-margemcerta.xlsx");
+  XLSX.writeFile(wb, "modelo-produtos.xlsx");
 }
 
 const chave = (s: string): string =>

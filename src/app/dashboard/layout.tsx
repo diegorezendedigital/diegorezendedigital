@@ -100,7 +100,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <path d="M7.5 19.5 L12.5 12 L16 16 L22.5 8.5" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
               <circle cx="22.5" cy="8.5" r="2" fill="#FFD66B" />
             </svg>
-            margem certa
+            <span className="flex flex-col leading-tight">
+              <span>Diego Rezende Digital</span>
+              <span className="text-[11px] font-medium text-slate-500">Assessoria Marketplace</span>
+            </span>
           </Link>
 
           <nav className="flex flex-1 flex-wrap items-center gap-1 py-0">

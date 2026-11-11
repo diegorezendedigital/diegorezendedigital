@@ -41,7 +41,7 @@ export default function LoginPage() {
     <main className="min-h-screen bg-paper font-body text-ink antialiased flex items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <Link href="/" className="font-display text-xl font-semibold">
-          Margem<span className="text-gold">Certa</span>
+          Diego Rezende <span className="text-gold">Digital</span>
         </Link>
         <h1 className="font-display text-2xl font-medium mt-8 mb-1">Entrar na sua loja</h1>
         <p className="text-ink/60 text-sm mb-8">Acesse seus produtos e acompanhe o lucro real das suas vendas.</p>

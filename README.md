@@ -1,4 +1,4 @@
-# Margem Certa
+# Diego Rezende Digital — Assessoria Marketplace
 
 Mostra o lucro real de cada venda nos marketplaces (taxas, frete e impostos) e se conecta ao Mercado Livre para importar pedidos automaticamente.
 

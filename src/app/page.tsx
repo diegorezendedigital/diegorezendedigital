@@ -15,7 +15,7 @@ export default function LandingPage() {
       <header className="border-b border-line">
         <div className="mx-auto max-w-6xl px-6 py-5 flex items-center justify-between">
           <span className="font-display text-xl font-semibold tracking-tight">
-            Margem<span className="text-gold">Certa</span>
+            Diego Rezende <span className="text-gold">Digital</span>
           </span>
           <nav className="flex items-center gap-6 text-sm">
             <Link href="#como-funciona" className="hover:text-gold transition-colors">
@@ -156,7 +156,7 @@ export default function LandingPage() {
       </section>
 
       <footer className="mx-auto max-w-6xl px-6 py-10 text-sm text-ink/50">
-        © {new Date().getFullYear()} MargemCerta. Feito para quem vende em marketplace.
+        © {new Date().getFullYear()} Diego Rezende Digital · Assessoria Marketplace.
       </footer>
     </main>
   );
