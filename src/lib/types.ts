@@ -60,6 +60,7 @@ export type Listing = {
   company_id: string | null;
   units: number;
   shipping_cost: number;
+  shipping_source?: string | null;
   fee_percent: number | null;
   fee_fixed: number | null;
   target_margin: number;

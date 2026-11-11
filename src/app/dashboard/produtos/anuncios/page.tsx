@@ -90,6 +90,27 @@ export default function AnunciosPage() {
   }, [anuncios, prodPorId, empPorId, empresaPadrao, busca, filtro, mps]);
 
   /* ---------- Importação do Mercado Livre ---------- */
+  async function puxarFrete() {
+    setErro("");
+    setAviso("");
+    setTrabalhando(true);
+    try {
+      const r = await apiFetch<{ atualizados: number; semDados: number; gratisParaComprador: number; total: number }>("/api/ml/frete", {
+        method: "POST",
+        body: JSON.stringify({ forcar: true }),
+      });
+      setAviso(
+        `Frete atualizado em ${r.atualizados} de ${r.total} anúncios (${r.gratisParaComprador} sem frete grátis, em que o comprador paga). ` +
+          (r.semDados > 0 ? `${r.semDados} ainda sem vendas para calcular: sincronize os pedidos em Pedidos ou Integrações e tente de novo.` : "")
+      );
+      await carregar();
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setTrabalhando(false);
+    }
+  }
+
   async function importar() {
     setErro("");
     setAviso("");
@@ -190,6 +211,9 @@ export default function AnunciosPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {progresso && <span className="font-mono text-xs text-slate-500">{progresso}</span>}
+          <button className="btn-ghost" onClick={puxarFrete} disabled={trabalhando || importando}>
+            Puxar frete do Mercado Livre
+          </button>
           <button className="btn-ghost" onClick={rodarAutomaticos} disabled={trabalhando || importando}>
             Rodar preço automático ({totalAuto})
           </button>
@@ -344,12 +368,13 @@ export default function AnunciosPage() {
                     className="input w-20 py-1"
                     inputMode="decimal"
                     defaultValue={campo(Number(l.shipping_cost))}
-                    title="Frete médio que você paga por venda"
+                    title={l.shipping_source === "ml" ? "Frete puxado do Mercado Livre (média do frete real das últimas vendas)" : "Frete médio que você paga por venda"}
                     onBlur={(e) => {
                       const v = num(e.target.value);
-                      if (v !== Number(l.shipping_cost)) salvar(l, { shipping_cost: v });
+                      if (v !== Number(l.shipping_cost)) salvar(l, { shipping_cost: v, shipping_source: "manual" });
                     }}
                   />
+                  {l.shipping_source === "ml" && <div className="mt-0.5 font-mono text-[10px] text-emerald-700">ML</div>}
                 </td>
                 <td className="td text-slate-700">{a ? brl(a.imposto) : "—"}</td>
                 <td className={`td font-medium ${a && a.lucro < 0 ? "text-red-700" : "text-emerald-800"}`}>{a ? brl(a.lucro) : "—"}</td>

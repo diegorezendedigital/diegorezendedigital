@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { getAccessToken, getConnection, mlGet } from "@/lib/server/ml";
 import { calcularLucro } from "@/lib/pricing";
+import { atualizarFretes } from "@/lib/server/frete";
 import type { Company, Product } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -283,6 +284,11 @@ export async function POST(req: Request) {
         .update({ last_synced_at: new Date().toISOString() })
         .eq("store_id", storeId)
         .eq("ml_user_id", conn.ml_user_id);
+      try {
+        await atualizarFretes(storeId);
+      } catch {
+        /* o frete dos anúncios é só uma estimativa; não derruba a sincronização */
+      }
     }
 
     return NextResponse.json({

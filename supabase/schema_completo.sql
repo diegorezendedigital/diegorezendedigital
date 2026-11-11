@@ -427,3 +427,7 @@ notify pgrst, 'reload schema';
 -- Nome que o usuário dá a cada loja/conta conectada (aparece na tela Integrações)
 alter table public.ml_connections add column if not exists store_name text;
 notify pgrst, 'reload schema';
+
+-- De onde veio o frete do anúncio: 'ml' (puxado do Mercado Livre) ou 'manual' (digitado por você)
+alter table public.listings add column if not exists shipping_source text;
+notify pgrst, 'reload schema';
