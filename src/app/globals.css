@@ -41,7 +41,7 @@
     @apply font-display text-3xl font-semibold tracking-tight text-slate-900;
   }
   .badge {
-    @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold;
+    @apply inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold;
   }
 }
 
