@@ -261,6 +261,16 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ error: e instanceof Error ? e.message : "Erro ao sincronizar" }, { status: 500 });
+    const msg = e instanceof Error ? e.message : "Erro ao sincronizar";
+    if (/UNAUTHORIZED|forbidden/i.test(msg)) {
+      return NextResponse.json(
+        {
+          error:
+            "O Mercado Livre negou o acesso aos pedidos. No DevCenter do seu aplicativo, em Permissões, ative a leitura de \"Vendas e envios\" (pedidos) e depois desconecte e conecte a conta de novo. (" + msg + ")",
+        },
+        { status: 400 }
+      );
+    }
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
