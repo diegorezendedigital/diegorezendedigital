@@ -81,7 +81,7 @@ function PainelPromos({ r, carregando, onAtualizar }: { r: Resumo | null; carreg
     ? [
         { nome: "Para entrar", valor: r.candidatos, cor: "#B7A8FF" },
         { nome: "Participando", valor: r.participando, cor: "#5B3DF5" },
-        { nome: "Aguardando / programadas", valor: r.aguardando, cor: "#FFB938" },
+        { nome: "Aguardando/programadas", valor: r.aguardando, cor: "#FFB938" },
       ]
     : [];
   const soma = partes.reduce((a, p) => a + p.valor, 0);
@@ -106,7 +106,7 @@ function PainelPromos({ r, carregando, onAtualizar }: { r: Resumo | null; carreg
       {!r ? (
         <p className="text-sm text-slate-500">{carregando ? "Contando os anúncios de todas as promoções no Mercado Livre…" : "Não foi possível montar o resumo agora. Clique em “Atualizar resumo”."}</p>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+        <div className="grid gap-6 lg:grid-cols-[minmax(380px,30%)_1fr]">
           <div className="flex items-center gap-4">
             <div className="relative h-[150px] w-[150px] shrink-0">
               <svg viewBox="0 0 160 160" className="h-[150px] w-[150px] -rotate-90" role="img" aria-label="Anúncios por situação nas promoções">
@@ -124,11 +124,11 @@ function PainelPromos({ r, carregando, onAtualizar }: { r: Resumo | null; carreg
                 <span className="text-[11px] text-slate-500">de aceite</span>
               </div>
             </div>
-            <ul className="space-y-1.5 text-sm">
+            <ul className="min-w-0 flex-1 space-y-2 text-sm">
               {partes.map((p) => (
                 <li key={p.nome} className="flex items-center gap-2">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.cor }} />
-                  <span>{p.nome}</span>
+                  <span className="flex-1">{p.nome}</span>
                   <span className="font-mono text-xs text-slate-500">{p.valor}</span>
                 </li>
               ))}
