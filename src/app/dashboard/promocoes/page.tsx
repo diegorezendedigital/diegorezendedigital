@@ -183,7 +183,8 @@ export default function PromocoesPage() {
   const [soBonus, setSoBonus] = useState(false);
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [carregandoResumo, setCarregandoResumo] = useState(false);
-  const [porAnuncio, setPorAnuncio] = useState<PorAnuncio[]>([]);
+  const [cachePromos, setCachePromos] = useState<Record<string, PorAnuncio>>({});
+  const [qtdVis, setQtdVis] = useState(20);
   const [buscandoAnuncio, setBuscandoAnuncio] = useState(false);
   const [buscaAtiva, setBuscaAtiva] = useState("");
   const [erroAnuncio, setErroAnuncio] = useState("");
@@ -332,14 +333,39 @@ export default function PromocoesPage() {
     }
   }
 
+  // Clicar numa promoção filtra a lista só por ela; clicar de novo volta a mostrar todos os anúncios.
   async function abrir(ml_user_id: string, promo: Promo) {
+    if (aberta?.promo.id === promo.id && aberta.ml_user_id === ml_user_id) {
+      setAberta(null);
+      setItens([]);
+      return;
+    }
     setAberta({ ml_user_id, promo });
     setItens([]);
     setTotal(null);
     setDepois(null);
     setPrecos({});
     setConfirmaLote(false);
-    await carregarItens(ml_user_id, promo, null, true);
+    setErro("");
+    setCarregandoItens(true);
+    try {
+      let after: string | null = null;
+      for (let pg = 0; pg < 60; pg++) {
+        const r: { itens: Item[]; total: number | null; search_after: string | null } = await apiFetch("/api/ml/promocoes/itens", {
+          method: "POST",
+          body: JSON.stringify({ ml_user_id, promotion_id: promo.id, promotion_type: promo.type, search_after: after }),
+        });
+        setItens((l) => (pg === 0 ? r.itens : [...l, ...r.itens]));
+        setTotal(r.total);
+        after = r.search_after;
+        setDepois(after);
+        if (!after || r.itens.length === 0) break;
+      }
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setCarregandoItens(false);
+    }
   }
 
   async function carregarItens(ml_user_id: string, promo: Promo, after: string | null, zerar: boolean) {
@@ -378,7 +404,7 @@ export default function PromocoesPage() {
         body: JSON.stringify({ ml_user_id: ctx.ml_user_id, item_id: i.id, promotion_id: ctx.promo.id, promotion_type: ctx.promo.type, deal_price: preco }),
       });
       setItens((l) => l.map((x) => (x.id === i.id && ctx === aberta ? { ...x, status: "started", price: preco } : x)));
-      setPorAnuncio((l) => l.map((g) => (g.item_id === i.id ? { ...g, promocoes: g.promocoes.map((x) => (x.promo_id === ctx.promo.id ? { ...x, status: "started", price: preco } : x)) } : g)));
+      setCachePromos((c) => (c[i.id] ? { ...c, [i.id]: { ...c[i.id], promocoes: c[i.id].promocoes.map((x) => (x.promo_id === ctx.promo.id ? { ...x, status: "started", price: preco } : x)) } } : c));
       return true;
     } catch (e) {
       setErro(`${i.id}: ${mensagemErro(e)}`);
@@ -406,7 +432,7 @@ export default function PromocoesPage() {
         body: JSON.stringify({ ml_user_id: ctx.ml_user_id, item_id: i.id, promotion_id: ctx.promo.id, promotion_type: ctx.promo.type }),
       });
       setItens((l) => l.map((x) => (x.id === i.id && ctx === aberta ? { ...x, status: "candidate" } : x)));
-      setPorAnuncio((l) => l.map((g) => (g.item_id === i.id ? { ...g, promocoes: g.promocoes.map((x) => (x.promo_id === ctx.promo.id ? { ...x, status: "candidate" } : x)) } : g)));
+      setCachePromos((c) => (c[i.id] ? { ...c, [i.id]: { ...c[i.id], promocoes: c[i.id].promocoes.map((x) => (x.promo_id === ctx.promo.id ? { ...x, status: "candidate" } : x)) } } : c));
     } catch (e) {
       setErro(`${i.id}: ${mensagemErro(e)}`);
     } finally {
@@ -423,7 +449,7 @@ export default function PromocoesPage() {
       if (termos.length === 0) return true;
       const a = porItem.get(i.id);
       const skuProd = a?.product_id ? prodPorId.get(a.product_id)?.sku ?? "" : "";
-      const texto = `${a?.title ?? ""} ${i.id} ${a?.sku ?? ""} ${skuProd}`.toLowerCase();
+      const texto = `${a?.title ?? ""} ${i.id} ${a?.sku ?? ""} ${skuProd} ${a?.family_id ?? ""} ${a?.family_name ?? ""} ${a?.user_product_id ?? ""}`.toLowerCase();
       return termos.some((t) => texto.includes(t));
     });
   }, [itens, termos, soBonus, porItem, prodPorId]);
@@ -431,55 +457,70 @@ export default function PromocoesPage() {
     const t = setTimeout(() => setBuscaAtiva(busca), 500);
     return () => clearTimeout(t);
   }, [busca]);
+  // Lista de anúncios (todos, ou os que casam com a busca), com os irmãos de família de quem casou
   const anunciosBuscados = useMemo(() => {
     const ts = buscaAtiva.split(/[,\n]/).map((x) => x.trim().toLowerCase()).filter(Boolean);
-    if (ts.length === 0) return [] as Listing[];
-    const diretos = anuncios.filter((a) => {
-      if (!a.ml_user_id) return false;
-      const skuProd = a.product_id ? prodPorId.get(a.product_id)?.sku ?? "" : "";
-      const texto = `${a.title} ${a.external_id} ${a.sku ?? ""} ${skuProd} ${a.family_name ?? ""}`.toLowerCase();
-      return ts.some((t) => texto.includes(t));
-    });
-    // Junta os anúncios da mesma família (mesmo modelo, outras cores e tamanhos)
-    const familias = new Set(diretos.map((a) => a.family_id).filter(Boolean));
-    const irmaos = familias.size > 0 ? anuncios.filter((a) => a.ml_user_id && a.family_id && familias.has(a.family_id) && !diretos.includes(a)) : [];
-    return [...diretos, ...irmaos].sort((x, y) => (x.family_id ?? "").localeCompare(y.family_id ?? "") || (x.sku ?? "").localeCompare(y.sku ?? "")).slice(0, 60);
-  }, [buscaAtiva, anuncios, prodPorId]);
-  useEffect(() => {
-    if (anunciosBuscados.length === 0) {
-      setPorAnuncio([]);
-      return;
+    const ml = anuncios.filter((a) => a.ml_user_id);
+    let lista = ml;
+    if (ts.length > 0) {
+      const diretos = ml.filter((a) => {
+        const skuProd = a.product_id ? prodPorId.get(a.product_id)?.sku ?? "" : "";
+        const texto = `${a.title} ${a.external_id} ${a.sku ?? ""} ${skuProd} ${a.family_id ?? ""} ${a.family_name ?? ""} ${a.user_product_id ?? ""}`.toLowerCase();
+        return ts.some((t) => texto.includes(t));
+      });
+      const familias = new Set(diretos.map((a) => a.family_id).filter(Boolean));
+      const irmaos = familias.size > 0 ? ml.filter((a) => a.family_id && familias.has(a.family_id) && !diretos.includes(a)) : [];
+      lista = [...diretos, ...irmaos];
     }
+    return [...lista].sort((x, y) => (x.family_id ?? "~").localeCompare(y.family_id ?? "~") || (x.sku ?? "").localeCompare(y.sku ?? "") || x.title.localeCompare(y.title));
+  }, [buscaAtiva, anuncios, prodPorId]);
+  useEffect(() => setQtdVis(20), [buscaAtiva]);
+  const visiveisAnuncios = useMemo(() => anunciosBuscados.slice(0, qtdVis), [anunciosBuscados, qtdVis]);
+  // Busca no Mercado Livre as promoções só dos anúncios que estão na tela (20 por vez), guardando o resultado
+  useEffect(() => {
+    if (aberta) return;
+    const faltam = visiveisAnuncios.filter((a) => !cachePromos[a.external_id]);
+    if (faltam.length === 0) return;
     let vivo = true;
     setBuscandoAnuncio(true);
     setErroAnuncio("");
     apiFetch<{ anuncios: { item_id: string; promocoes: Omit<EntradaPromo, "id">[]; erro?: string }[] }>("/api/ml/promocoes/anuncio", {
       method: "POST",
-      body: JSON.stringify({ anuncios: anunciosBuscados.map((a) => ({ ml_user_id: a.ml_user_id, item_id: a.external_id })) }),
+      body: JSON.stringify({ anuncios: faltam.map((a) => ({ ml_user_id: a.ml_user_id, item_id: a.external_id })) }),
     })
       .then((r) => {
         if (!vivo) return;
-        setPorAnuncio(
-          r.anuncios.map((g) => ({
-            item_id: g.item_id,
-            ml_user_id: anunciosBuscados.find((a) => a.external_id === g.item_id)?.ml_user_id ?? "",
-            erro: g.erro,
-            promocoes: g.promocoes.map((p) => ({ ...p, id: g.item_id }) as EntradaPromo),
-          }))
-        );
+        setCachePromos((c) => {
+          const n = { ...c };
+          r.anuncios.forEach((g) => {
+            n[g.item_id] = {
+              item_id: g.item_id,
+              ml_user_id: faltam.find((a) => a.external_id === g.item_id)?.ml_user_id ?? "",
+              erro: g.erro,
+              promocoes: g.promocoes.map((p) => ({ ...p, id: g.item_id }) as EntradaPromo),
+            };
+          });
+          return n;
+        });
       })
       .catch((e) => {
         if (!vivo) return;
         setErroAnuncio(mensagemErro(e));
-        setPorAnuncio(anunciosBuscados.map((a) => ({ item_id: a.external_id, ml_user_id: a.ml_user_id ?? "", promocoes: [], erro: "Não consegui consultar as promoções deste anúncio agora." })));
+        setCachePromos((c) => {
+          const n = { ...c };
+          faltam.forEach((a) => (n[a.external_id] = { item_id: a.external_id, ml_user_id: a.ml_user_id ?? "", promocoes: [], erro: "Não consegui consultar as promoções deste anúncio agora." }));
+          return n;
+        });
       })
       .finally(() => vivo && setBuscandoAnuncio(false));
     return () => {
       vivo = false;
     };
-  }, [anunciosBuscados]);
+  }, [visiveisAnuncios, aberta]); // eslint-disable-line react-hooks/exhaustive-deps
+  const porAnuncio = useMemo(() => visiveisAnuncios.map((a) => cachePromos[a.external_id]).filter(Boolean) as PorAnuncio[], [visiveisAnuncios, cachePromos]);
   const qtdBonus = useMemo(() => itens.filter((i) => Number(i.meli_percentage) > 0).length, [itens]);
   const promoCasa = (nome: string) => termos.length === 0 || termos.some((t) => nome.toLowerCase().includes(t));
+  const algumaPromoCasa = termos.length > 0 && (contas ?? []).some((c) => c.promocoes.some((p) => promoCasa(p.name)));
 
   // Candidatos cuja margem, no preço escolhido, atinge a meta do anúncio
   const lucrativos = itensFiltrados.filter((i) => {
@@ -570,10 +611,10 @@ export default function PromocoesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {c.promocoes.filter((p) => promoCasa(p.name) || (aberta?.promo.id === p.id && aberta.ml_user_id === c.ml_user_id)).map((p) => {
+                  {c.promocoes.filter((p) => !algumaPromoCasa || promoCasa(p.name) || (aberta?.promo.id === p.id && aberta.ml_user_id === c.ml_user_id)).map((p) => {
                     const ativa = aberta?.promo.id === p.id && aberta.ml_user_id === c.ml_user_id;
                     return (
-                      <tr key={p.id} className={`border-b border-slate-100 ${ativa ? "bg-brand-light" : ""}`}>
+                      <tr key={p.id} onClick={() => abrir(c.ml_user_id, p)} className={`cursor-pointer border-b border-slate-100 hover:bg-slate-50 ${ativa ? "bg-brand-light" : ""}`}>
                         <td className="p-3 font-medium">{p.name}</td>
                         <td className="p-3">{TIPOS[p.type] ?? p.type}</td>
                         <td className="p-3">{STATUS_PROMO[p.status] ?? p.status}</td>
@@ -581,7 +622,7 @@ export default function PromocoesPage() {
                         <td className="p-3">{dia(p.finish_date)}</td>
                         <td className="p-3">{dia(p.deadline_date)}</td>
                         <td className="p-3 text-right">
-                          <button className="btn-ghost" onClick={() => abrir(c.ml_user_id, p)}>Ver anúncios</button>
+                          <button className={ativa ? "btn" : "btn-ghost"} onClick={(e) => { e.stopPropagation(); abrir(c.ml_user_id, p); }}>{ativa ? "Mostrando só esta" : "Filtrar anúncios"}</button>
                         </td>
                       </tr>
                     );
@@ -593,14 +634,16 @@ export default function PromocoesPage() {
         </section>
       ))}
 
-      {buscaAtiva.trim() !== "" && anunciosBuscados.length === 0 && anuncios.length > 0 && (
+      {!aberta && buscaAtiva.trim() !== "" && anunciosBuscados.length === 0 && anuncios.length > 0 && (
         <p className="text-sm text-slate-500">Nenhum anúncio com esse SKU, título ou código MLB entre os {anuncios.length} anúncios importados.</p>
       )}
       {erroAnuncio && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erroAnuncio}</p>}
-      {(buscandoAnuncio || porAnuncio.length > 0) && (
+      {!aberta && anunciosBuscados.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Promoções dos anúncios encontrados <span className="text-sm font-normal text-slate-500">· {anunciosBuscados.length}{anunciosBuscados.length === 60 ? "+ (mostrando os 60 primeiros)" : ""}</span></h2>
-          {buscandoAnuncio && porAnuncio.length === 0 && <p className="text-sm text-slate-500">Buscando as promoções desses anúncios no Mercado Livre…</p>}
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold">Anúncios e suas promoções <span className="text-sm font-normal text-slate-500">· {anunciosBuscados.length} anúncio(s){buscaAtiva.trim() ? " encontrados" : ""} · clique numa promoção acima para ver só ela</span></h2>
+            {buscandoAnuncio && <span className="text-xs text-slate-500">Consultando promoções no Mercado Livre…</span>}
+          </div>
           {porAnuncio.map((g) => {
             const a = porItem.get(g.item_id);
             const conta = contas.find((x) => x.ml_user_id === g.ml_user_id)?.conta ?? "";
@@ -613,6 +656,7 @@ export default function PromocoesPage() {
                     <span className="font-sans text-xs text-slate-600">{conta}</span>
                     <span>· {g.item_id}</span>
                     {a?.sku && <span>· SKU {a.sku}</span>}
+                    {a?.family_id && <span>· família {a.family_id}</span>}
                     <span>· preço atual {brl(Number(a?.price ?? 0))}</span>
                     <span>· {g.promocoes.length} promoç{g.promocoes.length === 1 ? "ão" : "ões"}</span>
                   </div>
@@ -689,6 +733,11 @@ export default function PromocoesPage() {
               </div>
             );
           })}
+          {qtdVis < anunciosBuscados.length && (
+            <button className="btn-ghost" onClick={() => setQtdVis((n) => n + 20)}>
+              Mostrar mais 20 anúncios ({anunciosBuscados.length - qtdVis} restantes)
+            </button>
+          )}
         </section>
       )}
 
@@ -764,6 +813,8 @@ export default function PromocoesPage() {
                           <span title="Mercado Livre" className="inline-flex h-4 min-w-[20px] items-center justify-center rounded-full bg-[#FFE600] px-1 text-[9px] font-bold text-[#333]">ML</span>
                           <span className="font-sans text-xs text-slate-600">{contas.find((x) => x.ml_user_id === aberta.ml_user_id)?.conta ?? ""}</span>
                           <span>· {i.id}</span>
+                          {a?.sku && <span>· SKU {a.sku}</span>}
+                          {a?.family_id && <span>· família {a.family_id}</span>}
                         </div>
                       </td>
                       <td className="p-3 text-right">{brl(a ? Number(a.price) : i.original_price ?? 0)}</td>
