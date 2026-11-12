@@ -279,6 +279,19 @@ export default function PromocoesPage() {
     return { freteReal: freteReal != null, repasse: preco - r.taxaMarketplace - e.frete + bonus, bonus, taxa: r.taxaMarketplace, imposto: r.impostos, frete: e.frete, custo: e.custo, semCusto, lucro, margem, ok: !semCusto && margem >= Number(a.target_margin) };
   }
 
+  // Margem mínima da promoção que você definiu no produto do armazém (informativo)
+  const metaDoSku = (a?: Listing) => {
+    const prod = a?.product_id ? prodPorId.get(a.product_id) : undefined;
+    if (!prod) return <span className="text-slate-400">—</span>;
+    const m = prod.promo_min_margin != null ? Number(prod.promo_min_margin) : null;
+    return (
+      <span title={prod.promo_auto ? "Promoção automática ligada neste SKU" : "Promoção automática desligada neste SKU"}>
+        {m != null ? pct(m) : <span className="text-slate-500">padrão 10%</span>}
+        <div className={`font-mono text-[10px] ${prod.promo_auto ? "text-emerald-700" : "text-slate-400"}`}>{prod.promo_auto ? "auto ligado" : "auto desligado"}</div>
+      </span>
+    );
+  };
+
   const precoEscolhido = (i: Item): number => {
     const digitado = precos[i.id];
     if (digitado !== undefined && digitado !== "") return num(digitado);
@@ -831,6 +844,7 @@ export default function PromocoesPage() {
                         <th className="p-3 text-right">Repasse</th>
                         <th className="p-3 text-right">Imposto</th>
                         <th className="p-3 text-right">Custo</th>
+<th className="p-3 text-right" title="Margem mínima da promoção definida no produto do armazém (Produtos armazém → Margem mín. promo %)">Meta do SKU</th>
                         <th className="p-3 text-right">Sobra</th>
                         <th className="p-3 text-right">Margem</th>
                         <th className="p-3">Status</th>
@@ -869,6 +883,7 @@ export default function PromocoesPage() {
                             <td className="p-3 text-right font-medium text-slate-900">{s ? brl(s.repasse) : "—"}{s && <Sub v={s.repasse} base={preco} />}</td>
                             <td className="p-3 text-right text-slate-700">{s ? brl(s.imposto) : "—"}{s && <Sub v={s.imposto} base={preco} />}</td>
                             <td className="p-3 text-right text-slate-700">{s && !s.semCusto ? brl(s.custo) : <span className="text-amber-700">sem custo</span>}{s && !s.semCusto && <Sub v={s.custo} base={preco} />}</td>
+<td className="p-3 text-right">{metaDoSku(a)}</td>
                             <td className={`p-3 text-right font-semibold ${s && !s.semCusto && s.lucro < 0 ? "text-red-700" : "text-emerald-800"}`}>{s && !s.semCusto ? `${s.lucro < 0 ? "− " : "+ "}${brl(Math.abs(s.lucro))}` : "—"}</td>
                             <td className={`p-3 text-right ${s && !s.ok ? "text-red-700" : ""}`}>
                               {s && !s.semCusto ? pct(s.margem) : "—"}
@@ -944,6 +959,7 @@ export default function PromocoesPage() {
                   <th className="p-3 text-right" title="Preço na promoção – taxa – frete + bônus do Mercado Livre: o que o Mercado Livre libera para você">Repasse</th>
                   <th className="p-3 text-right">Imposto</th>
                   <th className="p-3 text-right">Custo</th>
+<th className="p-3 text-right" title="Margem mínima da promoção definida no produto do armazém (Produtos armazém → Margem mín. promo %)">Meta do SKU</th>
                   <th className="p-3 text-right">Sobra</th>
                   <th className="p-3 text-right">Margem</th>
                   <th className="p-3">Status</th>
@@ -953,7 +969,7 @@ export default function PromocoesPage() {
               <tbody>
                 {itensFiltrados.length === 0 && !carregandoItens && (
                   <tr>
-                    <td className="p-4 text-slate-500" colSpan={13}>{termos.length > 0 || soBonus ? "Nenhum anúncio carregado bate com o filtro." + (depois ? " Clique em “Carregar mais anúncios” para procurar nos demais." : "") : "Nenhum anúncio nesta promoção."}</td>
+                    <td className="p-4 text-slate-500" colSpan={14}>{termos.length > 0 || soBonus ? "Nenhum anúncio carregado bate com o filtro." + (depois ? " Clique em “Carregar mais anúncios” para procurar nos demais." : "") : "Nenhum anúncio nesta promoção."}</td>
                   </tr>
                 )}
                 {itensFiltrados.map((i) => {
@@ -1007,6 +1023,7 @@ export default function PromocoesPage() {
                       </td>
                       <td className="p-3 text-right text-slate-700">{s ? brl(s.imposto) : "—"}{s && <Sub v={s.imposto} base={preco} />}</td>
                       <td className="p-3 text-right text-slate-700">{s && !s.semCusto ? brl(s.custo) : <span className="text-amber-700">sem custo</span>}{s && !s.semCusto && <Sub v={s.custo} base={preco} />}</td>
+<td className="p-3 text-right">{metaDoSku(a)}</td>
                       <td className={`p-3 text-right font-semibold ${s && !s.semCusto && s.lucro < 0 ? "text-red-700" : "text-emerald-800"}`}>
                         {s && !s.semCusto ? `${s.lucro < 0 ? "− " : "+ "}${brl(Math.abs(s.lucro))}` : "—"}
                       </td>
