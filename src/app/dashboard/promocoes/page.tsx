@@ -189,6 +189,9 @@ export default function PromocoesPage() {
   const [buscaAtiva, setBuscaAtiva] = useState("");
   const [erroAnuncio, setErroAnuncio] = useState("");
   const [importando, setImportando] = useState(false);
+  const [procurando, setProcurando] = useState(false);
+  const [achadosML, setAchadosML] = useState<{ id: string; titulo: string; sku: string; status: string; family_id: string | null; user_product_id: string | null; conta: string }[] | null>(null);
+  const [notasML, setNotasML] = useState<string[]>([]);
   const [progresso, setProgresso] = useState("");
 
   const carregarResumo = useCallback(async () => {
@@ -334,6 +337,23 @@ export default function PromocoesPage() {
   }
 
   // Clicar numa promoção filtra a lista só por ela; clicar de novo volta a mostrar todos os anúncios.
+  // Procura direto no Mercado Livre (MLB, SKU, family ID ou user product) e traz para o sistema
+  async function procurarNoML() {
+    setErro("");
+    setProcurando(true);
+    setAchadosML(null);
+    try {
+      const r = await apiFetch<{ encontrados: NonNullable<typeof achadosML>; notas: string[] }>("/api/ml/anuncios/buscar", { method: "POST", body: JSON.stringify({ termo: busca.split(/[,\n]/)[0] }) });
+      setAchadosML(r.encontrados);
+      setNotasML(r.notas);
+      if (r.encontrados.length > 0) await carregar();
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setProcurando(false);
+    }
+  }
+
   async function abrir(ml_user_id: string, promo: Promo) {
     if (aberta?.promo.id === promo.id && aberta.ml_user_id === ml_user_id) {
       setAberta(null);
@@ -635,7 +655,17 @@ export default function PromocoesPage() {
       ))}
 
       {!aberta && buscaAtiva.trim() !== "" && anunciosBuscados.length === 0 && anuncios.length > 0 && (
-        <p className="text-sm text-slate-500">Nenhum anúncio com esse SKU, título ou código MLB entre os {anuncios.length} anúncios importados.</p>
+        <div className="card space-y-2 text-sm text-slate-600">
+          <p>Nenhum anúncio com esse SKU, título, MLB ou família entre os {anuncios.length} anúncios importados.</p>
+          <button className="btn w-fit" onClick={procurarNoML} disabled={procurando}>{procurando ? "Procurando no Mercado Livre…" : "Procurar direto no Mercado Livre e importar"}</button>
+          {achadosML && achadosML.length === 0 && <p className="text-amber-700">O Mercado Livre não devolveu nada para “{busca.split(/[,\n]/)[0].trim()}”.</p>}
+          {notasML.length > 0 && <p className="text-xs text-slate-500">{notasML.join(" · ")}</p>}
+        </div>
+      )}
+      {achadosML && achadosML.length > 0 && (
+        <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">
+          {achadosML.length} anúncio(s) trazidos do Mercado Livre para o sistema (ex.: {achadosML[0].id} · SKU {achadosML[0].sku || "—"} · família {achadosML[0].family_id ?? "—"}). Pesquise de novo para ver as promoções.
+        </p>
       )}
       {erroAnuncio && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erroAnuncio}</p>}
       {!aberta && anunciosBuscados.length > 0 && (
