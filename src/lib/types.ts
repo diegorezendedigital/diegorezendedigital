@@ -52,6 +52,9 @@ export type Listing = {
   marketplace_id: string;
   external_id: string;
   sku?: string | null;
+  user_product_id?: string | null;
+  family_id?: string | null;
+  family_name?: string | null;
   ml_user_id: string | null;
   title: string;
   permalink: string | null;

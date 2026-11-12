@@ -19,6 +19,9 @@ type ItemML = {
   category_id?: string;
   listing_type_id?: string;
   seller_custom_field?: string | null;
+  user_product_id?: string | null;
+  family_id?: string | number | null;
+  family_name?: string | null;
   attributes?: { id?: string; value_name?: string | null }[];
   variations?: { seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[] }[];
 };
@@ -108,6 +111,9 @@ export async function POST(req: Request) {
         category_id: it.category_id ?? null,
         listing_type_id: it.listing_type_id ?? null,
         ...(skuDoItem(it) ? { sku: skuDoItem(it) } : {}),
+        ...(it.user_product_id ? { user_product_id: String(it.user_product_id) } : {}),
+        ...(it.family_id ? { family_id: String(it.family_id) } : {}),
+        ...(it.family_name ? { family_name: String(it.family_name) } : {}),
         fee_percent: taxas.get(it.id)?.pct ?? null,
         fee_fixed: taxas.get(it.id)?.fixo ?? null,
         last_synced_at: agora,

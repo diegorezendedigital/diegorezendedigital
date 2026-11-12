@@ -434,14 +434,16 @@ export default function PromocoesPage() {
   const anunciosBuscados = useMemo(() => {
     const ts = buscaAtiva.split(/[,\n]/).map((x) => x.trim().toLowerCase()).filter(Boolean);
     if (ts.length === 0) return [] as Listing[];
-    return anuncios
-      .filter((a) => {
-        if (!a.ml_user_id) return false;
-        const skuProd = a.product_id ? prodPorId.get(a.product_id)?.sku ?? "" : "";
-        const texto = `${a.title} ${a.external_id} ${a.sku ?? ""} ${skuProd}`.toLowerCase();
-        return ts.some((t) => texto.includes(t));
-      })
-      .slice(0, 60);
+    const diretos = anuncios.filter((a) => {
+      if (!a.ml_user_id) return false;
+      const skuProd = a.product_id ? prodPorId.get(a.product_id)?.sku ?? "" : "";
+      const texto = `${a.title} ${a.external_id} ${a.sku ?? ""} ${skuProd} ${a.family_name ?? ""}`.toLowerCase();
+      return ts.some((t) => texto.includes(t));
+    });
+    // Junta os anúncios da mesma família (mesmo modelo, outras cores e tamanhos)
+    const familias = new Set(diretos.map((a) => a.family_id).filter(Boolean));
+    const irmaos = familias.size > 0 ? anuncios.filter((a) => a.ml_user_id && a.family_id && familias.has(a.family_id) && !diretos.includes(a)) : [];
+    return [...diretos, ...irmaos].sort((x, y) => (x.family_id ?? "").localeCompare(y.family_id ?? "") || (x.sku ?? "").localeCompare(y.sku ?? "")).slice(0, 60);
   }, [buscaAtiva, anuncios, prodPorId]);
   useEffect(() => {
     if (anunciosBuscados.length === 0) {

@@ -35,6 +35,8 @@ export default function AnunciosPage() {
   const [mpAtivo, setMpAtivo] = useState("mercado_livre");
   const [mapa, setMapa] = useState<"todos" | "nao" | "sim">("todos");
   const [busca, setBusca] = useState("");
+  const [familia, setFamilia] = useState<string | null>(null);
+  const [agrupar, setAgrupar] = useState(false);
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [importando, setImportando] = useState(false);
@@ -86,16 +88,21 @@ export default function AnunciosPage() {
   };
 
   const linhas = useMemo(() => {
-    const q = busca.trim().toLowerCase();
-    return anuncios
-      .filter((l) => l.marketplace_id === mpAtivo)
+    const termos = busca.split(/[,\n]/).map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const lista = anuncios.filter((l) => l.marketplace_id === mpAtivo);
+    if (agrupar) lista.sort((x, y) => (x.family_id ?? "~").localeCompare(y.family_id ?? "~") || (x.sku ?? "").localeCompare(y.sku ?? ""));
+    return lista
       .map((l) => {
         const prod = l.product_id ? prodPorId.get(l.product_id) : undefined;
         const emp = (l.company_id && empPorId.get(l.company_id)) || empresaPadrao;
         return { l, prod, emp, a: analisarAnuncio(l, prod, emp, taxaPadrao(l)) };
       })
       .filter(({ l, a }) => {
-        if (q && !l.title.toLowerCase().includes(q) && !l.external_id.toLowerCase().includes(q)) return false;
+        if (termos.length > 0) {
+          const texto = `${l.title} ${l.external_id} ${l.sku ?? ""} ${l.family_name ?? ""} ${(l.product_id ? prodPorId.get(l.product_id)?.sku : "") ?? ""}`.toLowerCase();
+          if (!termos.some((t) => texto.includes(t))) return false;
+        }
+        if (familia && l.family_id !== familia) return false;
         if (mapa === "nao" && l.product_id) return false;
         if (mapa === "sim" && !l.product_id) return false;
         if (filtro === "sem_produto") return !l.product_id;
@@ -103,7 +110,7 @@ export default function AnunciosPage() {
         if (filtro === "margem_baixa") return !!a && a.margem < Number(l.target_margin);
         return true;
       });
-  }, [anuncios, prodPorId, empPorId, empresaPadrao, busca, filtro, mps, mpAtivo, mapa]);
+  }, [anuncios, prodPorId, empPorId, empresaPadrao, busca, filtro, mps, mpAtivo, mapa, familia, agrupar]);
 
   // Abas: uma por marketplace; dentro dela, Todos / Não mapeado / Mapeado (com contagem)
   const abasMp = useMemo(() => {
@@ -359,7 +366,9 @@ export default function AnunciosPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <input className="input w-64" placeholder="Buscar por título ou código MLB" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          <input className="input w-80" placeholder="Buscar por título, SKU, família ou código MLB (vírgula separa várias)" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          <label className="flex items-center gap-1.5 text-sm text-slate-600"><input type="checkbox" checked={agrupar} onChange={(e) => setAgrupar(e.target.checked)} /> Agrupar por família</label>
+          {familia && <button type="button" className="text-sm font-medium text-brand hover:underline" onClick={() => setFamilia(null)}>Sair da família</button>}
           <select className="input w-52" value={filtro} onChange={(e) => setFiltro(e.target.value as Filtro)}>
             <option value="todos">Todos os anúncios</option>
             <option value="sem_produto">Sem produto ligado</option>
@@ -423,6 +432,11 @@ export default function AnunciosPage() {
                       <p className="font-mono text-[11px] text-slate-500">
                         {l.external_id}
                         {l.sku ? ` · SKU ${l.sku}` : ""}
+                        {l.family_id && (
+                          <button type="button" className="ml-1 rounded bg-brand-light px-1.5 py-0.5 font-sans text-[10px] font-semibold text-brand hover:underline" title={`Família: ${l.family_name ?? l.family_id}. Clique para ver só esta família`} onClick={() => setFamilia(familia === l.family_id ? null : l.family_id ?? null)}>
+                            família · {anuncios.filter((x) => x.family_id === l.family_id).length}
+                          </button>
+                        )}
                         {l.ml_user_id && contas.length > 1 ? ` · ${contas.find((c) => c.ml_user_id === l.ml_user_id)?.nickname ?? l.ml_user_id}` : ""}
                       </p>
                     </div>
