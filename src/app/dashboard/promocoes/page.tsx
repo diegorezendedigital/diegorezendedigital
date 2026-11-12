@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch, supabase } from "@/lib/supabase/client";
 import { AcaoPromo, Company, Listing, Marketplace, Product, brl, campo, mensagemErro, num, pct } from "@/lib/types";
@@ -189,6 +189,8 @@ export default function PromocoesPage() {
   const [buscaAtiva, setBuscaAtiva] = useState("");
   const [erroAnuncio, setErroAnuncio] = useState("");
   const [importando, setImportando] = useState(false);
+  const [fretePromo, setFretePromo] = useState<Record<string, number>>({});
+  const freteAsked = useRef<Set<string>>(new Set());
   const [procurando, setProcurando] = useState(false);
   const [achadosML, setAchadosML] = useState<{ id: string; titulo: string; sku: string; status: string; family_id: string | null; user_product_id: string | null; conta: string }[] | null>(null);
   const [notasML, setNotasML] = useState<string[]>([]);
@@ -266,10 +268,13 @@ export default function PromocoesPage() {
     // Sem custo cadastrado, taxa, frete e imposto continuam sendo calculados; só lucro e margem ficam em aberto.
     const semCusto = !e;
     if (!e) e = { custo: 0, credito: 0, feePct: pctTaxa, feeFixo: fixo, frete: Number(a.shipping_cost) || 0, empresa: emp ?? null };
+    // Frete real do Mercado Livre naquele preço (o custo muda por faixa de preço)
+    const freteReal = fretePromo[`${a.external_id}|${preco.toFixed(2)}`];
+    if (freteReal != null) e = { ...e, frete: freteReal };
     const r = calcularLucro(preco, e);
     const lucro = r.lucro + bonus;
     const margem = preco > 0 ? (lucro / preco) * 100 : 0;
-    return { repasse: preco - r.taxaMarketplace - e.frete + bonus, bonus, taxa: r.taxaMarketplace, imposto: r.impostos, frete: e.frete, custo: e.custo, semCusto, lucro, margem, ok: !semCusto && margem >= Number(a.target_margin) };
+    return { freteReal: freteReal != null, repasse: preco - r.taxaMarketplace - e.frete + bonus, bonus, taxa: r.taxaMarketplace, imposto: r.impostos, frete: e.frete, custo: e.custo, semCusto, lucro, margem, ok: !semCusto && margem >= Number(a.target_margin) };
   }
 
   const precoEscolhido = (i: Item): number => {
@@ -293,6 +298,20 @@ export default function PromocoesPage() {
       setErro(mensagemErro(e));
     } finally {
       setRodandoAuto(false);
+    }
+  }
+
+  // Pergunta ao Mercado Livre o frete real de cada anúncio no preço da promoção (60 por chamada)
+  async function pedirFrete(pares: { ml_user_id: string; item_id: string; price: number }[]) {
+    const novos = pares.filter((p) => p.price > 0 && p.ml_user_id && !freteAsked.current.has(`${p.item_id}|${p.price.toFixed(2)}`));
+    novos.forEach((p) => freteAsked.current.add(`${p.item_id}|${p.price.toFixed(2)}`));
+    for (let i = 0; i < novos.length; i += 60) {
+      try {
+        const r = await apiFetch<{ fretes: Record<string, number> }>("/api/ml/promocoes/frete", { method: "POST", body: JSON.stringify({ consultas: novos.slice(i, i + 60) }) });
+        setFretePromo((f) => ({ ...f, ...r.fretes }));
+      } catch {
+        /* mantém o frete cadastrado */
+      }
     }
   }
 
@@ -538,6 +557,19 @@ export default function PromocoesPage() {
     };
   }, [visiveisAnuncios, aberta]); // eslint-disable-line react-hooks/exhaustive-deps
   const porAnuncio = useMemo(() => visiveisAnuncios.map((a) => cachePromos[a.external_id]).filter(Boolean) as PorAnuncio[], [visiveisAnuncios, cachePromos]);
+  // Frete real no preço da promoção: dos anúncios da promoção aberta e dos que estão na lista
+  useEffect(() => {
+    if (!aberta || itens.length === 0 || carregandoItens) return;
+    pedirFrete(itens.map((i) => ({ ml_user_id: aberta.ml_user_id, item_id: i.id, price: precoEscolhido(i) })));
+  }, [itens, aberta, carregandoItens]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (aberta) return;
+    const pares: { ml_user_id: string; item_id: string; price: number }[] = [];
+    porAnuncio.forEach((g) =>
+      g.promocoes.forEach((p) => pares.push({ ml_user_id: g.ml_user_id, item_id: g.item_id, price: p.suggested_price ?? p.max_price ?? p.price ?? 0 }))
+    );
+    if (pares.length) pedirFrete(pares);
+  }, [porAnuncio, aberta]); // eslint-disable-line react-hooks/exhaustive-deps
   const qtdBonus = useMemo(() => itens.filter((i) => Number(i.meli_percentage) > 0).length, [itens]);
   const promoCasa = (nome: string) => termos.length === 0 || termos.some((t) => nome.toLowerCase().includes(t));
   const algumaPromoCasa = termos.length > 0 && (contas ?? []).some((c) => c.promocoes.some((p) => promoCasa(p.name)));
@@ -596,7 +628,7 @@ export default function PromocoesPage() {
       <div className="card flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-sm text-slate-600">
           <strong>Promoção automática:</strong> em <Link href="/dashboard/produtos/armazem" className="underline">Produtos armazém</Link>, marque “Promo auto” em cada SKU e defina a margem mínima dele (padrão 10%; pode ser negativa para aceitar prejuízo, ex.: -5).
-          Todo dia o sistema entra sozinho nas promoções do Mercado Livre em que a margem, depois de taxa, frete, imposto e custo, atinge o mínimo. Ele sempre escolhe o maior preço permitido, com menos desconto.
+          Todo dia o sistema entra sozinho nas promoções do Mercado Livre em que a margem, depois de taxa, frete, imposto e custo, atinge o mínimo. Ele entra no preço que entrega exatamente a margem que você definiu (com o frete real do Mercado Livre naquele preço e o bônus do ML); se o preço ficar abaixo do mínimo da promoção, entra no mínimo.
         </p>
         <button className="btn" onClick={rodarAuto} disabled={rodandoAuto}>{rodandoAuto ? "Avaliando…" : "Rodar promoções automáticas agora"}</button>
       </div>
@@ -732,11 +764,11 @@ export default function PromocoesPage() {
                               {dentro ? (
                                 brl(i.price ?? preco)
                               ) : (
-                                <input className="input w-28 py-1" inputMode="decimal" value={precos[chave] ?? (preco > 0 ? campo(preco) : "")} onChange={(e) => setPrecos((p) => ({ ...p, [chave]: e.target.value }))} />
+                                <input className="input w-28 py-1" inputMode="decimal" value={precos[chave] ?? (preco > 0 ? campo(preco) : "")} onChange={(e) => setPrecos((p) => ({ ...p, [chave]: e.target.value }))} onBlur={(e) => pedirFrete([{ ml_user_id: g.ml_user_id, item_id: g.item_id, price: num(e.target.value) }])} />
                               )}
                             </td>
                             <td className="p-3 text-right text-slate-700">{s ? brl(s.taxa) : "—"}{s && <Sub v={s.taxa} base={preco} />}</td>
-                            <td className="p-3 text-right text-slate-700">{s ? brl(s.frete) : "—"}{s && <Sub v={s.frete} base={preco} />}</td>
+                            <td className="p-3 text-right text-slate-700" title={s?.freteReal ? "Frete real consultado no Mercado Livre para este preço" : "Frete cadastrado no anúncio (consultando o Mercado Livre…)"}>{s ? brl(s.frete) : "—"}{s && <Sub v={s.frete} base={preco} />}{s?.freteReal && <div className="font-mono text-[10px] text-emerald-700">ML</div>}</td>
                             <td className="p-3 text-right text-slate-700">{bonus > 0 ? <span className="font-medium text-emerald-700">+ {brl(bonus)}</span> : "—"}{bonus > 0 && <Sub v={bonus} base={preco} />}</td>
                             <td className="p-3 text-right font-medium text-slate-900">{s ? brl(s.repasse) : "—"}{s && <Sub v={s.repasse} base={preco} />}</td>
                             <td className="p-3 text-right text-slate-700">{s ? brl(s.imposto) : "—"}{s && <Sub v={s.imposto} base={preco} />}</td>
@@ -860,11 +892,12 @@ export default function PromocoesPage() {
                             inputMode="decimal"
                             value={precos[i.id] ?? (preco > 0 ? campo(preco) : "")}
                             onChange={(e) => setPrecos((p) => ({ ...p, [i.id]: e.target.value }))}
+                            onBlur={(e) => aberta && pedirFrete([{ ml_user_id: aberta.ml_user_id, item_id: i.id, price: num(e.target.value) }])}
                           />
                         )}
                       </td>
                       <td className="p-3 text-right text-slate-700">{s ? brl(s.taxa) : "—"}{s && <Sub v={s.taxa} base={preco} />}</td>
-                      <td className="p-3 text-right text-slate-700">{s ? brl(s.frete) : "—"}{s && <Sub v={s.frete} base={preco} />}</td>
+                      <td className="p-3 text-right text-slate-700" title={s?.freteReal ? "Frete real consultado no Mercado Livre para este preço" : "Frete cadastrado no anúncio (consultando o Mercado Livre…)"}>{s ? brl(s.frete) : "—"}{s && <Sub v={s.frete} base={preco} />}{s?.freteReal && <div className="font-mono text-[10px] text-emerald-700">ML</div>}</td>
                       <td className="p-3 text-right text-slate-700" title={bonus > 0 ? `O Mercado Livre paga ${Number(i.meli_percentage)}% do preço original (${brl(Number(i.original_price) || Number(a?.price) || 0)})` : "Esta promoção não tem bônus do Mercado Livre"}>
                         {bonus > 0 ? <span className="font-medium text-emerald-700">+ {brl(bonus)}</span> : "—"}
                         {bonus > 0 && <Sub v={bonus} base={preco} />}

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Listing, Product } from "@/lib/types";
-import { calcularLucro } from "@/lib/pricing";
+import { calcularLucro, precoParaMargem } from "@/lib/pricing";
+import { freteML } from "./frete-ml";
 import { entradaDoAnuncio } from "@/lib/anuncio";
 import { getAccessToken, listConnections, mlGet, mlPost } from "./ml";
 import { carregarContexto } from "./reprice";
@@ -17,11 +18,15 @@ type ItemBruto = {
   min_discounted_price?: number;
   max_discounted_price?: number;
   suggested_discounted_price?: number;
+  original_price?: number;
+  meli_percentage?: number;
 };
 
 // Para cada anúncio cujo SKU (produto do armazém) tem "promoção automática" ligada: se o Mercado Livre o convida para uma promoção e a margem no preço
 // da promoção (taxa, frete, imposto e custo já descontados) atinge a margem mínima definida, ele entra sozinho.
-// Entra sempre no MAIOR preço permitido (menor desconto), que é o que mais protege a margem.
+// Entra no preço que entrega EXATAMENTE a margem definida (arredondada para cima, em centavos), usando o frete real do Mercado Livre
+// naquele preço e o bônus do Mercado Livre da promoção. Se esse preço fica abaixo do mínimo permitido, entra no mínimo (margem maior);
+// se fica acima do máximo permitido, a promoção não dá a margem e o anúncio fica de fora.
 export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: string, limiteMs = 50000): Promise<ResumoPromo> {
   const inicio = Date.now();
   const r: ResumoPromo = { avaliados: 0, entraram: 0, recusados: 0, erros: 0, parcial: false };
@@ -86,12 +91,46 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
           if (!a || it.status !== "candidate") continue;
           r.avaliados++;
 
-          const preco = it.max_discounted_price ?? it.suggested_discounted_price ?? it.price ?? null;
           const rg = regra(a.product_id);
           const minimo = rg?.promo_min_margin != null ? Number(rg.promo_min_margin) : MARGEM_MINIMA_PADRAO;
           const prod = a.product_id ? ctx.produtos.get(a.product_id) : undefined;
           const emp = (a.company_id && ctx.empresas.get(a.company_id)) || ctx.empresaPadrao;
           const entrada = entradaDoAnuncio(a, prod, emp || null, Number(a.fee_percent ?? 12), Number(a.fee_fixed ?? 6));
+          const bonus = Number(it.meli_percentage) > 0 && Number(it.original_price) > 0 ? Math.round(Number(it.original_price) * Number(it.meli_percentage)) / 100 : 0;
+          const faixaMin = it.min_discounted_price ?? null;
+          const faixaMax = it.max_discounted_price ?? null;
+          let preco: number | null = null;
+          let freteUsado = entrada?.frete ?? 0;
+          let inalcancavel = false;
+          if (entrada) {
+            if (faixaMin != null && faixaMax != null) {
+              // Preço que dá a margem exata; o frete depende do preço, então confirma com o Mercado Livre e refaz até estabilizar
+              let frete = entrada.frete;
+              let alvo: number | null = null;
+              for (let volta = 0; volta < 3; volta++) {
+                alvo = precoParaMargem(minimo, { ...entrada, frete: Math.max(0, frete - bonus) });
+                if (alvo == null) break;
+                const real = await freteML(token, conta.ml_user_id, a.external_id, Math.min(Math.max(alvo, faixaMin), faixaMax));
+                if (real == null || Math.abs(real - frete) < 0.005) {
+                  if (real != null) frete = real;
+                  break;
+                }
+                frete = real;
+              }
+              freteUsado = frete;
+              if (alvo != null) {
+                if (alvo > faixaMax + 0.001) preco = null;
+                else preco = Math.min(Math.max(alvo, faixaMin), faixaMax);
+              }
+              if (preco == null) inalcancavel = true;
+            } else {
+              preco = it.max_discounted_price ?? it.suggested_discounted_price ?? it.price ?? null;
+              if (preco != null && preco > 0) {
+                const real = await freteML(token, conta.ml_user_id, a.external_id, preco);
+                if (real != null) freteUsado = real;
+              }
+            }
+          }
           const registro = {
             store_id: storeId,
             ml_user_id: conta.ml_user_id,
@@ -103,6 +142,14 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
             updated_at: new Date().toISOString(),
           };
 
+          if (entrada && inalcancavel) {
+            await admin.from("promo_actions").upsert(
+              { ...registro, status: "recusada", message: `Nem no preço máximo da promoção (${(faixaMax ?? 0).toFixed(2)}) a margem chega a ${minimo}%.` },
+              { onConflict: "store_id,item_id,promotion_id" }
+            );
+            r.recusados++;
+            continue;
+          }
           if (!entrada || preco == null || !(preco > 0)) {
             await admin.from("promo_actions").upsert(
               { ...registro, status: "recusada", message: !entrada ? "Sem produto ligado ou sem custo cadastrado." : "O Mercado Livre não informou o preço da promoção." },
@@ -112,8 +159,11 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
             continue;
           }
 
-          const calc = calcularLucro(preco, entrada);
-          if (calc.margem < minimo) {
+          // Margem no preço escolhido, com o frete real desse preço e o bônus do Mercado Livre
+          const base = calcularLucro(preco, { ...entrada, frete: freteUsado });
+          const lucroFinal = base.lucro + bonus;
+          const calc = { margem: preco > 0 ? (lucroFinal / preco) * 100 : 0 };
+          if (calc.margem < minimo - 0.005) {
             await admin.from("promo_actions").upsert(
               { ...registro, price: preco, margin: calc.margem, status: "recusada", message: `Margem de ${calc.margem.toFixed(1)}% abaixo do mínimo de ${minimo}%.` },
               { onConflict: "store_id,item_id,promotion_id" }
