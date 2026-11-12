@@ -39,6 +39,7 @@ export default function AnunciosPage() {
   const [agrupar, setAgrupar] = useState(false);
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
+  const [procurando, setProcurando] = useState(false);
   const [importando, setImportando] = useState(false);
   const [progresso, setProgresso] = useState("");
   const [trabalhando, setTrabalhando] = useState(false);
@@ -167,6 +168,22 @@ export default function AnunciosPage() {
       setErro(mensagemErro(e));
     } finally {
       setTrabalhando(false);
+    }
+  }
+
+  async function procurarNoML() {
+    setErro("");
+    setAviso("");
+    setProcurando(true);
+    try {
+      const r = await apiFetch<{ encontrados: { id: string; sku: string }[]; notas: string[] }>("/api/ml/anuncios/buscar", { method: "POST", body: JSON.stringify({ termo: busca.split(/[,\n]/)[0] }) });
+      if (r.encontrados.length === 0) setAviso(`O Mercado Livre não devolveu nada para essa busca.${r.notas.length ? " " + r.notas.join(" · ") : ""}`);
+      else setAviso(`${r.encontrados.length} anúncio(s) trazidos do Mercado Livre (ex.: ${r.encontrados[0].id} · SKU ${r.encontrados[0].sku || "—"}).`);
+      await carregar();
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setProcurando(false);
     }
   }
 
@@ -411,6 +428,14 @@ export default function AnunciosPage() {
                       ? "Nenhum anúncio ainda. Conecte o Mercado Livre e clique em “Importar do Mercado Livre”."
                       : `Nenhum anúncio de ${nomeMpAtivo} ainda. A integração será ligada quando houver acesso à API.`
                     : "Nenhum anúncio neste filtro."}
+                  {busca.trim() !== "" && mpAtivo === "mercado_livre" && (
+                    <div className="mt-2 space-y-1">
+                      <button type="button" className="btn" onClick={procurarNoML} disabled={procurando}>
+                        {procurando ? "Procurando no Mercado Livre…" : "Procurar direto no Mercado Livre e importar"}
+                      </button>
+                      <p className="text-xs">Procura por MLB, SKU, family ID ou código de User Product e traz os anúncios (e os da mesma família) para o sistema.</p>
+                    </div>
+                  )}
                 </td>
               </tr>
             )}
@@ -429,7 +454,7 @@ export default function AnunciosPage() {
                           l.title
                         )}
                       </p>
-                      <p className="font-mono text-[11px] text-slate-500">
+                      <p className="flex flex-wrap items-center gap-x-1 font-mono text-[11px] text-slate-500">
                         {l.external_id}
                         {l.sku ? ` · SKU ${l.sku}` : ""}
                         {l.family_id && (
