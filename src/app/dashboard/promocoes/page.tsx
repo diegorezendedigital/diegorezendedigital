@@ -186,6 +186,7 @@ export default function PromocoesPage() {
   const [porAnuncio, setPorAnuncio] = useState<PorAnuncio[]>([]);
   const [buscandoAnuncio, setBuscandoAnuncio] = useState(false);
   const [buscaAtiva, setBuscaAtiva] = useState("");
+  const [erroAnuncio, setErroAnuncio] = useState("");
 
   const carregarResumo = useCallback(async () => {
     setCarregandoResumo(true);
@@ -201,10 +202,20 @@ export default function PromocoesPage() {
   const carregar = useCallback(async () => {
     setErro("");
     try {
+      const todos = async <T,>(tabela: string): Promise<T[]> => {
+        const out: T[] = [];
+        for (let i = 0; i < 50000; i += 1000) {
+          const q = await supabase.from(tabela).select("*").order("id").range(i, i + 999);
+          if (q.error) break;
+          out.push(...((q.data ?? []) as T[]));
+          if ((q.data ?? []).length < 1000) break;
+        }
+        return out;
+      };
       const [r, l, p, c, m, h] = await Promise.all([
         apiFetch<{ contas: ContaPromos[] }>("/api/ml/promocoes"),
-        supabase.from("listings").select("*"),
-        supabase.from("products").select("*"),
+        todos<Listing>("listings").then((data) => ({ data })),
+        todos<Product>("products").then((data) => ({ data })),
         supabase.from("companies").select("*"),
         supabase.from("marketplaces").select("*"),
         supabase.from("promo_actions").select("*").order("updated_at", { ascending: false }).limit(60),
@@ -388,7 +399,7 @@ export default function PromocoesPage() {
         const texto = `${a.title} ${a.external_id} ${a.sku ?? ""} ${skuProd}`.toLowerCase();
         return ts.some((t) => texto.includes(t));
       })
-      .slice(0, 20);
+      .slice(0, 60);
   }, [buscaAtiva, anuncios, prodPorId]);
   useEffect(() => {
     if (anunciosBuscados.length === 0) {
@@ -397,6 +408,7 @@ export default function PromocoesPage() {
     }
     let vivo = true;
     setBuscandoAnuncio(true);
+    setErroAnuncio("");
     apiFetch<{ anuncios: { item_id: string; promocoes: Omit<EntradaPromo, "id">[]; erro?: string }[] }>("/api/ml/promocoes/anuncio", {
       method: "POST",
       body: JSON.stringify({ anuncios: anunciosBuscados.map((a) => ({ ml_user_id: a.ml_user_id, item_id: a.external_id })) }),
@@ -412,7 +424,11 @@ export default function PromocoesPage() {
           }))
         );
       })
-      .catch(() => vivo && setPorAnuncio([]))
+      .catch((e) => {
+        if (!vivo) return;
+        setErroAnuncio(mensagemErro(e));
+        setPorAnuncio(anunciosBuscados.map((a) => ({ item_id: a.external_id, ml_user_id: a.ml_user_id ?? "", promocoes: [], erro: "Não consegui consultar as promoções deste anúncio agora." })));
+      })
       .finally(() => vivo && setBuscandoAnuncio(false));
     return () => {
       vivo = false;
@@ -528,9 +544,13 @@ export default function PromocoesPage() {
         </section>
       ))}
 
+      {buscaAtiva.trim() !== "" && anunciosBuscados.length === 0 && anuncios.length > 0 && (
+        <p className="text-sm text-slate-500">Nenhum anúncio com esse SKU, título ou código MLB entre os {anuncios.length} anúncios importados.</p>
+      )}
+      {erroAnuncio && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erroAnuncio}</p>}
       {(buscandoAnuncio || porAnuncio.length > 0) && (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Promoções dos anúncios encontrados</h2>
+          <h2 className="text-lg font-semibold">Promoções dos anúncios encontrados <span className="text-sm font-normal text-slate-500">· {anunciosBuscados.length}{anunciosBuscados.length === 60 ? "+ (mostrando os 60 primeiros)" : ""}</span></h2>
           {buscandoAnuncio && porAnuncio.length === 0 && <p className="text-sm text-slate-500">Buscando as promoções desses anúncios no Mercado Livre…</p>}
           {porAnuncio.map((g) => {
             const a = porItem.get(g.item_id);

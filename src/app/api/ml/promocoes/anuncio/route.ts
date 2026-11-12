@@ -29,41 +29,42 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   try {
     const b = await req.json().catch(() => ({}));
-    const lista: { ml_user_id: string; item_id: string }[] = Array.isArray(b.anuncios) ? b.anuncios.slice(0, 20) : [];
+    const lista: { ml_user_id: string; item_id: string }[] = Array.isArray(b.anuncios) ? b.anuncios.slice(0, 60) : [];
     const tokens = new Map<string, string | null>();
-    const resultado = await Promise.all(
-      lista.map(async (a) => {
-        try {
-          if (!tokens.has(a.ml_user_id)) tokens.set(a.ml_user_id, await getAccessToken(user.id, String(a.ml_user_id)));
-          const token = tokens.get(a.ml_user_id);
-          if (!token) return { item_id: a.item_id, promocoes: [], erro: "Conta sem acesso" };
-          const r = await mlGet<Bruto[] | { results?: Bruto[] }>(token, `/seller-promotions/items/${encodeURIComponent(a.item_id)}?app_version=v2`);
-          const arr = Array.isArray(r) ? r : r.results ?? [];
-          return {
-            item_id: a.item_id,
-            promocoes: arr
-              .filter((p) => p.id && p.type && p.status !== "finished")
-              .map((p) => ({
-                promo_id: p.id as string,
-                promo_type: p.type as string,
-                promo_name: p.name ?? (p.id as string),
-                status: p.status ?? "",
-                price: p.price ?? null,
-                original_price: p.original_price ?? null,
-                min_price: p.min_discounted_price ?? null,
-                max_price: p.max_discounted_price ?? null,
-                suggested_price: p.suggested_discounted_price ?? null,
-                start_date: p.start_date ?? null,
-                end_date: p.finish_date ?? p.end_date ?? null,
-                meli_percentage: p.meli_percentage ?? null,
-                seller_percentage: p.seller_percentage ?? null,
-              })),
-          };
-        } catch (e) {
-          return { item_id: a.item_id, promocoes: [], erro: e instanceof Error ? e.message : "Erro" };
-        }
-      })
-    );
+    const um = async (a: { ml_user_id: string; item_id: string }) => {
+      try {
+        if (!tokens.has(a.ml_user_id)) tokens.set(a.ml_user_id, await getAccessToken(user.id, String(a.ml_user_id)));
+        const token = tokens.get(a.ml_user_id);
+        if (!token) return { item_id: a.item_id, promocoes: [], erro: "Conta sem acesso" };
+        const r = await mlGet<Bruto[] | { results?: Bruto[] }>(token, `/seller-promotions/items/${encodeURIComponent(a.item_id)}?app_version=v2`);
+        const arr = Array.isArray(r) ? r : r.results ?? [];
+        return {
+          item_id: a.item_id,
+          promocoes: arr
+            .filter((p) => p.id && p.type && p.status !== "finished")
+            .map((p) => ({
+              promo_id: p.id as string,
+              promo_type: p.type as string,
+              promo_name: p.name ?? (p.id as string),
+              status: p.status ?? "",
+              price: p.price ?? null,
+              original_price: p.original_price ?? null,
+              min_price: p.min_discounted_price ?? null,
+              max_price: p.max_discounted_price ?? null,
+              suggested_price: p.suggested_discounted_price ?? null,
+              start_date: p.start_date ?? null,
+              end_date: p.finish_date ?? p.end_date ?? null,
+              meli_percentage: p.meli_percentage ?? null,
+              seller_percentage: p.seller_percentage ?? null,
+            })),
+        };
+      } catch (e) {
+        return { item_id: a.item_id, promocoes: [], erro: e instanceof Error ? e.message : "Erro" };
+      }
+    };
+    // 8 por vez para não estourar o limite de chamadas do Mercado Livre
+    const resultado: Awaited<ReturnType<typeof um>>[] = [];
+    for (let k = 0; k < lista.length; k += 8) resultado.push(...(await Promise.all(lista.slice(k, k + 8).map(um))));
     return NextResponse.json({ anuncios: resultado });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erro" }, { status: 500 });
