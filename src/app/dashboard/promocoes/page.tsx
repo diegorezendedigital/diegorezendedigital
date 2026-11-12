@@ -43,6 +43,8 @@ type Resumo = {
   erros: string[];
   porPromocao: { conta: string; id: string; nome: string; tipo: string; candidatos: number; participando: number; aguardando: number; bonus: number }[];
 };
+type EntradaPromo = Item & { promo_id: string; promo_type: string; promo_name: string };
+type PorAnuncio = { item_id: string; ml_user_id: string; promocoes: EntradaPromo[]; erro?: string };
 type Aberta = { ml_user_id: string; promo: Promo };
 
 const TIPOS: Record<string, string> = {
@@ -181,6 +183,9 @@ export default function PromocoesPage() {
   const [soBonus, setSoBonus] = useState(false);
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [carregandoResumo, setCarregandoResumo] = useState(false);
+  const [porAnuncio, setPorAnuncio] = useState<PorAnuncio[]>([]);
+  const [buscandoAnuncio, setBuscandoAnuncio] = useState(false);
+  const [buscaAtiva, setBuscaAtiva] = useState("");
 
   const carregarResumo = useCallback(async () => {
     setCarregandoResumo(true);
@@ -302,8 +307,8 @@ export default function PromocoesPage() {
     }
   }
 
-  async function aderir(i: Item): Promise<boolean> {
-    if (!aberta) return false;
+  async function aderir(i: Item, ctx: { ml_user_id: string; promo: { id: string; type: string } } | null = aberta): Promise<boolean> {
+    if (!ctx) return false;
     const preco = precoEscolhido(i);
     if (i.min_price != null && preco < i.min_price) {
       setErro(`${i.id}: o preço mínimo permitido é ${brl(i.min_price)}.`);
@@ -317,9 +322,10 @@ export default function PromocoesPage() {
     try {
       await apiFetch("/api/ml/promocoes/aderir", {
         method: "POST",
-        body: JSON.stringify({ ml_user_id: aberta.ml_user_id, item_id: i.id, promotion_id: aberta.promo.id, promotion_type: aberta.promo.type, deal_price: preco }),
+        body: JSON.stringify({ ml_user_id: ctx.ml_user_id, item_id: i.id, promotion_id: ctx.promo.id, promotion_type: ctx.promo.type, deal_price: preco }),
       });
-      setItens((l) => l.map((x) => (x.id === i.id ? { ...x, status: "started", price: preco } : x)));
+      setItens((l) => l.map((x) => (x.id === i.id && ctx === aberta ? { ...x, status: "started", price: preco } : x)));
+      setPorAnuncio((l) => l.map((g) => (g.item_id === i.id ? { ...g, promocoes: g.promocoes.map((x) => (x.promo_id === ctx.promo.id ? { ...x, status: "started", price: preco } : x)) } : g)));
       return true;
     } catch (e) {
       setErro(`${i.id}: ${mensagemErro(e)}`);
@@ -329,16 +335,25 @@ export default function PromocoesPage() {
     }
   }
 
-  async function sair(i: Item) {
-    if (!aberta) return;
+  async function aderirAnuncio(item: string, i: EntradaPromo, chave: string, preco: number, ctx: { ml_user_id: string; promo: { id: string; type: string } }) {
+    setErro("");
+    if (i.min_price != null && preco < i.min_price) return setErro(`${item}: o preço mínimo permitido é ${brl(i.min_price)}.`);
+    if (i.max_price != null && preco > i.max_price) return setErro(`${item}: o preço máximo permitido é ${brl(i.max_price)}.`);
+    setPrecos((p) => ({ ...p, [chave]: campo(preco) }));
+    await aderir({ ...i, id: item, suggested_price: preco, max_price: i.max_price, min_price: i.min_price }, ctx);
+  }
+
+  async function sair(i: Item, ctx: { ml_user_id: string; promo: { id: string; type: string } } | null = aberta) {
+    if (!ctx) return;
     setErro("");
     setTrabalhando(i.id);
     try {
       await apiFetch("/api/ml/promocoes/sair", {
         method: "POST",
-        body: JSON.stringify({ ml_user_id: aberta.ml_user_id, item_id: i.id, promotion_id: aberta.promo.id, promotion_type: aberta.promo.type }),
+        body: JSON.stringify({ ml_user_id: ctx.ml_user_id, item_id: i.id, promotion_id: ctx.promo.id, promotion_type: ctx.promo.type }),
       });
-      setItens((l) => l.map((x) => (x.id === i.id ? { ...x, status: "candidate" } : x)));
+      setItens((l) => l.map((x) => (x.id === i.id && ctx === aberta ? { ...x, status: "candidate" } : x)));
+      setPorAnuncio((l) => l.map((g) => (g.item_id === i.id ? { ...g, promocoes: g.promocoes.map((x) => (x.promo_id === ctx.promo.id ? { ...x, status: "candidate" } : x)) } : g)));
     } catch (e) {
       setErro(`${i.id}: ${mensagemErro(e)}`);
     } finally {
@@ -359,6 +374,50 @@ export default function PromocoesPage() {
       return termos.some((t) => texto.includes(t));
     });
   }, [itens, termos, soBonus, porItem, prodPorId]);
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaAtiva(busca), 500);
+    return () => clearTimeout(t);
+  }, [busca]);
+  const anunciosBuscados = useMemo(() => {
+    const ts = buscaAtiva.split(/[,\n]/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+    if (ts.length === 0) return [] as Listing[];
+    return anuncios
+      .filter((a) => {
+        if (!a.ml_user_id) return false;
+        const skuProd = a.product_id ? prodPorId.get(a.product_id)?.sku ?? "" : "";
+        const texto = `${a.title} ${a.external_id} ${a.sku ?? ""} ${skuProd}`.toLowerCase();
+        return ts.some((t) => texto.includes(t));
+      })
+      .slice(0, 20);
+  }, [buscaAtiva, anuncios, prodPorId]);
+  useEffect(() => {
+    if (anunciosBuscados.length === 0) {
+      setPorAnuncio([]);
+      return;
+    }
+    let vivo = true;
+    setBuscandoAnuncio(true);
+    apiFetch<{ anuncios: { item_id: string; promocoes: Omit<EntradaPromo, "id">[]; erro?: string }[] }>("/api/ml/promocoes/anuncio", {
+      method: "POST",
+      body: JSON.stringify({ anuncios: anunciosBuscados.map((a) => ({ ml_user_id: a.ml_user_id, item_id: a.external_id })) }),
+    })
+      .then((r) => {
+        if (!vivo) return;
+        setPorAnuncio(
+          r.anuncios.map((g) => ({
+            item_id: g.item_id,
+            ml_user_id: anunciosBuscados.find((a) => a.external_id === g.item_id)?.ml_user_id ?? "",
+            erro: g.erro,
+            promocoes: g.promocoes.map((p) => ({ ...p, id: g.item_id }) as EntradaPromo),
+          }))
+        );
+      })
+      .catch(() => vivo && setPorAnuncio([]))
+      .finally(() => vivo && setBuscandoAnuncio(false));
+    return () => {
+      vivo = false;
+    };
+  }, [anunciosBuscados]);
   const qtdBonus = useMemo(() => itens.filter((i) => Number(i.meli_percentage) > 0).length, [itens]);
   const promoCasa = (nome: string) => termos.length === 0 || termos.some((t) => nome.toLowerCase().includes(t));
 
@@ -468,6 +527,101 @@ export default function PromocoesPage() {
           )}
         </section>
       ))}
+
+      {(buscandoAnuncio || porAnuncio.length > 0) && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Promoções dos anúncios encontrados</h2>
+          {buscandoAnuncio && porAnuncio.length === 0 && <p className="text-sm text-slate-500">Buscando as promoções desses anúncios no Mercado Livre…</p>}
+          {porAnuncio.map((g) => {
+            const a = porItem.get(g.item_id);
+            const conta = contas.find((x) => x.ml_user_id === g.ml_user_id)?.conta ?? "";
+            return (
+              <div key={g.item_id} className="card overflow-x-auto p-0">
+                <div className="border-b border-slate-100 p-3">
+                  <div className="font-medium">{a?.title ?? g.item_id}</div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-[11px] text-slate-500">
+                    <span title="Mercado Livre" className="inline-flex h-4 min-w-[20px] items-center justify-center rounded-full bg-[#FFE600] px-1 text-[9px] font-bold text-[#333]">ML</span>
+                    <span className="font-sans text-xs text-slate-600">{conta}</span>
+                    <span>· {g.item_id}</span>
+                    {a?.sku && <span>· SKU {a.sku}</span>}
+                    <span>· preço atual {brl(Number(a?.price ?? 0))}</span>
+                    <span>· {g.promocoes.length} promoç{g.promocoes.length === 1 ? "ão" : "ões"}</span>
+                  </div>
+                </div>
+                {g.erro && <p className="p-3 text-sm text-red-700">{g.erro}</p>}
+                {!g.erro && g.promocoes.length === 0 && <p className="p-3 text-sm text-slate-500">Este anúncio não tem promoções disponíveis agora.</p>}
+                {g.promocoes.length > 0 && (
+                  <table className="w-full min-w-[1200px] text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-[13px] font-medium text-slate-500">
+                        <th className="p-3">Promoção</th>
+                        <th className="p-3">Faixa permitida</th>
+                        <th className="p-3">Preço na promoção</th>
+                        <th className="p-3 text-right">Taxa</th>
+                        <th className="p-3 text-right">Frete</th>
+                        <th className="p-3 text-right">Bônus ML</th>
+                        <th className="p-3 text-right">Repasse</th>
+                        <th className="p-3 text-right">Imposto</th>
+                        <th className="p-3 text-right">Custo</th>
+                        <th className="p-3 text-right">Sobra</th>
+                        <th className="p-3 text-right">Margem</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {g.promocoes.map((i) => {
+                        const chave = `${g.item_id}|${i.promo_id}`;
+                        const ctx = { ml_user_id: g.ml_user_id, promo: { id: i.promo_id, type: i.promo_type } };
+                        const preco = precos[chave] !== undefined && precos[chave] !== "" ? num(precos[chave]) : i.suggested_price ?? i.max_price ?? i.price ?? 0;
+                        const bonus = bonusDe(i, a);
+                        const s = simular(a, preco, bonus);
+                        const st = STATUS_ITEM[i.status] ?? [i.status, "bg-slate-100 text-slate-600"];
+                        const dentro = i.status === "started" || i.status === "pending" || i.status === "programmed";
+                        return (
+                          <tr key={chave} className="border-b border-slate-100 align-top">
+                            <td className="p-3">
+                              <div className="font-medium">{i.promo_name}</div>
+                              <div className="text-xs text-slate-500">{TIPOS[i.promo_type] ?? i.promo_type}{i.end_date ? ` · até ${dia(i.end_date)}` : ""}</div>
+                            </td>
+                            <td className="p-3 font-mono text-xs text-slate-600">{i.min_price != null || i.max_price != null ? `${i.min_price != null ? brl(i.min_price) : "—"} a ${i.max_price != null ? brl(i.max_price) : "—"}` : "—"}</td>
+                            <td className="p-3">
+                              {dentro ? (
+                                brl(i.price ?? preco)
+                              ) : (
+                                <input className="input w-28 py-1" inputMode="decimal" value={precos[chave] ?? (preco > 0 ? campo(preco) : "")} onChange={(e) => setPrecos((p) => ({ ...p, [chave]: e.target.value }))} />
+                              )}
+                            </td>
+                            <td className="p-3 text-right text-slate-700">{s ? brl(s.taxa) : "—"}{s && <Sub v={s.taxa} base={preco} />}</td>
+                            <td className="p-3 text-right text-slate-700">{s ? brl(s.frete) : "—"}{s && <Sub v={s.frete} base={preco} />}</td>
+                            <td className="p-3 text-right text-slate-700">{bonus > 0 ? <span className="font-medium text-emerald-700">+ {brl(bonus)}</span> : "—"}{bonus > 0 && <Sub v={bonus} base={preco} />}</td>
+                            <td className="p-3 text-right font-medium text-slate-900">{s ? brl(s.repasse) : "—"}{s && <Sub v={s.repasse} base={preco} />}</td>
+                            <td className="p-3 text-right text-slate-700">{s ? brl(s.imposto) : "—"}{s && <Sub v={s.imposto} base={preco} />}</td>
+                            <td className="p-3 text-right text-slate-700">{s && !s.semCusto ? brl(s.custo) : <span className="text-amber-700">sem custo</span>}{s && !s.semCusto && <Sub v={s.custo} base={preco} />}</td>
+                            <td className={`p-3 text-right font-semibold ${s && !s.semCusto && s.lucro < 0 ? "text-red-700" : "text-emerald-800"}`}>{s && !s.semCusto ? `${s.lucro < 0 ? "− " : "+ "}${brl(Math.abs(s.lucro))}` : "—"}</td>
+                            <td className={`p-3 text-right ${s && !s.ok ? "text-red-700" : ""}`}>
+                              {s && !s.semCusto ? pct(s.margem) : "—"}
+                              {s && !s.semCusto && <div className={`text-[11px] ${s.lucro < 0 ? "text-red-700" : s.ok ? "text-emerald-700" : "text-amber-700"}`}>{s.lucro < 0 ? "prejuízo" : s.ok ? "atinge a meta" : "abaixo da meta"}</div>}
+                            </td>
+                            <td className="p-3"><span className={`badge ${st[1]}`}>{st[0]}</span></td>
+                            <td className="whitespace-nowrap p-3 text-right">
+                              {dentro ? (
+                                <button className="text-red-700 hover:underline" onClick={() => sair({ ...i, id: g.item_id }, ctx)} disabled={trabalhando === g.item_id}>Sair</button>
+                              ) : i.status === "candidate" ? (
+                                <button className="btn-ghost" onClick={() => aderirAnuncio(g.item_id, i, chave, preco, ctx)} disabled={trabalhando === g.item_id}>Participar</button>
+                              ) : null}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      )}
 
       {aberta && (
         <section className="space-y-3">
