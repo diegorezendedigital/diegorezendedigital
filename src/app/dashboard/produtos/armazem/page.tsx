@@ -26,6 +26,13 @@ export default function ArmazemPage() {
   const [histCusto, setHistCusto] = useState("");
   const [histData, setHistData] = useState("");
   const [painel, setPainel] = useState<Painel>(null);
+  // Edição de custo em massa
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [massaAberta, setMassaAberta] = useState(false);
+  const [massaModo, setMassaModo] = useState<"valor" | "percentual">("valor");
+  const [massaValor, setMassaValor] = useState("");
+  const [massaData, setMassaData] = useState("");
+  const [massaBusy, setMassaBusy] = useState(false);
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [form, setForm] = useState(formVazio);
@@ -118,6 +125,105 @@ export default function ArmazemPage() {
   );
   const visiveis = useMemo(() => (aba === "todos" ? filtrados : filtrados.filter((p) => tipoDe(p) === aba)), [filtrados, aba]);
   const filtrando = busca.trim() !== "" || statusMap !== "todos" || mpFiltro !== "todos" || estoqueFiltro !== "todos";
+
+  const selVisiveis = useMemo(() => visiveis.filter((p) => sel.has(p.id)), [visiveis, sel]);
+  const todosMarcados = visiveis.length > 0 && selVisiveis.length === visiveis.length;
+  const hojeISO = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  function alternar(id: string) {
+    setSel((a) => {
+      const n = new Set(a);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+  function marcarTodos() {
+    setSel((a) => {
+      const n = new Set(a);
+      if (todosMarcados) visiveis.forEach((p) => n.delete(p.id));
+      else visiveis.forEach((p) => n.add(p.id));
+      return n;
+    });
+  }
+
+  // Aplica o novo custo aos selecionados. Sempre grava no histórico com a data escolhida (padrão: hoje).
+  async function aplicarMassa() {
+    setErro("");
+    setAviso("");
+    const v = num(massaValor);
+    if (massaValor.trim() === "" || (massaModo === "valor" && !(v >= 0)) || (massaModo === "percentual" && !Number.isFinite(v))) {
+      setErro("Informe o novo custo (ou o percentual).");
+      return;
+    }
+    const data = massaData || hojeISO();
+    const ehHoje = data >= hojeISO();
+    const alvo = selVisiveis.length > 0 ? selVisiveis : produtos.filter((p) => sel.has(p.id));
+    if (alvo.length === 0) return;
+    const novoDe = (p: Product) => {
+      const n = massaModo === "valor" ? v : Number(p.cost_price) * (1 + v / 100);
+      return Math.max(0, Math.round(n * 100) / 100);
+    };
+    const lista = alvo.filter((p) => novoDe(p) !== Number(p.cost_price) || !ehHoje);
+    if (lista.length === 0) {
+      setAviso("Nenhum produto mudou de custo.");
+      return;
+    }
+    const quando = ehHoje ? "hoje" : `a partir de ${data.split("-").reverse().join("/")}`;
+    if (!confirm(`Alterar o custo de ${lista.length} produto(s), valendo ${quando}? O custo anterior fica salvo no histórico.`)) return;
+    setMassaBusy(true);
+    let feitos = 0;
+    let falhas = 0;
+    try {
+      // Data passada: descobre quais produtos já têm custo registrado depois dela (esses não mudam o custo atual).
+      const comCustoPosterior = new Set<string>();
+      const validFrom = new Date(`${data}T00:00:00-03:00`).toISOString();
+      if (!ehHoje) {
+        for (let i = 0; i < lista.length; i += 150) {
+          const ids = lista.slice(i, i + 150).map((p) => p.id);
+          const r = await supabase.from("product_costs").select("product_id").in("product_id", ids).gt("valid_from", validFrom);
+          (r.data ?? []).forEach((x: { product_id: string }) => comCustoPosterior.add(x.product_id));
+        }
+      }
+      for (let i = 0; i < lista.length; i += 10) {
+        await Promise.all(
+          lista.slice(i, i + 10).map(async (p) => {
+            const novo = novoDe(p);
+            if (ehHoje) {
+              // O gatilho do banco grava a linha do histórico com a data/hora de agora.
+              const r = await supabase.from("products").update({ cost_price: novo, cost_updated_at: new Date().toISOString() }).eq("id", p.id);
+              if (r.error) falhas++;
+              else feitos++;
+              return;
+            }
+            const h = await supabase.from("product_costs").insert({ store_id: p.store_id, product_id: p.id, cost_price: novo, valid_from: validFrom });
+            if (h.error) {
+              falhas++;
+              return;
+            }
+            if (!comCustoPosterior.has(p.id)) {
+              const r = await supabase.from("products").update({ cost_price: novo, cost_updated_at: new Date().toISOString() }).eq("id", p.id);
+              if (r.error) {
+                falhas++;
+                return;
+              }
+            }
+            feitos++;
+          })
+        );
+      }
+    } finally {
+      setMassaBusy(false);
+    }
+    setAviso(`Custo alterado em ${feitos} produto(s)${falhas ? `; ${falhas} falharam` : ""}. Tudo ficou registrado no histórico com a data.`);
+    setMassaAberta(false);
+    setMassaValor("");
+    setMassaData("");
+    setSel(new Set());
+    carregar();
+  }
 
   const semDigitos = (s: string | null) => String(s ?? "").replace(/\D/g, "");
 
@@ -474,10 +580,43 @@ export default function ArmazemPage() {
         ))}
       </div>
 
+      {sel.size > 0 && (
+        <div className="card flex flex-wrap items-center gap-3 border-brand/30 bg-brand-light/40 p-3">
+          <span className="text-sm font-semibold">{sel.size} selecionado(s)</span>
+          {!massaAberta && (
+            <button className="btn" onClick={() => { setMassaAberta(true); setMassaData(hojeISO()); }}>Editar custo em massa</button>
+          )}
+          <button className="text-sm text-slate-600 hover:underline" onClick={() => { setSel(new Set()); setMassaAberta(false); }}>Limpar seleção</button>
+          {massaAberta && (
+            <div className="flex w-full flex-wrap items-end gap-3">
+              <div>
+                <label className="label">Como alterar</label>
+                <select className="input h-10 py-0" value={massaModo} onChange={(e) => setMassaModo(e.target.value as "valor" | "percentual")}>
+                  <option value="valor">Definir novo custo (R$)</option>
+                  <option value="percentual">Aumentar/reduzir em %</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">{massaModo === "valor" ? "Novo custo un. (R$)" : "Percentual (ex.: 5 ou -10)"}</label>
+                <input className="input h-10 w-40" inputMode="decimal" value={massaValor} onChange={(e) => setMassaValor(e.target.value)} placeholder={massaModo === "valor" ? "0,00" : "5"} />
+              </div>
+              <div>
+                <label className="label">Vale a partir de</label>
+                <input type="date" className="input h-10" max={hojeISO()} value={massaData} onChange={(e) => setMassaData(e.target.value)} />
+              </div>
+              <button className="btn" disabled={massaBusy} onClick={aplicarMassa}>{massaBusy ? "Aplicando…" : "Aplicar"}</button>
+              <button className="btn-ghost" disabled={massaBusy} onClick={() => setMassaAberta(false)}>Cancelar</button>
+              <p className="w-full text-xs text-slate-600">O custo anterior continua no Histórico. Vendas já feitas não mudam; com data passada, só entra no histórico e vale para vendas sem custo gravado.</p>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="card overflow-x-auto p-0">
         <table className="w-full">
           <thead className="border-b border-slate-200 bg-slate-50">
             <tr>
+              <th className="th w-8"><input type="checkbox" checked={todosMarcados} onChange={marcarTodos} aria-label="Selecionar todos os filtrados" title="Selecionar todos os filtrados" /></th>
               <th className="th">SKU</th>
               <th className="th">Produto</th>
               <th className="th">Tipo</th>
@@ -494,7 +633,7 @@ export default function ArmazemPage() {
           <tbody className="divide-y divide-slate-100">
             {visiveis.length === 0 && (
               <tr>
-                <td className="td text-slate-500" colSpan={11}>
+                <td className="td text-slate-500" colSpan={12}>
                   {produtos.length === 0 ? "Nenhum produto ainda. Use “Novo produto”, a planilha ou o XML da nota." : "Nada encontrado para essa busca."}
                 </td>
               </tr>
@@ -504,7 +643,8 @@ export default function ArmazemPage() {
               const cred = Number(p.icms_credit) + Number(p.pis_credit) + Number(p.cofins_credit);
               return (
                 <Fragment key={p.id}>
-                <tr>
+                <tr className={sel.has(p.id) ? "bg-brand-light/30" : ""}>
+                  <td className="td w-8"><input type="checkbox" checked={sel.has(p.id)} onChange={() => alternar(p.id)} aria-label={`Selecionar ${p.sku}`} /></td>
                   <td className="td font-mono text-xs">{p.sku}</td>
                   <td className="td">{p.name}</td>
                   <td className="td">
@@ -598,7 +738,7 @@ export default function ArmazemPage() {
                 </tr>
                 {aberto && (
                   <tr className="bg-slate-50">
-                    <td className="td" colSpan={11}>
+                    <td className="td" colSpan={12}>
                       <div className="space-y-2 py-1">
                         <p className="text-xs text-slate-600">
                           Histórico de custo. Cada venda usa o custo vigente na data dela. Ao alterar o custo acima, uma linha nova é criada com a data de hoje.
