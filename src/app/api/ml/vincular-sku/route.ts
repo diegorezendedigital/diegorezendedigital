@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { skuDoItem } from "@/lib/server/sku-ml";
 import { getAccessToken, mlGet } from "@/lib/server/ml";
 
 export const dynamic = "force-dynamic";
@@ -56,15 +57,15 @@ export async function POST(req: Request) {
         }
         const lote = lista.slice(i, i + 20);
         try {
-          const r = await mlGet<{ body?: { id?: string; seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[] } }[]>(
+          const r = await mlGet<{ body?: { id?: string; seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[]; variations?: { seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[] }[] } }[]>(
             token,
-            `/items?ids=${lote.map((a) => a.external_id).join(",")}&attributes=id,seller_custom_field,attributes`
+            `/items?ids=${lote.map((a) => a.external_id).join(",")}&attributes=id,seller_custom_field,attributes,variations`
           );
           const achados = new Map<string, string>();
           (Array.isArray(r) ? r : []).forEach((x) => {
             const b = x.body;
             if (!b?.id) return;
-            const v = (b.seller_custom_field || b.attributes?.find((at) => at.id === "SELLER_SKU")?.value_name || "").trim();
+            const v = skuDoItem(b);
             if (v) achados.set(b.id, v);
           });
           await Promise.all(

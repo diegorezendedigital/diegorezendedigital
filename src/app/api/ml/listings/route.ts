@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { skuDoItem } from "@/lib/server/sku-ml";
 import { getAccessToken, getConnection, mlGet, taxaDoAnuncio } from "@/lib/server/ml";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,8 @@ type ItemML = {
   category_id?: string;
   listing_type_id?: string;
   seller_custom_field?: string | null;
+  attributes?: { id?: string; value_name?: string | null }[];
+  variations?: { seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[] }[];
 };
 
 // Importa os anúncios ativos do Mercado Livre. Anúncios novos são ligados ao produto de mesmo SKU
@@ -104,7 +107,7 @@ export async function POST(req: Request) {
         thumbnail: it.thumbnail ?? null,
         category_id: it.category_id ?? null,
         listing_type_id: it.listing_type_id ?? null,
-        ...((it.seller_custom_field || "").trim() ? { sku: (it.seller_custom_field || "").trim() } : {}),
+        ...(skuDoItem(it) ? { sku: skuDoItem(it) } : {}),
         fee_percent: taxas.get(it.id)?.pct ?? null,
         fee_fixed: taxas.get(it.id)?.fixo ?? null,
         last_synced_at: agora,
@@ -120,7 +123,7 @@ export async function POST(req: Request) {
       // Cria os novos, já ligados ao produto de mesmo SKU e ao CNPJ padrão.
       const novos = itens.filter((i) => !jaExiste.has(i.id));
       if (novos.length) {
-        const skus = novos.map((i) => (i.seller_custom_field || "").trim()).filter(Boolean);
+        const skus = novos.map((i) => skuDoItem(i)).filter(Boolean);
         const porSku = new Map<string, string>();
         if (skus.length) {
           const { data: prods } = await admin.from("products").select("id, sku").eq("store_id", storeId).in("sku", skus);
@@ -128,7 +131,7 @@ export async function POST(req: Request) {
         }
         const registros = novos.map((it) => ({
           ...campos(it),
-          product_id: porSku.get((it.seller_custom_field || "").trim()) ?? null,
+          product_id: porSku.get(skuDoItem(it)) ?? null,
           company_id: conn.company_id ?? padrao?.id ?? null,
         }));
         const { error } = await admin.from("listings").upsert(registros, { onConflict: "store_id,external_id", ignoreDuplicates: true });
