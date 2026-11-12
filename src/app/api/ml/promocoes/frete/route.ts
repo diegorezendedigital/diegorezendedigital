@@ -16,6 +16,7 @@ export async function POST(req: Request) {
     const lista: { ml_user_id: string; item_id: string; price: number }[] = Array.isArray(b.consultas) ? b.consultas.slice(0, 80) : [];
     const tokens = new Map<string, string | null>();
     const fretes: Record<string, number> = {};
+    let falhas = 0;
     for (let i = 0; i < lista.length; i += 8) {
       await Promise.all(
         lista.slice(i, i + 8).map(async (c) => {
@@ -24,10 +25,11 @@ export async function POST(req: Request) {
           if (!token) return;
           const v = await freteML(token, String(c.ml_user_id), String(c.item_id), Number(c.price));
           if (v != null) fretes[`${c.item_id}|${Number(c.price).toFixed(2)}`] = v;
+          else falhas++;
         })
       );
     }
-    return NextResponse.json({ fretes });
+    return NextResponse.json({ fretes, falhas });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erro" }, { status: 500 });
   }

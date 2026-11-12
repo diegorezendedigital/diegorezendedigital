@@ -179,7 +179,7 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
               deal_price: Math.round(preco * 100) / 100,
             });
             await admin.from("promo_actions").upsert(
-              { ...registro, price: preco, margin: calc.margem, status: "entrou", message: `Entrou a ${calc.margem.toFixed(1)}% de margem (mínimo ${minimo}%).` },
+              { ...registro, price: preco, margin: calc.margem, status: "entrou", message: `Entrou a ${calc.margem.toFixed(1).replace(".", ",")}% de margem (meta ${minimo}%) · preço R$ ${preco.toFixed(2).replace(".", ",")} · frete R$ ${freteUsado.toFixed(2).replace(".", ",")}${bonus > 0 ? ` · bônus ML R$ ${bonus.toFixed(2).replace(".", ",")}` : ""} · lucro R$ ${lucroFinal.toFixed(2).replace(".", ",")}.` },
               { onConflict: "store_id,item_id,promotion_id" }
             );
             r.entraram++;

@@ -189,6 +189,7 @@ export default function PromocoesPage() {
   const [buscaAtiva, setBuscaAtiva] = useState("");
   const [erroAnuncio, setErroAnuncio] = useState("");
   const [importando, setImportando] = useState(false);
+  const [logFiltro, setLogFiltro] = useState<"todos" | "entrou" | "recusada" | "erro">("todos");
   const [fretePromo, setFretePromo] = useState<Record<string, number>>({});
   const freteAsked = useRef<Set<string>>(new Set());
   const [procurando, setProcurando] = useState(false);
@@ -226,7 +227,7 @@ export default function PromocoesPage() {
         todos<Product>("products").then((data) => ({ data })),
         supabase.from("companies").select("*"),
         supabase.from("marketplaces").select("*"),
-        supabase.from("promo_actions").select("*").order("updated_at", { ascending: false }).limit(60),
+        supabase.from("promo_actions").select("*").order("updated_at", { ascending: false }).limit(300),
       ]);
       setHistorico((h.data ?? []) as AcaoPromo[]);
       setContas(r.contas);
@@ -307,7 +308,7 @@ export default function PromocoesPage() {
     novos.forEach((p) => freteAsked.current.add(`${p.item_id}|${p.price.toFixed(2)}`));
     for (let i = 0; i < novos.length; i += 60) {
       try {
-        const r = await apiFetch<{ fretes: Record<string, number> }>("/api/ml/promocoes/frete", { method: "POST", body: JSON.stringify({ consultas: novos.slice(i, i + 60) }) });
+        const r = await apiFetch<{ fretes: Record<string, number>; falhas?: number }>("/api/ml/promocoes/frete", { method: "POST", body: JSON.stringify({ consultas: novos.slice(i, i + 60) }) });
         setFretePromo((f) => ({ ...f, ...r.fretes }));
       } catch {
         /* mantém o frete cadastrado */
@@ -633,6 +634,73 @@ export default function PromocoesPage() {
         <button className="btn" onClick={rodarAuto} disabled={rodandoAuto}>{rodandoAuto ? "Avaliando…" : "Rodar promoções automáticas agora"}</button>
       </div>
 
+      <section className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Log das promoções automáticas</h2>
+          <div className="flex flex-wrap gap-2">
+            {([
+              ["todos", "Todos", historico.length],
+              ["entrou", "Entrou", historico.filter((h) => h.status === "entrou").length],
+              ["recusada", "Ficou de fora", historico.filter((h) => h.status === "recusada").length],
+              ["erro", "Erro", historico.filter((h) => h.status === "erro").length],
+            ] as const).map(([id, nome, qtd]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setLogFiltro(id)}
+                className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${logFiltro === id ? "bg-brand text-white" : "bg-white text-slate-600 shadow-soft hover:bg-brand-light"}`}
+              >
+                {nome} <span className={`ml-1 text-xs ${logFiltro === id ? "text-white/70" : "text-slate-400"}`}>{qtd}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        {historico.length === 0 ? (
+          <div className="card text-sm text-slate-600">Ainda não há registros. Cada vez que a promoção automática entrar (ou recusar) um anúncio, aparece aqui com a data, a promoção, o preço e a margem.</div>
+        ) : (
+          <div className="card overflow-x-auto p-0">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-[13px] font-medium text-slate-500">
+                  <th className="p-3">Data</th>
+                  <th className="p-3">Anúncio</th>
+                  <th className="p-3">Promoção</th>
+                  <th className="p-3 text-right">Preço</th>
+                  <th className="p-3 text-right">Margem</th>
+                  <th className="p-3">O que aconteceu</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historico.filter((h) => logFiltro === "todos" || h.status === logFiltro).map((h) => {
+                  const a = porItem.get(h.item_id);
+                  return (
+                    <tr key={h.id} className="border-b border-slate-100 align-top">
+                      <td className="whitespace-nowrap p-3 font-mono text-xs">{new Date(h.updated_at).toLocaleString("pt-BR")}</td>
+                      <td className="max-w-[280px] p-3">
+                        <div className="truncate" title={a?.title}>{a?.title ?? "—"}</div>
+                        <div className="font-mono text-[11px] text-slate-500">{h.item_id}{a?.sku ? ` · SKU ${a.sku}` : ""}</div>
+                      </td>
+                      <td className="p-3">{h.promotion_name ?? h.promotion_id}</td>
+                      <td className="p-3 text-right">{h.price != null ? brl(Number(h.price)) : "—"}</td>
+                      <td className="p-3 text-right">
+                        {h.margin != null ? pct(Number(h.margin)) : "—"}
+                        {h.min_margin != null && <div className="font-mono text-[10px] text-slate-500">meta {pct(Number(h.min_margin))}</div>}
+                      </td>
+                      <td className="p-3">
+                        <span className={`badge ${h.status === "entrou" ? "bg-emerald-100 text-emerald-800" : h.status === "erro" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
+                          {h.status === "entrou" ? "Entrou" : h.status === "erro" ? "Erro" : "Ficou de fora"}
+                        </span>
+                        {h.message && <div className="mt-0.5 text-xs text-slate-600">{h.message}</div>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       {erro && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erro}</p>}
       {aviso && <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">{aviso}</p>}
 
@@ -946,45 +1014,6 @@ export default function PromocoesPage() {
         </section>
       )}
 
-      {historico.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="font-mono text-xs uppercase tracking-wider text-slate-500">Histórico da participação automática</h2>
-          <div className="card overflow-x-auto p-0">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-[13px] font-medium text-slate-500">
-                  <th className="p-3">Data</th>
-                  <th className="p-3">Anúncio</th>
-                  <th className="p-3">Promoção</th>
-                  <th className="p-3 text-right">Preço</th>
-                  <th className="p-3 text-right">Margem</th>
-                  <th className="p-3">Resultado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {historico.map((h) => (
-                  <tr key={h.id} className="border-b border-slate-100 align-top">
-                    <td className="p-3 font-mono text-xs">{new Date(h.updated_at).toLocaleString("pt-BR")}</td>
-                    <td className="max-w-[260px] p-3">
-                      <div className="truncate">{porItem.get(h.item_id)?.title ?? "—"}</div>
-                      <div className="font-mono text-[11px] text-slate-500">{h.item_id}</div>
-                    </td>
-                    <td className="p-3">{h.promotion_name ?? h.promotion_id}</td>
-                    <td className="p-3 text-right">{h.price != null ? brl(Number(h.price)) : "—"}</td>
-                    <td className="p-3 text-right">{h.margin != null ? pct(Number(h.margin)) : "—"}</td>
-                    <td className="p-3">
-                      <span className={`badge ${h.status === "entrou" ? "bg-emerald-100 text-emerald-800" : h.status === "erro" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
-                        {h.status === "entrou" ? "Entrou" : h.status === "erro" ? "Erro" : "Ficou de fora"}
-                      </span>
-                      {h.message && <div className="mt-0.5 text-xs text-slate-600">{h.message}</div>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
     </div>
   );
 }

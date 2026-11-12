@@ -1,14 +1,24 @@
 import { mlGet } from "./ml";
 
-// Frete que o vendedor paga por um anúncio, direto do Mercado Livre (já com o desconto de reputação).
-// Passando o preço, o Mercado Livre devolve o custo da faixa de preço correspondente (o frete muda conforme o preço do anúncio).
-export async function freteML(token: string, mlUserId: string, itemId: string, preco?: number | null): Promise<number | null> {
+type Resp = { coverage?: { all_country?: { list_cost?: number } } };
+
+async function consulta(token: string, mlUserId: string, query: string): Promise<number | null> {
   try {
-    const q = `item_id=${encodeURIComponent(itemId)}` + (preco && preco > 0 ? `&item_price=${preco.toFixed(2)}` : "");
-    const f = await mlGet<{ coverage?: { all_country?: { list_cost?: number } } }>(token, `/users/${mlUserId}/shipping_options/free?${q}`);
+    const f = await mlGet<Resp>(token, `/users/${mlUserId}/shipping_options/free?${query}`);
     const custo = f.coverage?.all_country?.list_cost;
     return typeof custo === "number" && custo >= 0 ? custo : null;
   } catch {
     return null;
   }
+}
+
+// Frete que o vendedor paga por um anúncio, direto do Mercado Livre (já com o desconto de reputação).
+// Tenta no preço informado (o custo muda por faixa de preço); se o Mercado Livre não aceitar o preço, usa o frete do anúncio como está.
+export async function freteML(token: string, mlUserId: string, itemId: string, preco?: number | null): Promise<number | null> {
+  const base = `item_id=${encodeURIComponent(itemId)}`;
+  if (preco && preco > 0) {
+    const noPreco = await consulta(token, mlUserId, `${base}&item_price=${preco.toFixed(2)}`);
+    if (noPreco != null) return noPreco;
+  }
+  return consulta(token, mlUserId, base);
 }
