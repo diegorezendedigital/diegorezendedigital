@@ -132,7 +132,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     className={base}
                     aria-haspopup="menu"
                     aria-expanded={abertoAqui}
-                    onClick={() => setAberto(abertoAqui ? null : m.label)}
+                    onClick={() => setAberto(m.label)}
                   >
                     {m.label}
                     <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" className={abertoAqui ? "rotate-180" : ""}>
@@ -140,7 +140,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </svg>
                   </button>
                   {abertoAqui && (
-                    <div role="menu" className="absolute left-0 top-full z-40 mt-1 min-w-[220px] rounded-2xl bg-white py-2 shadow-card">
+                    <div className="absolute left-0 top-full z-40 pt-2">
+                    <div role="menu" className="min-w-[220px] rounded-2xl bg-white py-2 shadow-card">
                       {m.filhos.map((f) => (
                         <Link
                           key={f.href}
@@ -153,6 +154,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                           {f.label}
                         </Link>
                       ))}
+                    </div>
                     </div>
                   )}
                 </div>
