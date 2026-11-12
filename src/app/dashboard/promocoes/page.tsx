@@ -31,6 +31,18 @@ type Item = {
   meli_percentage?: number | null;
   seller_percentage?: number | null;
 };
+type Resumo = {
+  promocoes: number;
+  promocoesComVaga: number;
+  candidatos: number;
+  participando: number;
+  aguardando: number;
+  aceite: number | null;
+  bonus: number;
+  parcial: boolean;
+  erros: string[];
+  porPromocao: { conta: string; id: string; nome: string; tipo: string; candidatos: number; participando: number; aguardando: number; bonus: number }[];
+};
 type Aberta = { ml_user_id: string; promo: Promo };
 
 const TIPOS: Record<string, string> = {
@@ -63,6 +75,84 @@ const STATUS_ITEM: Record<string, [string, string]> = {
 
 const dia = (s: string | null) => (s ? new Date(s).toLocaleDateString("pt-BR") : "—");
 
+// Resumo geral das promoções: gráfico de pizza + métricas
+function PainelPromos({ r, carregando, onAtualizar }: { r: Resumo | null; carregando: boolean; onAtualizar: () => void }) {
+  const partes = r
+    ? [
+        { nome: "Para entrar", valor: r.candidatos, cor: "#B7A8FF" },
+        { nome: "Participando", valor: r.participando, cor: "#5B3DF5" },
+        { nome: "Aguardando / programadas", valor: r.aguardando, cor: "#FFB938" },
+      ]
+    : [];
+  const soma = partes.reduce((a, p) => a + p.valor, 0);
+  const R = 62;
+  const C = 2 * Math.PI * R;
+  let acumulado = 0;
+  const Card = ({ t, v, sub }: { t: string; v: string; sub?: string }) => (
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <div className="text-xs font-medium text-slate-500">{t}</div>
+      <div className="mt-1 text-2xl font-semibold">{v}</div>
+      {sub && <div className="mt-0.5 text-[11px] text-slate-500">{sub}</div>}
+    </div>
+  );
+  return (
+    <div className="card space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">Resumo das promoções</h2>
+        <button className="btn-ghost" onClick={onAtualizar} disabled={carregando}>
+          {carregando ? "Calculando…" : "Atualizar resumo"}
+        </button>
+      </div>
+      {!r ? (
+        <p className="text-sm text-slate-500">{carregando ? "Contando os anúncios de todas as promoções no Mercado Livre…" : "Não foi possível montar o resumo agora. Clique em “Atualizar resumo”."}</p>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+          <div className="flex items-center gap-4">
+            <div className="relative h-[150px] w-[150px] shrink-0">
+              <svg viewBox="0 0 160 160" className="h-[150px] w-[150px] -rotate-90" role="img" aria-label="Anúncios por situação nas promoções">
+                <circle cx="80" cy="80" r={R} fill="none" stroke="#EFEAFF" strokeWidth="22" />
+                {soma > 0 &&
+                  partes.map((p) => {
+                    const fatia = (p.valor / soma) * C;
+                    const el = <circle key={p.nome} cx="80" cy="80" r={R} fill="none" stroke={p.cor} strokeWidth="22" strokeDasharray={`${fatia} ${C - fatia}`} strokeDashoffset={-acumulado} />;
+                    acumulado += fatia;
+                    return el;
+                  })}
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-2xl font-semibold">{r.aceite != null ? `${r.aceite.toFixed(0)}%` : "—"}</span>
+                <span className="text-[11px] text-slate-500">de aceite</span>
+              </div>
+            </div>
+            <ul className="space-y-1.5 text-sm">
+              {partes.map((p) => (
+                <li key={p.nome} className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.cor }} />
+                  <span>{p.nome}</span>
+                  <span className="font-mono text-xs text-slate-500">{p.valor}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Card t="Promoções com vaga" v={String(r.promocoesComVaga)} sub={`de ${r.promocoes} promoções abertas`} />
+            <Card t="Anúncios para entrar" v={String(r.candidatos)} />
+            <Card t="Participando" v={String(r.participando)} sub={r.aguardando > 0 ? `+ ${r.aguardando} aguardando / programadas` : undefined} />
+            <Card t="Taxa de aceite" v={r.aceite != null ? `${r.aceite.toFixed(1).replace(".", ",")}%` : "—"} sub="entraram ÷ ofertados" />
+            <div className="col-span-2 rounded-2xl bg-brand p-4 text-white md:col-span-4">
+              <div className="text-xs font-medium text-white/70">Bônus do Mercado Livre conquistado</div>
+              <div className="mt-1 text-2xl font-semibold">{brl(r.bonus)}</div>
+              <div className="mt-0.5 text-[11px] text-white/70">por unidade vendida, somando os anúncios que estão participando. O valor real recebido depende de quantas unidades vendem na promoção.</div>
+            </div>
+          </div>
+        </div>
+      )}
+      {r?.parcial && <p className="text-xs text-amber-700">Resumo parcial: o Mercado Livre demorou para responder. Clique em “Atualizar resumo” para refazer.</p>}
+      {r && r.erros.length > 0 && <p className="text-xs text-amber-700">{r.erros.join(" · ")}</p>}
+    </div>
+  );
+}
+
 // Percentual sobre o preço da promoção, embaixo do valor
 function Sub({ v, base }: { v: number; base: number }) {
   if (!(base > 0) || !(v !== 0)) return null;
@@ -89,6 +179,19 @@ export default function PromocoesPage() {
   const [rodandoAuto, setRodandoAuto] = useState(false);
   const [busca, setBusca] = useState("");
   const [soBonus, setSoBonus] = useState(false);
+  const [resumo, setResumo] = useState<Resumo | null>(null);
+  const [carregandoResumo, setCarregandoResumo] = useState(false);
+
+  const carregarResumo = useCallback(async () => {
+    setCarregandoResumo(true);
+    try {
+      setResumo(await apiFetch<Resumo>("/api/ml/promocoes/resumo"));
+    } catch {
+      setResumo(null);
+    } finally {
+      setCarregandoResumo(false);
+    }
+  }, []);
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -114,8 +217,9 @@ export default function PromocoesPage() {
   }, []);
 
   useEffect(() => {
+    carregarResumo();
     carregar();
-  }, [carregar]);
+  }, [carregar, carregarResumo]);
 
   const porItem = useMemo(() => new Map(anuncios.map((a) => [a.external_id, a])), [anuncios]);
   const prodPorId = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
@@ -301,6 +405,8 @@ export default function PromocoesPage() {
           </button>
         )}
       </div>
+
+      <PainelPromos r={resumo} carregando={carregandoResumo} onAtualizar={carregarResumo} />
 
       <div className="card flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-sm text-slate-600">
