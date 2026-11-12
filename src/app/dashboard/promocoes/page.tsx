@@ -189,6 +189,7 @@ export default function PromocoesPage() {
   const [buscaAtiva, setBuscaAtiva] = useState("");
   const [erroAnuncio, setErroAnuncio] = useState("");
   const [importando, setImportando] = useState(false);
+  const [descTexto, setDescTexto] = useState<Record<string, string>>({});
   const [logFiltro, setLogFiltro] = useState<"todos" | "entrou" | "recusada" | "erro">("todos");
   const [fretePromo, setFretePromo] = useState<Record<string, number>>({});
   const freteAsked = useRef<Set<string>>(new Set());
@@ -301,6 +302,30 @@ export default function PromocoesPage() {
       setRodandoAuto(false);
     }
   }
+
+  // Desconto em % sobre o preço original: digitar o % troca o preço, e digitar o preço troca o %
+  const descontoDe = (base: number, preco: number) => (base > 0 && preco > 0 ? Math.round((1 - preco / base) * 1000) / 10 : null);
+  function mudarDesconto(chave: string, base: number, texto: string) {
+    setDescTexto((d) => ({ ...d, [chave]: texto }));
+    const v = num(texto);
+    if (base > 0 && texto.trim() !== "" && v >= 0 && v < 100) setPrecos((p) => ({ ...p, [chave]: campo(Math.round(base * (1 - v / 100) * 100) / 100) }));
+  }
+  const campoDesconto = (chave: string, base: number, preco: number, aoSair: (preco: number) => void) => (
+    <span className="inline-flex items-center gap-1" title="Desconto sobre o preço original. Digite o % para calcular o preço, ou o preço para ver o %.">
+      <input
+        className="input w-16 py-1 text-right"
+        inputMode="decimal"
+        value={descTexto[chave] ?? (descontoDe(base, preco) != null ? String(descontoDe(base, preco)).replace(".", ",") : "")}
+        onChange={(e) => mudarDesconto(chave, base, e.target.value)}
+        onBlur={() => {
+          const v = num(descTexto[chave] ?? "");
+          if (base > 0 && v >= 0 && v < 100) aoSair(Math.round(base * (1 - v / 100) * 100) / 100);
+        }}
+        aria-label="Desconto em porcentagem"
+      />
+      <span className="text-xs text-slate-500">%</span>
+    </span>
+  );
 
   // Pergunta ao Mercado Livre o frete real de cada anúncio no preço da promoção (60 por chamada)
   async function pedirFrete(pares: { ml_user_id: string; item_id: string; price: number }[]) {
@@ -832,7 +857,10 @@ export default function PromocoesPage() {
                               {dentro ? (
                                 brl(i.price ?? preco)
                               ) : (
-                                <input className="input w-28 py-1" inputMode="decimal" value={precos[chave] ?? (preco > 0 ? campo(preco) : "")} onChange={(e) => setPrecos((p) => ({ ...p, [chave]: e.target.value }))} onBlur={(e) => pedirFrete([{ ml_user_id: g.ml_user_id, item_id: g.item_id, price: num(e.target.value) }])} />
+                                <span className="flex flex-wrap items-center gap-2">
+                                <input className="input w-28 py-1" inputMode="decimal" value={precos[chave] ?? (preco > 0 ? campo(preco) : "")} onChange={(e) => { setDescTexto((d) => { const n = { ...d }; delete n[chave]; return n; }); setPrecos((p) => ({ ...p, [chave]: e.target.value })); }} onBlur={(e) => pedirFrete([{ ml_user_id: g.ml_user_id, item_id: g.item_id, price: num(e.target.value) }])} />
+                                {campoDesconto(chave, Number(i.original_price) || Number(a?.price) || 0, preco, (pr) => pedirFrete([{ ml_user_id: g.ml_user_id, item_id: g.item_id, price: pr }]))}
+                              </span>
                               )}
                             </td>
                             <td className="p-3 text-right text-slate-700">{s ? brl(s.taxa) : "—"}{s && <Sub v={s.taxa} base={preco} />}</td>
@@ -955,13 +983,16 @@ export default function PromocoesPage() {
                         {dentro ? (
                           brl(i.price ?? preco)
                         ) : (
+<span className="flex flex-wrap items-center gap-2">
                           <input
                             className="input w-28 py-1"
                             inputMode="decimal"
                             value={precos[i.id] ?? (preco > 0 ? campo(preco) : "")}
-                            onChange={(e) => setPrecos((p) => ({ ...p, [i.id]: e.target.value }))}
+                            onChange={(e) => { setDescTexto((d) => { const n = { ...d }; delete n[i.id]; return n; }); setPrecos((p) => ({ ...p, [i.id]: e.target.value })); }}
                             onBlur={(e) => aberta && pedirFrete([{ ml_user_id: aberta.ml_user_id, item_id: i.id, price: num(e.target.value) }])}
                           />
+                          {campoDesconto(i.id, Number(i.original_price) || Number(a?.price) || 0, preco, (pr) => aberta && pedirFrete([{ ml_user_id: aberta.ml_user_id, item_id: i.id, price: pr }]))}
+                          </span>
                         )}
                       </td>
                       <td className="p-3 text-right text-slate-700">{s ? brl(s.taxa) : "—"}{s && <Sub v={s.taxa} base={preco} />}</td>
