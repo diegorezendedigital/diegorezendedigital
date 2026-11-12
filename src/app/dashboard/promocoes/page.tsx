@@ -187,6 +187,8 @@ export default function PromocoesPage() {
   const [buscandoAnuncio, setBuscandoAnuncio] = useState(false);
   const [buscaAtiva, setBuscaAtiva] = useState("");
   const [erroAnuncio, setErroAnuncio] = useState("");
+  const [importando, setImportando] = useState(false);
+  const [progresso, setProgresso] = useState("");
 
   const carregarResumo = useCallback(async () => {
     setCarregandoResumo(true);
@@ -287,6 +289,46 @@ export default function PromocoesPage() {
       setErro(mensagemErro(e));
     } finally {
       setRodandoAuto(false);
+    }
+  }
+
+  // Puxa de novo todos os anúncios (ativos, pausados e em revisão) de cada conta, 300 por chamada
+  async function reprocessarAnuncios() {
+    setErro("");
+    setAviso("");
+    if (!contas || contas.length === 0) return;
+    setImportando(true);
+    let criados = 0;
+    let atualizados = 0;
+    try {
+      for (const conta of contas) {
+        let lidos = 0;
+        for (const status of ["active", "paused", "under_review"]) {
+          let scroll: string | null = null;
+          for (;;) {
+            let r: { created: number; updated: number; processed: number; scroll_id: string | null; has_more: boolean };
+            try {
+              r = await apiFetch("/api/ml/listings", { method: "POST", body: JSON.stringify({ ml_user_id: conta.ml_user_id, status, scroll_id: scroll }) });
+            } catch (e) {
+              if (status === "active") throw e;
+              break;
+            }
+            criados += r.created;
+            atualizados += r.updated;
+            lidos += r.processed;
+            scroll = r.scroll_id;
+            setProgresso(`${conta.conta} (${status}): ${lidos} anúncios lidos…`);
+            if (!r.has_more) break;
+          }
+        }
+      }
+      setAviso(`Anúncios reprocessados: ${criados} novos e ${atualizados} atualizados.`);
+      await carregar();
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setImportando(false);
+      setProgresso("");
     }
   }
 
@@ -479,6 +521,11 @@ export default function PromocoesPage() {
             Limpar
           </button>
         )}
+        <button type="button" className="btn-ghost ml-auto" onClick={reprocessarAnuncios} disabled={importando || contas.length === 0} title="Busca no Mercado Livre todos os anúncios (ativos, pausados e em revisão) e atualiza SKU, preço e taxas">
+          {importando ? "Reprocessando…" : "Reprocessar anúncios"}
+        </button>
+        <span className="font-mono text-xs text-slate-500">{anuncios.length} anúncios no sistema</span>
+        {progresso && <span className="w-full text-xs text-slate-500">{progresso}</span>}
       </div>
 
       <PainelPromos r={resumo} carregando={carregandoResumo} onAtualizar={carregarResumo} />
