@@ -42,6 +42,10 @@ export default function ArmazemPage() {
   const [massaValor, setMassaValor] = useState("");
   const [massaData, setMassaData] = useState("");
   const [massaBusy, setMassaBusy] = useState(false);
+  const [promoAberta, setPromoAberta] = useState(false);
+  const [promoAuto, setPromoAuto] = useState<"manter" | "ligar" | "desligar">("ligar");
+  const [promoMargemModo, setPromoMargemModo] = useState<"manter" | "definir" | "padrao">("definir");
+  const [promoMargem, setPromoMargem] = useState("");
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [form, setForm] = useState(formVazio);
@@ -468,6 +472,43 @@ export default function ArmazemPage() {
     carregar();
   }
 
+  // Promoção automática em massa: liga/desliga e define a margem mínima de todos os selecionados
+  async function aplicarPromoMassa() {
+    setErro("");
+    setAviso("");
+    const alvo = selVisiveis.length > 0 ? selVisiveis : produtos.filter((p) => sel.has(p.id));
+    if (alvo.length === 0) return;
+    const alteracao: { promo_auto?: boolean; promo_min_margin?: number | null } = {};
+    if (promoAuto !== "manter") alteracao.promo_auto = promoAuto === "ligar";
+    if (promoMargemModo === "definir") {
+      if (promoMargem.trim() === "" || !Number.isFinite(num(promoMargem))) return setErro("Informe a margem mínima (pode ser negativa, ex.: -5).");
+      alteracao.promo_min_margin = num(promoMargem);
+    } else if (promoMargemModo === "padrao") alteracao.promo_min_margin = null;
+    if (Object.keys(alteracao).length === 0) return setErro("Escolha o que alterar.");
+    const resumo = [
+      promoAuto !== "manter" ? `promoção automática ${promoAuto === "ligar" ? "LIGADA" : "DESLIGADA"}` : "",
+      promoMargemModo === "definir" ? `margem mínima ${promoMargem}%` : promoMargemModo === "padrao" ? "margem mínima padrão (10%)" : "",
+    ].filter(Boolean).join(" e ");
+    if (!confirm(`Aplicar em ${alvo.length} produto(s): ${resumo}?`)) return;
+    setMassaBusy(true);
+    let falhas = 0;
+    try {
+      for (let i = 0; i < alvo.length; i += 100) {
+        const r = await supabase.from("products").update(alteracao).in("id", alvo.slice(i, i + 100).map((p) => p.id));
+        if (r.error) {
+          falhas += Math.min(100, alvo.length - i);
+          setErro(r.error.message);
+        }
+      }
+    } finally {
+      setMassaBusy(false);
+    }
+    setAviso(`${alvo.length - falhas} produto(s) atualizados: ${resumo}.`);
+    setPromoAberta(false);
+    setSel(new Set());
+    carregar();
+  }
+
   async function trocarEmpresa(p: Product, id: string) {
     const { error } = await supabase.from("products").update({ company_id: id || null }).eq("id", p.id);
     if (error) setErro(error.message);
@@ -797,9 +838,41 @@ export default function ArmazemPage() {
         <div className="card flex flex-wrap items-center gap-3 border-brand/30 bg-brand-light/40 p-3">
           <span className="text-sm font-semibold">{sel.size} selecionado(s)</span>
           {!massaAberta && (
-            <button className="btn" onClick={() => { setMassaAberta(true); setMassaData(hojeISO()); }}>Editar custo em massa</button>
+            <button className="btn" onClick={() => { setMassaAberta(true); setPromoAberta(false); setMassaData(hojeISO()); }}>Editar custo em massa</button>
           )}
-          <button className="text-sm text-slate-600 hover:underline" onClick={() => { setSel(new Set()); setMassaAberta(false); }}>Limpar seleção</button>
+          {!promoAberta && (
+            <button className="btn" onClick={() => { setPromoAberta(true); setMassaAberta(false); }}>Promoção automática / margem mínima</button>
+          )}
+          <button className="text-sm text-slate-600 hover:underline" onClick={() => { setSel(new Set()); setMassaAberta(false); setPromoAberta(false); }}>Limpar seleção</button>
+          {promoAberta && (
+            <div className="flex w-full flex-wrap items-end gap-3">
+              <div>
+                <label className="label">Promoção automática</label>
+                <select className="input h-10 py-0" value={promoAuto} onChange={(e) => setPromoAuto(e.target.value as typeof promoAuto)}>
+                  <option value="ligar">Ligar nos selecionados</option>
+                  <option value="desligar">Desligar nos selecionados</option>
+                  <option value="manter">Não mudar</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Margem mínima da promoção</label>
+                <select className="input h-10 py-0" value={promoMargemModo} onChange={(e) => setPromoMargemModo(e.target.value as typeof promoMargemModo)}>
+                  <option value="definir">Definir margem (%)</option>
+                  <option value="padrao">Usar a padrão (10%)</option>
+                  <option value="manter">Não mudar</option>
+                </select>
+              </div>
+              {promoMargemModo === "definir" && (
+                <div>
+                  <label className="label">Margem mínima (%)</label>
+                  <input className="input h-10 w-28" inputMode="decimal" placeholder="10 ou -5" value={promoMargem} onChange={(e) => setPromoMargem(e.target.value)} />
+                </div>
+              )}
+              <button className="btn" disabled={massaBusy} onClick={aplicarPromoMassa}>{massaBusy ? "Aplicando…" : "Aplicar"}</button>
+              <button className="btn-ghost" disabled={massaBusy} onClick={() => setPromoAberta(false)}>Cancelar</button>
+              <p className="w-full text-xs text-slate-600">Com a promoção automática ligada, todo dia o sistema entra sozinho nas promoções do Mercado Livre desses SKUs, no preço que entrega exatamente a margem mínima. Pode ser negativa para aceitar prejuízo.</p>
+            </div>
+          )}
           {massaAberta && (
             <div className="flex w-full flex-wrap items-end gap-3">
               <div>
