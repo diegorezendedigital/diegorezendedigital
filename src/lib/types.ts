@@ -30,6 +30,7 @@ export type Product = {
   promo_auto?: boolean;
   promo_min_margin?: number | null;
   tipo?: "unico" | "multi" | "kit";
+  grupo?: string | null;
 };
 
 export type Company = {

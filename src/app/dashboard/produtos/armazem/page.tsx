@@ -9,7 +9,7 @@ import { LinhaProduto, baixarModelo, lerPlanilha } from "@/lib/planilha";
 type Painel = null | "manual" | "excel";
 type Componente = { id: string; kit_id: string; component_id: string; quantity: number };
 
-const formVazio = { sku: "", nome: "", custo: "", ean: "", ncm: "", estoque: "", company: "", tipo: "unico" };
+const formVazio = { sku: "", nome: "", custo: "", ean: "", ncm: "", estoque: "", company: "", tipo: "unico", cores: "", tamanhos: "", kitDeGrupo: "", kitGrupo: "", kitN: "2", kitPrefixo: "" };
 
 export default function ArmazemPage() {
   const [produtos, setProdutos] = useState<Product[]>([]);
@@ -22,6 +22,7 @@ export default function ArmazemPage() {
   const [aba, setAba] = useState<"todos" | "unico" | "multi" | "kit">("todos");
   const [campoBusca, setCampoBusca] = useState<"tudo" | "sku" | "nome" | "ean">("tudo");
   const [estoqueFiltro, setEstoqueFiltro] = useState<"todos" | "com" | "sem">("todos");
+  const [grupoFiltro, setGrupoFiltro] = useState<string | null>(null);
   const [custoFiltro, setCustoFiltro] = useState<"todos" | "sem" | "com">("todos");
   const [qtdLinhas, setQtdLinhas] = useState(100);
   // Kits: composição (peças + quantidade)
@@ -118,17 +119,18 @@ export default function ArmazemPage() {
       if (statusEfetivo === "nao" && mapeadoEm(p.id, mpFiltro)) return false;
       if (estoqueFiltro === "com" && !(Number(p.stock_qty) > 0)) return false;
       if (estoqueFiltro === "sem" && Number(p.stock_qty) > 0) return false;
+      if (grupoFiltro && p.grupo !== grupoFiltro) return false;
       if (custoFiltro === "sem" && Number(p.cost_price) > 0) return false;
       if (custoFiltro === "com" && !(Number(p.cost_price) > 0)) return false;
       if (termos.length === 0) return true;
-      const nome = p.name.toLowerCase();
+      const nome = `${p.name} ${p.grupo ?? ""}`.toLowerCase();
       const sku = (p.sku ?? "").toLowerCase();
       const ean = p.ean ?? "";
       return termos.some((t) =>
         campoBusca === "sku" ? sku.includes(t) : campoBusca === "nome" ? nome.includes(t) : campoBusca === "ean" ? ean.includes(t) : nome.includes(t) || sku.includes(t) || ean.includes(t)
       );
     });
-  }, [produtos, busca, campoBusca, statusEfetivo, mpFiltro, estoqueFiltro, custoFiltro, mapeadoEm]);
+  }, [produtos, busca, campoBusca, statusEfetivo, mpFiltro, estoqueFiltro, custoFiltro, grupoFiltro, mapeadoEm]);
 
   const contagem = useMemo(
     () => ({
@@ -140,7 +142,12 @@ export default function ArmazemPage() {
     [filtrados]
   );
   const visiveis = useMemo(() => (aba === "todos" ? filtrados : filtrados.filter((p) => tipoDe(p) === aba)), [filtrados, aba]);
-  useEffect(() => setQtdLinhas(100), [busca, campoBusca, statusMap, mpFiltro, estoqueFiltro, custoFiltro, aba]);
+  useEffect(() => setQtdLinhas(100), [busca, campoBusca, statusMap, mpFiltro, estoqueFiltro, custoFiltro, grupoFiltro, aba]);
+  const grupos = useMemo(() => {
+    const m = new Map<string, number>();
+    produtos.forEach((p) => p.grupo && tipoDe(p) !== "kit" && m.set(p.grupo, (m.get(p.grupo) ?? 0) + 1));
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [produtos]);
   const semCustoQtd = useMemo(() => produtos.filter((p) => !(Number(p.cost_price) > 0)).length, [produtos]);
   const prodPorId = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
 
@@ -167,7 +174,7 @@ export default function ArmazemPage() {
     if (error) setErro(error.message);
     else carregar();
   }
-  const filtrando = busca.trim() !== "" || statusMap !== "todos" || mpFiltro !== "todos" || estoqueFiltro !== "todos" || custoFiltro !== "todos";
+  const filtrando = busca.trim() !== "" || statusMap !== "todos" || mpFiltro !== "todos" || estoqueFiltro !== "todos" || custoFiltro !== "todos" || !!grupoFiltro;
 
   const selVisiveis = useMemo(() => visiveis.filter((p) => sel.has(p.id)), [visiveis, sel]);
   const todosMarcados = visiveis.length > 0 && selVisiveis.length === visiveis.length;
@@ -277,6 +284,88 @@ export default function ArmazemPage() {
     const { data } = await supabase.auth.getSession();
     const uid = data.session?.user.id;
     if (!uid) return;
+    // Várias variantes de uma vez: modelo + cores + tamanhos
+    if (form.tipo === "multi") {
+      const modelo = form.nome.trim();
+      const base = form.sku.trim().toUpperCase();
+      const partes = (t: string) => t.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+      const cores = partes(form.cores);
+      const tamanhos = partes(form.tamanhos);
+      if (!modelo || !base) return setErro("Informe o nome do modelo e o SKU base.");
+      if (cores.length === 0 && tamanhos.length === 0) return setErro("Informe pelo menos as cores ou os tamanhos (separados por vírgula).");
+      const combos: { cor: string; tam: string }[] = [];
+      (cores.length ? cores : [""]).forEach((cor) => (tamanhos.length ? tamanhos : [""]).forEach((tam) => combos.push({ cor, tam })));
+      if (combos.length > 300) return setErro(`Seriam ${combos.length} variantes; o máximo por vez é 300.`);
+      const existentes = new Set(produtos.map((p) => p.sku));
+      const novos = combos
+        .map(({ cor, tam }) => ({
+          sku: [base, cor, tam].filter(Boolean).join("-").toUpperCase().replace(/\s+/g, ""),
+          name: `${modelo} - ${[cor, tam].filter(Boolean).join(" / ")}`,
+        }))
+        .filter((x) => !existentes.has(x.sku));
+      if (novos.length === 0) return setErro("Todas essas variantes já existem.");
+      const { error } = await supabase.from("products").insert(
+        novos.map((x) => ({
+          store_id: uid,
+          tipo: "multi",
+          grupo: modelo,
+          sku: x.sku,
+          name: x.name,
+          cost_price: num(form.custo),
+          ncm: form.ncm.trim() || null,
+          stock_qty: num(form.estoque),
+          company_id: form.company || null,
+          cost_updated_at: new Date().toISOString(),
+        }))
+      );
+      if (error) return setErro(error.message.includes("grupo") ? "Falta rodar o SQL do grupo de variantes no Supabase (veja a mensagem do assistente)." : error.message);
+      setForm(formVazio);
+      setAviso(`${novos.length} variantes criadas no grupo “${modelo}”${combos.length - novos.length ? ` (${combos.length - novos.length} já existiam)` : ""}.`);
+      setAba("multi");
+      setGrupoFiltro(modelo);
+      await carregar();
+      return;
+    }
+    // Um kit para cada variante de um grupo (ex.: “Kit 2 bermudas” de cada cor e tamanho)
+    if (form.tipo === "kit" && form.kitDeGrupo === "sim") {
+      const n = num(form.kitN) || 0;
+      const pecas = produtos.filter((p) => p.grupo === form.kitGrupo && tipoDe(p) !== "kit");
+      if (!form.kitGrupo || pecas.length === 0) return setErro("Escolha um grupo de variantes.");
+      if (!(n > 0)) return setErro("Informe quantas peças de cada variante entram no kit.");
+      const prefixo = (form.kitPrefixo.trim() || `KIT${n}-`).toUpperCase();
+      const existentes = new Set(produtos.map((p) => p.sku));
+      const novos = pecas.filter((p) => !existentes.has(prefixo + p.sku));
+      if (novos.length === 0) return setErro(`Já existem kits com o prefixo ${prefixo} para todas as variantes.`);
+      const grupoKit = `Kit ${n} - ${form.kitGrupo}`;
+      const { data: criados, error } = await supabase
+        .from("products")
+        .insert(
+          novos.map((p) => ({
+            store_id: uid,
+            tipo: "kit",
+            grupo: grupoKit,
+            sku: prefixo + p.sku,
+            name: `Kit ${n} - ${p.name}`,
+            cost_price: Number(p.cost_price) * n,
+            stock_qty: 0,
+            company_id: p.company_id,
+            cost_updated_at: new Date().toISOString(),
+          }))
+        )
+        .select("id, sku");
+      if (error) return setErro(error.message.includes("grupo") ? "Falta rodar o SQL do grupo de variantes no Supabase (veja a mensagem do assistente)." : error.message);
+      const idPorSku = new Map((criados ?? []).map((k) => [k.sku as string, k.id as string]));
+      const { error: e2 } = await supabase.from("product_components").insert(
+        novos.map((p) => ({ store_id: uid, kit_id: idPorSku.get(prefixo + p.sku) as string, component_id: p.id, quantity: n })).filter((x) => x.kit_id)
+      );
+      if (e2) return setErro(e2.message.includes("product_components") ? "Falta rodar o SQL dos kits no Supabase." : e2.message);
+      setForm(formVazio);
+      setAviso(`${novos.length} kits criados (${n} peça(s) de cada variante do grupo “${form.kitGrupo}”). O custo de cada kit é a soma das peças e acompanha o custo da variante.`);
+      setAba("kit");
+      setGrupoFiltro(grupoKit);
+      await carregar();
+      return;
+    }
     const sku = form.sku.trim();
     if (produtos.some((p) => p.sku === sku)) {
       setErro(`Já existe um produto com o SKU ${sku}.`);
@@ -507,27 +596,81 @@ export default function ArmazemPage() {
               <option value="kit">Kit / produto aleatório (soma de outros produtos)</option>
             </select>
             {form.tipo === "kit" && <p className="mt-1 text-xs text-slate-500">O custo do kit vem da soma das peças. Depois de salvar, você escolhe as peças e as quantidades.</p>}
+            {form.tipo === "multi" && <p className="mt-1 text-xs text-slate-500">Informe o modelo, as cores e os tamanhos: o sistema cria uma linha para cada combinação.</p>}
           </div>
-          <div>
-            <label className="label">SKU *</label>
-            <input className="input" value={form.sku} onChange={(e) => f("sku", e.target.value)} required />
-          </div>
-          <div className="col-span-2">
-            <label className="label">Nome *</label>
-            <input className="input" value={form.nome} onChange={(e) => f("nome", e.target.value)} required />
-          </div>
-          <div>
-            <label className="label">Custo (R$) *</label>
-            <input className="input" inputMode="decimal" value={form.custo} onChange={(e) => f("custo", e.target.value)} required />
-          </div>
+          {form.tipo === "kit" && grupos.length > 0 && (
+            <div className="col-span-2 md:col-span-4">
+              <label className="label">Como criar o kit</label>
+              <select className="input" value={form.kitDeGrupo} onChange={(e) => f("kitDeGrupo", e.target.value)}>
+                <option value="">Um kit só (escolho as peças depois)</option>
+                <option value="sim">Um kit para cada variante de um grupo (ex.: Kit 2 bermudas, de cada cor e tamanho)</option>
+              </select>
+            </div>
+          )}
+          {form.tipo === "kit" && form.kitDeGrupo === "sim" ? (
+            <>
+              <div className="col-span-2">
+                <label className="label">Grupo de variantes *</label>
+                <select className="input" value={form.kitGrupo} onChange={(e) => f("kitGrupo", e.target.value)} required>
+                  <option value="">Escolher…</option>
+                  {grupos.map(([g, q]) => (
+                    <option key={g} value={g}>{g} ({q} variantes)</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">Peças de cada variante *</label>
+                <input className="input" inputMode="decimal" value={form.kitN} onChange={(e) => f("kitN", e.target.value)} required />
+              </div>
+              <div>
+                <label className="label">Prefixo do SKU</label>
+                <input className="input" placeholder={`KIT${num(form.kitN) || 2}-`} value={form.kitPrefixo} onChange={(e) => f("kitPrefixo", e.target.value)} />
+              </div>
+              <p className="col-span-2 text-xs text-slate-500 md:col-span-6">
+                Cada kit recebe o SKU do prefixo + SKU da variante (ex.: {(form.kitPrefixo.trim() || `KIT${num(form.kitN) || 2}-`).toUpperCase()}{produtos.find((p) => p.grupo === form.kitGrupo)?.sku ?? "SKU-DA-VARIANTE"}) e o custo da soma das peças, que acompanha o custo da variante.
+              </p>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="label">{form.tipo === "multi" ? "SKU base *" : "SKU *"}</label>
+                <input className="input" placeholder={form.tipo === "multi" ? "CAM-POLO" : ""} value={form.sku} onChange={(e) => f("sku", e.target.value)} required />
+              </div>
+              <div className="col-span-2">
+                <label className="label">{form.tipo === "multi" ? "Nome do modelo *" : "Nome *"}</label>
+                <input className="input" placeholder={form.tipo === "multi" ? "Camisa Polo Masculina" : ""} value={form.nome} onChange={(e) => f("nome", e.target.value)} required />
+              </div>
+              {form.tipo === "multi" && (
+                <>
+                  <div className="col-span-2">
+                    <label className="label">Cores (separe por vírgula)</label>
+                    <input className="input" placeholder="Branco, Preto, Azul" value={form.cores} onChange={(e) => f("cores", e.target.value)} />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="label">Tamanhos (separe por vírgula)</label>
+                    <input className="input" placeholder="P, M, G, GG" value={form.tamanhos} onChange={(e) => f("tamanhos", e.target.value)} />
+                  </div>
+                  <p className="col-span-2 text-xs text-slate-500 md:col-span-6">
+                    Serão criadas {(Math.max(form.cores.split(/[,\n]/).filter((x) => x.trim()).length, 1)) * (Math.max(form.tamanhos.split(/[,\n]/).filter((x) => x.trim()).length, 1))} variantes, todas no grupo “{form.nome.trim() || "nome do modelo"}”, com o mesmo custo, estoque e CNPJ abaixo (depois você ajusta cada uma).
+                  </p>
+                </>
+              )}
+              <div>
+                <label className="label">Custo (R$) *</label>
+                <input className="input" inputMode="decimal" value={form.custo} onChange={(e) => f("custo", e.target.value)} required={form.tipo !== "kit"} />
+              </div>
+            </>
+          )}
           <div>
             <label className="label">Estoque</label>
             <input className="input" inputMode="decimal" value={form.estoque} onChange={(e) => f("estoque", e.target.value)} />
           </div>
-          <div>
-            <label className="label">EAN</label>
-            <input className="input" inputMode="numeric" value={form.ean} onChange={(e) => f("ean", e.target.value)} />
-          </div>
+          {form.tipo !== "multi" && !(form.tipo === "kit" && form.kitDeGrupo === "sim") && (
+            <div>
+              <label className="label">EAN</label>
+              <input className="input" inputMode="numeric" value={form.ean} onChange={(e) => f("ean", e.target.value)} />
+            </div>
+          )}
           <div>
             <label className="label">NCM</label>
             <input className="input" inputMode="numeric" value={form.ncm} onChange={(e) => f("ncm", e.target.value)} />
@@ -644,6 +787,12 @@ export default function ArmazemPage() {
         ))}
       </div>
 
+      {grupoFiltro && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="rounded-full bg-brand-light px-3 py-1 font-medium text-brand">Grupo: {grupoFiltro}</span>
+          <button className="text-brand hover:underline" onClick={() => setGrupoFiltro(null)}>Ver todos os produtos</button>
+        </div>
+      )}
       {sel.size > 0 && (
         <div className="card flex flex-wrap items-center gap-3 border-brand/30 bg-brand-light/40 p-3">
           <span className="text-sm font-semibold">{sel.size} selecionado(s)</span>
@@ -713,7 +862,14 @@ export default function ArmazemPage() {
                 <tr className={sel.has(p.id) ? "bg-brand-light/30" : ""}>
                   <td className="td w-8"><input type="checkbox" checked={sel.has(p.id)} onChange={() => alternar(p.id)} aria-label={`Selecionar ${p.sku}`} /></td>
                   <td className="td font-mono text-xs">{p.sku}</td>
-                  <td className="td">{p.name}</td>
+                  <td className="td">
+                    {p.name}
+                    {p.grupo && (
+                      <button type="button" className="ml-2 rounded bg-brand-light px-1.5 py-0.5 text-[10px] font-semibold text-brand hover:underline" title={`Grupo: ${p.grupo}. Clique para ver só este grupo`} onClick={() => setGrupoFiltro(grupoFiltro === p.grupo ? null : p.grupo ?? null)}>
+                        grupo · {p.grupo.length > 28 ? p.grupo.slice(0, 28) + "…" : p.grupo}
+                      </button>
+                    )}
+                  </td>
                   <td className="td">
                     <select
                       className="input py-1"
