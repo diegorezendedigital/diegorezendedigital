@@ -129,6 +129,11 @@ export async function rodarPromocoesAutomaticas(
         for (const it of itens) {
           const a = it.id ? meus.get(it.id) : undefined;
           if (!a || it.status !== "candidate") continue;
+          if (restante() < 9000) {
+            // Pouco tempo sobrando nesta chamada: para aqui e a tela continua na próxima
+            r.parcial = true;
+            return r;
+          }
           if (feitosNaRodada.has(`${a.external_id}|${p.id}`)) continue;
           r.avaliados++;
 

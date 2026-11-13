@@ -328,7 +328,18 @@ export default function PromocoesPage() {
       for (let rodada = 1; rodada <= 40; rodada++) {
         t.rodada = rodada;
         setAutoProg({ ...t, mensagem: rodada === 1 ? "Lendo as promoções abertas e avaliando os anúncios…" : `Continuando (rodada ${rodada})…` });
-        const r = await apiFetch<RespostaAuto>("/api/ml/promocoes/auto", { method: "POST", body: JSON.stringify({ ja, desde }) });
+        // Se uma chamada cai (tempo esgotado, rede), tenta de novo até 3 vezes: o que já foi feito não se repete
+        let r: RespostaAuto | null = null;
+        let ultimoErro: unknown = null;
+        for (let tentativa = 1; tentativa <= 3 && !r; tentativa++) {
+          try {
+            r = await apiFetch<RespostaAuto>("/api/ml/promocoes/auto", { method: "POST", body: JSON.stringify({ ja, desde }) });
+          } catch (e) {
+            ultimoErro = e;
+            setAutoProg({ ...t, mensagem: `A chamada falhou (${mensagemErro(e)}). Tentando de novo (${tentativa}/3)…` });
+          }
+        }
+        if (!r) throw ultimoErro ?? new Error("Erro na requisição");
         desde = r.inicioISO ?? desde;
         ja = r.concluidas ?? ja;
         t.avaliados += r.avaliados;
