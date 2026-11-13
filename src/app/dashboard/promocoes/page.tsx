@@ -705,7 +705,7 @@ export default function PromocoesPage() {
                     <tr key={h.id} className="border-b border-slate-100 align-top">
                       <td className="whitespace-nowrap p-3 font-mono text-xs">
                         {new Date(h.updated_at).toLocaleString("pt-BR")}
-                        {h.origem && <div className="font-sans text-[10px] text-slate-500">{h.origem === "notificacao" ? "convite em tempo real" : h.origem === "agendada" ? "rodada agendada" : "rodada manual"}</div>}
+                        {h.origem && <div className="font-sans text-[10px] text-slate-500">{h.origem === "notificacao" ? "convite em tempo real" : h.origem === "agendada" ? "rodada agendada" : "aplicado pelo botão"}</div>}
                       </td>
                       <td className="max-w-[280px] p-3">
                         <div className="truncate" title={a?.title}>{a?.title ?? "—"}</div>

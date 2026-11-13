@@ -6,11 +6,11 @@ import { apiFetch, supabase } from "@/lib/supabase/client";
 import { AcaoPromo, Listing, RodadaPromo, brl, mensagemErro, pct } from "@/lib/types";
 import { SQL_AUTOMACAO_PROMOCOES } from "@/lib/sql-automacao";
 
-// Painel da promoção automática: status da automação, rodada ao vivo (roda no servidor, pode fechar a página),
-// últimas entradas, convites em tempo real do Mercado Livre e o que falta configurar.
+// Painel da promoção automática: você aplica pelo botão; a rodada roda no servidor (pode fechar a página)
+// e a tela mostra o andamento ao vivo, as últimas entradas e o resultado.
 
 const ATIVAS = ["na_fila", "rodando"];
-const ORIGEM: Record<string, string> = { manual: "rodada manual", agendada: "rodada agendada", notificacao: "convite em tempo real" };
+const ORIGEM: Record<string, string> = { manual: "pelo botão", agendada: "agendada", notificacao: "convite em tempo real" };
 const PARADA_MS = 90_000;
 
 const hora = (s: string) => new Date(s).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -22,20 +22,11 @@ const quando = (s: string) => {
   if (d.toDateString() === ontem.toDateString()) return `ontem às ${hora(s)}`;
   return `${d.toLocaleDateString("pt-BR")} às ${hora(s)}`;
 };
-const ha = (s: string) => {
-  const min = Math.max(0, Math.round((Date.now() - new Date(s).getTime()) / 60_000));
-  if (min < 1) return "agora há pouco";
-  if (min < 60) return `há ${min} min`;
-  const h = Math.round(min / 60);
-  return h < 24 ? `há ${h} h` : `há ${Math.round(h / 24)} dia(s)`;
-};
 const duracao = (de: string, ate?: string | null) => {
   const seg = Math.max(0, Math.round(((ate ? new Date(ate).getTime() : Date.now()) - new Date(de).getTime()) / 1000));
   return `${Math.floor(seg / 60)}min ${String(seg % 60).padStart(2, "0")}s`;
 };
 const faltaTabela = (msg: string) => /promo_runs|ml_notificacoes|run_id|does not exist|schema cache|relation/i.test(msg);
-
-type Notif = { ultima: string | null; hoje: number; resultado: string | null; semTabela: boolean };
 
 export default function AutomacaoPromocoes({
   skusAuto,
@@ -51,10 +42,8 @@ export default function AutomacaoPromocoes({
   const [rodada, setRodada] = useState<RodadaPromo | null>(null);
   const [carregou, setCarregou] = useState(false);
   const [feed, setFeed] = useState<AcaoPromo[]>([]);
-  const [notif, setNotif] = useState<Notif>({ ultima: null, hoje: 0, resultado: null, semTabela: false });
   const [faltaSQL, setFaltaSQL] = useState(false);
   const [copiado, setCopiado] = useState(false);
-  const [comoAtivar, setComoAtivar] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
   const [, setTique] = useState(0);
@@ -81,33 +70,21 @@ export default function AutomacaoPromocoes({
     if (!error) setFeed((data ?? []) as AcaoPromo[]);
   }, []);
 
-  const lerNotificacoes = useCallback(async () => {
-    const inicioDia = new Date();
-    inicioDia.setHours(0, 0, 0, 0);
-    const [u, h] = await Promise.all([
-      supabase.from("ml_notificacoes").select("recebida_em, resultado").eq("topic", "public_candidates").order("recebida_em", { ascending: false }).limit(1),
-      supabase.from("ml_notificacoes").select("id", { count: "exact", head: true }).eq("topic", "public_candidates").gte("recebida_em", inicioDia.toISOString()),
-    ]);
-    if (u.error) return setNotif({ ultima: null, hoje: 0, resultado: null, semTabela: faltaTabela(u.error.message) });
-    const ult = ((u.data ?? [])[0] as { recebida_em: string; resultado: string | null } | undefined) ?? null;
-    setNotif({ ultima: ult?.recebida_em ?? null, hoje: h.count ?? 0, resultado: ult?.resultado ?? null, semTabela: false });
-  }, []);
-
   // Primeira leitura
   useEffect(() => {
     (async () => {
       const r = await lerRodada();
       if (r) await lerFeed(r.id);
-      await lerNotificacoes();
       setCarregou(true);
     })();
-  }, [lerRodada, lerFeed, lerNotificacoes]);
+  }, [lerRodada, lerFeed]);
 
-  // Acompanha: a cada 2 s com rodada em andamento; a cada 30 s parado (para ver a rodada agendada começar)
+  // Acompanha a rodada em andamento a cada 2 s
   useEffect(() => {
+    if (!ativa || !rodada) return;
     const id = setInterval(
       async () => {
-        const r = await lerRodada(ativa && rodada ? rodada.id : undefined);
+        const r = await lerRodada(rodada.id);
         if (r && ATIVAS.includes(r.status)) {
           await lerFeed(r.id);
           // A continuação se perdeu (sem sinal há 90 s): pede para retomar, no máximo uma vez por minuto
@@ -117,14 +94,12 @@ export default function AutomacaoPromocoes({
             retomadaEm.current = Date.now();
             apiFetch("/api/ml/promocoes/auto", { method: "POST", body: JSON.stringify({ acao: "continuar" }) }).catch(() => undefined);
           }
-        } else if (!ativa) {
-          lerNotificacoes();
         }
       },
-      ativa ? 2000 : 30_000
+      2000
     );
     return () => clearInterval(id);
-  }, [ativa, rodada, lerRodada, lerFeed, lerNotificacoes]);
+  }, [ativa, rodada, lerRodada, lerFeed]);
 
   // Relógio da rodada
   useEffect(() => {
@@ -173,16 +148,6 @@ export default function AutomacaoPromocoes({
     }
   }
 
-  const urlNotificacoes = typeof window !== "undefined" ? `${window.location.origin}/api/ml/notificacoes` : "/api/ml/notificacoes";
-
-  const Cartao = ({ titulo, valor, sub, cor }: { titulo: string; valor: string; sub?: React.ReactNode; cor?: string }) => (
-    <div className="rounded-2xl bg-slate-50 p-4">
-      <div className="text-xs font-medium text-slate-500">{titulo}</div>
-      <div className={`mt-1 text-base font-semibold ${cor ?? ""}`}>{valor}</div>
-      {sub && <div className="mt-0.5 text-[12px] text-slate-500">{sub}</div>}
-    </div>
-  );
-
   const r = rodada;
   const porcentagem = r && r.total > 0 ? Math.min(100, Math.round((r.feitos / r.total) * 100)) : r && !ativa ? 100 : 0;
   const titulo = !r
@@ -190,7 +155,7 @@ export default function AutomacaoPromocoes({
     : r.status === "na_fila"
       ? "Começando: lendo as promoções abertas…"
       : r.status === "rodando"
-        ? "Rodando no servidor: pode fechar esta página que ela continua."
+        ? "Aplicando no servidor: pode fechar esta página que continua."
         : r.status === "concluida"
           ? r.erros > 0
             ? "Terminou, com alguns erros (o motivo está no log)."
@@ -221,7 +186,7 @@ export default function AutomacaoPromocoes({
           <p className="mt-0.5 text-sm text-slate-600">
             {skusAuto > 0 ? (
               <>
-                Ligada em <b>{skusAuto}</b> SKU{skusAuto > 1 ? "s" : ""} ({anunciosAuto} anúncio{anunciosAuto === 1 ? "" : "s"} do Mercado Livre). O sistema entra sozinho nas promoções em que a margem, depois de custo, taxa, frete e imposto, atinge a mínima de cada SKU.
+                Ligada em <b>{skusAuto}</b> SKU{skusAuto > 1 ? "s" : ""} ({anunciosAuto} anúncio{anunciosAuto === 1 ? "" : "s"} do Mercado Livre). Ao clicar em “Aplicar promoções”, o sistema entra nas promoções em que a margem, depois de custo, taxa, frete e imposto, atinge a mínima de cada SKU. Roda no servidor: pode fechar a página.
               </>
             ) : (
               <>
@@ -237,7 +202,7 @@ export default function AutomacaoPromocoes({
             </button>
           )}
           <button className="btn" onClick={iniciar} disabled={ativa || enviando || skusAuto === 0 || faltaSQL}>
-            {ativa ? "Rodando…" : enviando ? "Começando…" : "Rodar agora"}
+            {ativa ? "Aplicando…" : enviando ? "Começando…" : "Aplicar promoções"}
           </button>
         </div>
       </div>
@@ -245,7 +210,7 @@ export default function AutomacaoPromocoes({
       {faltaSQL && (
         <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <p>
-            <b>Falta um passo no banco:</b> rode este SQL uma vez no Supabase (SQL Editor → New query → colar → Run). Ele cria as tabelas da rodada em segundo plano e dos convites em tempo real. Depois recarregue a página.
+            <b>Falta um passo no banco:</b> rode este SQL uma vez no Supabase (SQL Editor → New query → colar → Run). Ele cria a tabela que guarda o andamento de cada aplicação. Depois recarregue a página.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -264,59 +229,10 @@ export default function AutomacaoPromocoes({
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <Cartao
-          titulo="Rodadas automáticas"
-          valor={skusAuto > 0 ? "3 vezes por dia" : "Desligadas"}
-          sub={skusAuto > 0 ? "por volta de 7h30, 13h30 e 19h30, mais quando você clicar em “Rodar agora”" : "ligue “Promo auto” em algum SKU"}
-          cor={skusAuto > 0 ? "text-emerald-700" : "text-slate-500"}
-        />
-        <Cartao
-          titulo="Última rodada"
-          valor={!carregou ? "…" : !r ? "Nenhuma ainda" : ativa ? "Rodando agora" : `${r.status === "concluida" ? "Concluída" : r.status === "cancelada" ? "Parada" : "Com erro"} ${quando(r.terminado_em || r.criado_em)}`}
-          sub={r && !ativa ? `${r.entraram} entraram · ${r.recusados} de fora · ${r.erros} erro${r.erros === 1 ? "" : "s"} · ${ORIGEM[r.origem] ?? r.origem}` : r ? ORIGEM[r.origem] ?? r.origem : undefined}
-          cor={r && !ativa && r.status !== "concluida" ? "text-amber-700" : undefined}
-        />
-        <Cartao
-          titulo="Convites em tempo real"
-          valor={notif.semTabela ? "Falta o SQL" : notif.ultima ? "Recebendo" : "Não ativados"}
-          cor={notif.ultima ? "text-emerald-700" : "text-slate-500"}
-          sub={
-            notif.ultima ? (
-              <span title={notif.resultado ?? undefined}>
-                último convite {ha(notif.ultima)} · {notif.hoje} hoje
-              </span>
-            ) : (
-              <button type="button" className="font-medium text-brand underline" onClick={() => setComoAtivar((v) => !v)}>
-                {comoAtivar ? "Fechar" : "Como ativar (2 min)"}
-              </button>
-            )
-          }
-        />
-      </div>
-
-      {comoAtivar && !notif.ultima && (
-        <div className="space-y-2 rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
-          <p className="font-medium">Com isso o Mercado Livre avisa na hora quando um anúncio seu é convidado, e o sistema entra sem esperar a próxima rodada:</p>
-          <ol className="list-decimal space-y-1 pl-5">
-            <li>
-              Abra o{" "}
-              <a className="text-brand underline" href="https://developers.mercadolivre.com.br/devcenter" target="_blank" rel="noreferrer">
-                DevCenter do Mercado Livre
-              </a>{" "}
-              e edite o seu aplicativo (o mesmo usado para conectar as contas).
-            </li>
-            <li>
-              Em “URL de retornos de chamada de notificação”, cole:{" "}
-              <code className="rounded bg-white px-1.5 py-0.5 font-mono text-xs">{urlNotificacoes}</code>{" "}
-              <button type="button" className="text-xs font-medium text-brand underline" onClick={() => navigator.clipboard?.writeText(urlNotificacoes)}>
-                copiar
-              </button>
-            </li>
-            <li>Nos tópicos, marque os de promoções: <b>public_candidates</b> e <b>public_offers</b>. Salve.</li>
-          </ol>
-          <p className="text-xs text-slate-500">Quando o primeiro convite chegar, este quadro muda para “Recebendo”. As rodadas 3 vezes por dia continuam como garantia.</p>
-        </div>
+      {carregou && r && !ativa && (
+        <p className="text-xs text-slate-500">
+          Última aplicação: {r.status === "concluida" ? "concluída" : r.status === "cancelada" ? "parada" : "com erro"} {quando(r.terminado_em || r.criado_em)} · {r.entraram} entraram · {r.recusados} de fora · {r.erros} erro{r.erros === 1 ? "" : "s"}
+        </p>
       )}
 
       {r && (ativa || r.terminado_em) && (
