@@ -9,7 +9,7 @@ import { LinhaProduto, baixarModelo, lerPlanilha } from "@/lib/planilha";
 type Painel = null | "manual" | "excel";
 type Componente = { id: string; kit_id: string; component_id: string; quantity: number };
 
-const formVazio = { sku: "", nome: "", custo: "", ean: "", ncm: "", estoque: "", company: "" };
+const formVazio = { sku: "", nome: "", custo: "", ean: "", ncm: "", estoque: "", company: "", tipo: "unico" };
 
 export default function ArmazemPage() {
   const [produtos, setProdutos] = useState<Product[]>([]);
@@ -282,8 +282,9 @@ export default function ArmazemPage() {
       setErro(`Já existe um produto com o SKU ${sku}.`);
       return;
     }
-    const { error } = await supabase.from("products").insert({
+    const { data: criado, error } = await supabase.from("products").insert({
       store_id: uid,
+      tipo: form.tipo,
       sku,
       name: form.nome.trim(),
       cost_price: num(form.custo),
@@ -292,14 +293,20 @@ export default function ArmazemPage() {
       stock_qty: num(form.estoque),
       company_id: form.company || null,
       cost_updated_at: new Date().toISOString(),
-    });
+    }).select("id").single();
     if (error) {
       setErro(error.message);
       return;
     }
+    const eraKit = form.tipo === "kit";
     setForm(formVazio);
-    setAviso("Produto cadastrado.");
-    carregar();
+    setAviso(eraKit ? "Kit cadastrado. Adicione as peças abaixo, em Composição: o custo do kit será a soma delas." : "Produto cadastrado.");
+    await carregar();
+    if (eraKit && criado) {
+      setAba("kit");
+      setKitAberto(criado.id as string);
+      setKitBusca("");
+    }
   }
 
   async function salvarCampo(p: Product, campoNome: "cost_price" | "stock_qty", valor: string) {
@@ -492,6 +499,15 @@ export default function ArmazemPage() {
 
       {painel === "manual" && (
         <form onSubmit={adicionar} className="card grid grid-cols-2 gap-3 md:grid-cols-6">
+          <div className="col-span-2">
+            <label className="label">Tipo do produto *</label>
+            <select className="input" value={form.tipo} onChange={(e) => f("tipo", e.target.value)}>
+              <option value="unico">Produto único (unitário)</option>
+              <option value="multi">Com variantes (cor, tamanho…)</option>
+              <option value="kit">Kit / produto aleatório (soma de outros produtos)</option>
+            </select>
+            {form.tipo === "kit" && <p className="mt-1 text-xs text-slate-500">O custo do kit vem da soma das peças. Depois de salvar, você escolhe as peças e as quantidades.</p>}
+          </div>
           <div>
             <label className="label">SKU *</label>
             <input className="input" value={form.sku} onChange={(e) => f("sku", e.target.value)} required />
