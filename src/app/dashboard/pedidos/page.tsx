@@ -28,6 +28,30 @@ type Linha = {
 };
 
 type Chave = "preco" | "comissao" | "frete" | "freteComprador" | "impostos" | "custo" | "sobra";
+
+// Ordenação da tabela: clique no título da coluna (1º clique: maior → menor; 2º: menor → maior; 3º: volta ao normal)
+type ColOrdem = "data" | "produto" | "sku" | "uf" | "preco" | "repasse" | "comissao" | "frete" | "freteComprador" | "impostos" | "custo" | "sobra" | "margem" | "roi";
+type Ordem = { col: ColOrdem; dir: "asc" | "desc" };
+const ORDEM_PADRAO: Ordem = { col: "data", dir: "desc" };
+const COLUNAS_TEXTO = new Set<ColOrdem>(["produto", "sku", "uf"]);
+const NOME_COLUNA: Record<ColOrdem, string> = {
+  data: "data do pedido",
+  produto: "produto",
+  sku: "SKU",
+  uf: "UF",
+  preco: "venda",
+  repasse: "repasse",
+  comissao: "comissão",
+  frete: "frete",
+  freteComprador: "frete do comprador",
+  impostos: "impostos",
+  custo: "custo",
+  sobra: "sobrou",
+  margem: "margem de contribuição",
+  roi: "ROI",
+};
+const sentido = (o: Ordem) =>
+  o.col === "data" ? (o.dir === "desc" ? "mais recentes primeiro" : "mais antigos primeiro") : COLUNAS_TEXTO.has(o.col) ? (o.dir === "asc" ? "A → Z" : "Z → A") : o.dir === "desc" ? "maior para o menor" : "menor para o maior";
 const soma = (l: Linha[], k: Chave) => l.reduce((a, x) => a + x[k], 0);
 
 // Datas no horário de Brasília
@@ -51,6 +75,35 @@ export default function PedidosPage() {
     const t = setTimeout(() => setBuscaAtiva(busca.trim().replace(/[,()%*]/g, " ").trim()), 400);
     return () => clearTimeout(t);
   }, [busca]);
+  const [ordem, setOrdem] = useState<Ordem>(ORDEM_PADRAO);
+  useEffect(() => {
+    try {
+      const salva = JSON.parse(localStorage.getItem("pedidos.ordem") || "null") as Ordem | null;
+      if (salva && salva.col in NOME_COLUNA && (salva.dir === "asc" || salva.dir === "desc")) setOrdem(salva);
+    } catch {
+      /* sem armazenamento local: ordem normal */
+    }
+  }, []);
+  function ordenarPor(col: ColOrdem) {
+    setOrdem((o) => {
+      const primeira: Ordem["dir"] = COLUNAS_TEXTO.has(col) ? "asc" : "desc";
+      const nova: Ordem = o.col !== col ? { col, dir: primeira } : o.dir === primeira ? { col, dir: primeira === "desc" ? "asc" : "desc" } : ORDEM_PADRAO;
+      try {
+        localStorage.setItem("pedidos.ordem", JSON.stringify(nova));
+      } catch {
+        /* ignora */
+      }
+      return nova;
+    });
+  }
+  function ordemNormal() {
+    setOrdem(ORDEM_PADRAO);
+    try {
+      localStorage.removeItem("pedidos.ordem");
+    } catch {
+      /* ignora */
+    }
+  }
   const [reprocessando, setReprocessando] = useState(false);
   const [reprocessandoCustos, setReprocessandoCustos] = useState(false);
   const [progresso, setProgresso] = useState("");
@@ -223,6 +276,59 @@ export default function PedidosPage() {
     });
   }, [visiveis]);
 
+  // Pedidos na ordem escolhida; vazios (ROI sem custo, SKU em branco) ficam sempre por último
+  const ordenados = useMemo(() => {
+    type Grupo = (typeof grupos)[number];
+    const valor = (g: Grupo): number | string | null => {
+      switch (ordem.col) {
+        case "data":
+          return new Date(g.data).getTime();
+        case "produto":
+          return (g.produto || "").toLowerCase();
+        case "sku":
+          return (g.sku || "").toLowerCase();
+        case "uf":
+          return g.uf === "—" ? "" : g.uf;
+        case "repasse":
+          return g.preco - g.comissao - g.frete;
+        case "roi":
+          return g.roi;
+        default:
+          return g[ordem.col];
+      }
+    };
+    const fator = ordem.dir === "asc" ? 1 : -1;
+    return [...grupos].sort((a, b) => {
+      const va = valor(a);
+      const vb = valor(b);
+      const aVazio = va == null || va === "";
+      const bVazio = vb == null || vb === "";
+      if (aVazio || bVazio) return aVazio && bVazio ? 0 : aVazio ? 1 : -1;
+      const r = typeof va === "string" ? va.localeCompare(String(vb), "pt-BR", { numeric: true }) : (va as number) - (vb as number);
+      return r !== 0 ? fator * r : new Date(b.data).getTime() - new Date(a.data).getTime();
+    });
+  }, [grupos, ordem]);
+
+  // Título de coluna clicável para ordenar
+  const cab = (col: ColOrdem, rotulo: string, espaco = "px-4 py-4", direita = false, dica?: string) => {
+    const ativa = ordem.col === col;
+    return (
+      <th className={`${espaco} ${direita ? "text-right" : ""}`} title={dica} aria-sort={ativa ? (ordem.dir === "asc" ? "ascending" : "descending") : "none"}>
+        <button
+          type="button"
+          onClick={() => ordenarPor(col)}
+          className={`inline-flex items-center gap-1 transition-colors hover:text-slate-900 ${ativa ? "text-slate-900" : ""}`}
+          title={`Ordenar por ${NOME_COLUNA[col]}`}
+        >
+          {rotulo}
+          <span className={`text-[10px] ${ativa ? "text-brand" : "text-slate-300"}`} aria-hidden="true">
+            {ativa ? (ordem.dir === "asc" ? "▲" : "▼") : "↕"}
+          </span>
+        </button>
+      </th>
+    );
+  };
+
   const totalPreco = soma(visiveis, "preco");
   const totalCusto = soma(visiveis, "custo");
   const totalSobra = soma(visiveis, "sobra");
@@ -329,6 +435,14 @@ export default function PedidosPage() {
             </p>
           )}
 
+          {(ordem.col !== ORDEM_PADRAO.col || ordem.dir !== ORDEM_PADRAO.dir) && (
+            <p className="text-sm text-slate-600">
+              Ordenado por <b>{NOME_COLUNA[ordem.col]}</b> ({sentido(ordem)}).{" "}
+              <button type="button" className="font-medium text-brand underline" onClick={ordemNormal}>
+                Voltar para os mais recentes
+              </button>
+            </p>
+          )}
           <div className="card overflow-x-auto p-0">
             {!linhas ? (
               <p className="p-5 text-sm text-slate-500">Carregando…</p>
@@ -338,24 +452,24 @@ export default function PedidosPage() {
               <table className="w-full min-w-[1400px] text-[15px]">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-[13px] font-medium text-slate-500">
-                    <th className="px-5 py-4">Pedido</th>
-                    <th className="px-4 py-4">Produto</th>
-                    <th className="px-4 py-4">SKU</th>
-                    <th className="px-4 py-4">UF</th>
-                    <th className="px-4 py-4 text-right">Venda</th>
-                    <th className="px-4 py-4 text-right" title="Venda – comissão – frete: o que o marketplace libera para você">Repasse</th>
-                    <th className="px-4 py-4 text-right">Comissão</th>
-                    <th className="px-4 py-4 text-right">Frete</th>
-                    <th className="px-4 py-4 text-right" title="Informativo: não entra na conta do lucro">Frete comprador</th>
-                    <th className="px-4 py-4 text-right">Impostos</th>
-                    <th className="px-4 py-4 text-right">Custo</th>
-                    <th className="px-4 py-4 text-right">Sobrou</th>
-                    <th className="px-4 py-4 text-right">Margem contrib.</th>
-                    <th className="px-5 py-4 text-right">ROI</th>
+                    {cab("data", "Pedido", "px-5 py-4")}
+                    {cab("produto", "Produto")}
+                    {cab("sku", "SKU")}
+                    {cab("uf", "UF")}
+                    {cab("preco", "Venda", "px-4 py-4", true)}
+                    {cab("repasse", "Repasse", "px-4 py-4", true, "Venda – comissão – frete: o que o marketplace libera para você")}
+                    {cab("comissao", "Comissão", "px-4 py-4", true)}
+                    {cab("frete", "Frete", "px-4 py-4", true)}
+                    {cab("freteComprador", "Frete comprador", "px-4 py-4", true, "Informativo: não entra na conta do lucro")}
+                    {cab("impostos", "Impostos", "px-4 py-4", true)}
+                    {cab("custo", "Custo", "px-4 py-4", true)}
+                    {cab("sobra", "Sobrou", "px-4 py-4", true)}
+                    {cab("margem", "Margem contrib.", "px-4 py-4", true)}
+                    {cab("roi", "ROI", "px-5 py-4", true)}
                   </tr>
                 </thead>
                 <tbody>
-                  {grupos.map((l) => (
+                  {ordenados.map((l) => (
                     <Fragment key={l.id}>
                       <tr className="border-b border-slate-100 align-top">
                         <td className="px-5 py-5">
