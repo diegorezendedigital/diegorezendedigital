@@ -192,6 +192,25 @@ export default function PromocoesPage() {
   const [importando, setImportando] = useState(false);
   const [descTexto, setDescTexto] = useState<Record<string, string>>({});
   const [logFiltro, setLogFiltro] = useState<"todos" | "entrou" | "recusada" | "erro">("todos");
+  // Log aberto ou recolhido (lembra a última escolha neste navegador)
+  const [logAberto, setLogAberto] = useState(true);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("promocoes.logAberto") === "0") setLogAberto(false);
+    } catch {
+      /* sem armazenamento local: começa aberto */
+    }
+  }, []);
+  function alternarLog() {
+    setLogAberto((v) => {
+      try {
+        localStorage.setItem("promocoes.logAberto", v ? "0" : "1");
+      } catch {
+        /* ignora */
+      }
+      return !v;
+    });
+  }
   const [fretePromo, setFretePromo] = useState<Record<string, number>>({});
   const freteAsked = useRef<Set<string>>(new Set());
   const [procurando, setProcurando] = useState(false);
@@ -662,9 +681,17 @@ export default function PromocoesPage() {
 
       <section className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold">Log das promoções automáticas</h2>
-          <div className="flex flex-wrap gap-2">
-            {([
+          <h2 className="text-lg font-semibold">
+            <button type="button" onClick={alternarLog} className="flex items-center gap-2 text-left" aria-expanded={logAberto} title={logAberto ? "Recolher o log" : "Expandir o log"}>
+              <svg viewBox="0 0 20 20" className={`h-5 w-5 text-slate-500 transition-transform ${logAberto ? "rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M7 4l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Log das promoções automáticas
+              {!logAberto && <span className="text-sm font-normal text-slate-500">({historico.length})</span>}
+            </button>
+          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            {logAberto && ([
               ["todos", "Todos", historico.length],
               ["entrou", "Entrou", historico.filter((h) => h.status === "entrou").length],
               ["recusada", "Ficou de fora", historico.filter((h) => h.status === "recusada").length],
@@ -679,9 +706,12 @@ export default function PromocoesPage() {
                 {nome} <span className={`ml-1 text-xs ${logFiltro === id ? "text-white/70" : "text-slate-400"}`}>{qtd}</span>
               </button>
             ))}
+            <button type="button" className="btn-ghost py-1" onClick={alternarLog}>
+              {logAberto ? "Recolher" : "Expandir"}
+            </button>
           </div>
         </div>
-        {erroLog ? (
+        {!logAberto ? null : erroLog ? (
           <div className="card text-sm text-red-700">Não consegui ler o log: {erroLog}. Se a tabela não existe, rode o SQL da promoção automática (tabela promo_actions) no Supabase.</div>
         ) : historico.length === 0 ? (
           <div className="card text-sm text-slate-600">Ainda não há registros. Cada vez que a promoção automática entrar (ou recusar) um anúncio, aparece aqui com a data, a promoção, o preço e a margem.</div>
