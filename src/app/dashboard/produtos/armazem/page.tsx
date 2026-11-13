@@ -7,6 +7,7 @@ import { Company, CustoProduto, Product, brl, campo, formatarCnpj, mensagemErro,
 import { LinhaProduto, baixarModelo, lerPlanilha } from "@/lib/planilha";
 
 type Painel = null | "manual" | "excel";
+type Componente = { id: string; kit_id: string; component_id: string; quantity: number };
 
 const formVazio = { sku: "", nome: "", custo: "", ean: "", ncm: "", estoque: "", company: "" };
 
@@ -21,6 +22,13 @@ export default function ArmazemPage() {
   const [aba, setAba] = useState<"todos" | "unico" | "multi" | "kit">("todos");
   const [campoBusca, setCampoBusca] = useState<"tudo" | "sku" | "nome" | "ean">("tudo");
   const [estoqueFiltro, setEstoqueFiltro] = useState<"todos" | "com" | "sem">("todos");
+  const [custoFiltro, setCustoFiltro] = useState<"todos" | "sem" | "com">("todos");
+  const [qtdLinhas, setQtdLinhas] = useState(100);
+  // Kits: composição (peças + quantidade)
+  const [componentes, setComponentes] = useState<Record<string, Componente[]>>({});
+  const [kitAberto, setKitAberto] = useState<string | null>(null);
+  const [kitBusca, setKitBusca] = useState("");
+  const [kitQtd, setKitQtd] = useState("1");
   const [histId, setHistId] = useState<string | null>(null);
   const [hist, setHist] = useState<CustoProduto[]>([]);
   const [histCusto, setHistCusto] = useState("");
@@ -65,6 +73,12 @@ export default function ArmazemPage() {
       if ((r.data ?? []).length < 1000) break;
     }
     const c = await supabase.from("companies").select("*").order("created_at");
+    const comp = await supabase.from("product_components").select("id, kit_id, component_id, quantity");
+    const porKit: Record<string, Componente[]> = {};
+    ((comp.error ? [] : comp.data ?? []) as Componente[]).forEach((x) => {
+      (porKit[x.kit_id] = porKit[x.kit_id] ?? []).push({ ...x, quantity: Number(x.quantity) });
+    });
+    setComponentes(porKit);
     if (erroProdutos) setErro(erroProdutos);
     setProdutos(todosProdutos);
     setEmpresas((c.data ?? []) as Company[]);
@@ -104,6 +118,8 @@ export default function ArmazemPage() {
       if (statusEfetivo === "nao" && mapeadoEm(p.id, mpFiltro)) return false;
       if (estoqueFiltro === "com" && !(Number(p.stock_qty) > 0)) return false;
       if (estoqueFiltro === "sem" && Number(p.stock_qty) > 0) return false;
+      if (custoFiltro === "sem" && Number(p.cost_price) > 0) return false;
+      if (custoFiltro === "com" && !(Number(p.cost_price) > 0)) return false;
       if (termos.length === 0) return true;
       const nome = p.name.toLowerCase();
       const sku = (p.sku ?? "").toLowerCase();
@@ -112,7 +128,7 @@ export default function ArmazemPage() {
         campoBusca === "sku" ? sku.includes(t) : campoBusca === "nome" ? nome.includes(t) : campoBusca === "ean" ? ean.includes(t) : nome.includes(t) || sku.includes(t) || ean.includes(t)
       );
     });
-  }, [produtos, busca, campoBusca, statusEfetivo, mpFiltro, estoqueFiltro, mapeadoEm]);
+  }, [produtos, busca, campoBusca, statusEfetivo, mpFiltro, estoqueFiltro, custoFiltro, mapeadoEm]);
 
   const contagem = useMemo(
     () => ({
@@ -124,7 +140,34 @@ export default function ArmazemPage() {
     [filtrados]
   );
   const visiveis = useMemo(() => (aba === "todos" ? filtrados : filtrados.filter((p) => tipoDe(p) === aba)), [filtrados, aba]);
-  const filtrando = busca.trim() !== "" || statusMap !== "todos" || mpFiltro !== "todos" || estoqueFiltro !== "todos";
+  useEffect(() => setQtdLinhas(100), [busca, campoBusca, statusMap, mpFiltro, estoqueFiltro, custoFiltro, aba]);
+  const semCustoQtd = useMemo(() => produtos.filter((p) => !(Number(p.cost_price) > 0)).length, [produtos]);
+  const prodPorId = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
+
+  // Composição do kit
+  const custoDoKit = (kitId: string) => (componentes[kitId] ?? []).reduce((t, c) => t + c.quantity * Number(prodPorId.get(c.component_id)?.cost_price ?? 0), 0);
+  async function adicionarPeca(kit: Product, peca: Product) {
+    setErro("");
+    const q = Math.max(num(kitQtd) || 1, 0.001);
+    const { error } = await supabase.from("product_components").upsert({ store_id: kit.store_id, kit_id: kit.id, component_id: peca.id, quantity: q }, { onConflict: "kit_id,component_id" });
+    if (error) return setErro(error.message.includes("product_components") ? "Falta rodar o SQL dos kits no Supabase (veja a mensagem do assistente)." : error.message);
+    setKitBusca("");
+    setKitQtd("1");
+    await carregar();
+  }
+  async function mudarQtdPeca(c: Componente, valor: string) {
+    const q = num(valor);
+    if (!(q > 0) || q === c.quantity) return;
+    const { error } = await supabase.from("product_components").update({ quantity: q }).eq("id", c.id);
+    if (error) setErro(error.message);
+    else carregar();
+  }
+  async function removerPeca(c: Componente) {
+    const { error } = await supabase.from("product_components").delete().eq("id", c.id);
+    if (error) setErro(error.message);
+    else carregar();
+  }
+  const filtrando = busca.trim() !== "" || statusMap !== "todos" || mpFiltro !== "todos" || estoqueFiltro !== "todos" || custoFiltro !== "todos";
 
   const selVisiveis = useMemo(() => visiveis.filter((p) => sel.has(p.id)), [visiveis, sel]);
   const todosMarcados = visiveis.length > 0 && selVisiveis.length === visiveis.length;
@@ -549,6 +592,11 @@ export default function ArmazemPage() {
           <option value="shopee">Shopee</option>
           <option value="tiktok">TikTok Shop</option>
         </select>
+        <select className="input h-10 w-auto py-0" value={custoFiltro} onChange={(e) => setCustoFiltro(e.target.value as typeof custoFiltro)} aria-label="Status de custo">
+          <option value="todos">Status de custo</option>
+          <option value="sem">Sem custo ({semCustoQtd})</option>
+          <option value="com">Com custo</option>
+        </select>
         <select className="input h-10 w-auto py-0" value={estoqueFiltro} onChange={(e) => setEstoqueFiltro(e.target.value as typeof estoqueFiltro)} aria-label="Status de estoque">
           <option value="todos">Status de estoque</option>
           <option value="com">Com estoque</option>
@@ -638,8 +686,11 @@ export default function ArmazemPage() {
                 </td>
               </tr>
             )}
-            {visiveis.map((p) => {
+            {visiveis.slice(0, qtdLinhas).map((p) => {
               const aberto = histId === p.id;
+              const ehKit = tipoDe(p) === "kit";
+              const pecas = componentes[p.id] ?? [];
+              const kitComposto = ehKit && pecas.length > 0;
               const cred = Number(p.icms_credit) + Number(p.pis_credit) + Number(p.cofins_credit);
               return (
                 <Fragment key={p.id}>
@@ -671,13 +722,20 @@ export default function ArmazemPage() {
                     </select>
                   </td>
                   <td className="td">
-                    <input
-                      key={`c${p.id}${p.cost_price}`}
-                      className="input w-24 py-1"
-                      inputMode="decimal"
-                      defaultValue={campo(Number(p.cost_price))}
-                      onBlur={(e) => salvarCampo(p, "cost_price", e.target.value)}
-                    />
+                    {kitComposto ? (
+                      <div title="Soma do custo das peças do kit. Atualiza sozinho quando o custo de uma peça mudar.">
+                        <span className="font-medium">{brl(Number(p.cost_price))}</span>
+                        <div className="font-mono text-[10px] text-emerald-700">soma das peças</div>
+                      </div>
+                    ) : (
+                      <input
+                        key={`c${p.id}${p.cost_price}`}
+                        className="input w-24 py-1"
+                        inputMode="decimal"
+                        defaultValue={campo(Number(p.cost_price))}
+                        onBlur={(e) => salvarCampo(p, "cost_price", e.target.value)}
+                      />
+                    )}
                   </td>
                   <td className="td text-slate-600" title="ICMS + PIS + COFINS por unidade, vindos do XML (valem no Lucro Real)">
                     {cred > 0 ? brl(cred) : "—"}
@@ -732,10 +790,79 @@ export default function ArmazemPage() {
                     />
                   </td>
                   <td className="td whitespace-nowrap">
+                    {ehKit && (
+                      <button onClick={() => { setKitAberto(kitAberto === p.id ? null : p.id); setKitBusca(""); }} className="mr-3 text-xs font-semibold text-brand hover:underline">
+                        Composição{pecas.length ? ` (${pecas.length})` : ""}
+                      </button>
+                    )}
                     <button onClick={() => abrirHistorico(p)} className="mr-3 text-xs text-brand hover:underline">Histórico</button>
                     <button onClick={() => remover(p)} className="text-xs text-red-700 hover:underline">Excluir</button>
                   </td>
                 </tr>
+                {kitAberto === p.id && (
+                  <tr className="bg-brand-light/30">
+                    <td className="td" colSpan={12}>
+                      <div className="space-y-3 py-2">
+                        <p className="text-sm font-semibold">Composição do kit {p.sku}</p>
+                        <p className="text-xs text-slate-600">Escolha os produtos e a quantidade de cada um que entram neste kit. O custo do kit é a soma e se atualiza sozinho sempre que o custo de uma peça mudar (cada mudança fica no Histórico).</p>
+                        {pecas.length > 0 && (
+                          <table className="text-sm">
+                            <thead>
+                              <tr className="text-left text-xs text-slate-500">
+                                <th className="pr-6 font-medium">Peça</th>
+                                <th className="pr-6 font-medium">Quantidade</th>
+                                <th className="pr-6 text-right font-medium">Custo un.</th>
+                                <th className="pr-6 text-right font-medium">Subtotal</th>
+                                <th />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pecas.map((c) => {
+                                const pc = prodPorId.get(c.component_id);
+                                return (
+                                  <tr key={c.id}>
+                                    <td className="pr-6"><span className="font-mono text-xs">{pc?.sku}</span> · {pc?.name}</td>
+                                    <td className="pr-6"><input key={`q${c.id}${c.quantity}`} className="input w-20 py-1" inputMode="decimal" defaultValue={campo(c.quantity)} onBlur={(e) => mudarQtdPeca(c, e.target.value)} /></td>
+                                    <td className="pr-6 text-right">{brl(Number(pc?.cost_price ?? 0))}</td>
+                                    <td className="pr-6 text-right font-medium">{brl(c.quantity * Number(pc?.cost_price ?? 0))}</td>
+                                    <td><button onClick={() => removerPeca(c)} className="text-xs text-red-700 hover:underline">remover</button></td>
+                                  </tr>
+                                );
+                              })}
+                              <tr className="border-t border-slate-300">
+                                <td className="pr-6 pt-1 font-semibold" colSpan={3}>Custo do kit</td>
+                                <td className="pr-6 pt-1 text-right font-semibold">{brl(custoDoKit(p.id))}</td>
+                                <td />
+                              </tr>
+                            </tbody>
+                          </table>
+                        )}
+                        <div className="flex flex-wrap items-start gap-2">
+                          <div className="relative">
+                            <label className="label">Adicionar peça</label>
+                            <input className="input w-72 py-1" placeholder="Buscar SKU ou nome do produto" value={kitBusca} onChange={(e) => setKitBusca(e.target.value)} />
+                            {kitBusca.trim() !== "" && (
+                              <div className="absolute left-0 top-full z-30 mt-1 max-h-60 w-96 overflow-y-auto rounded-2xl bg-white p-1 shadow-card ring-1 ring-slate-200">
+                                {produtos
+                                  .filter((x) => x.id !== p.id && tipoDe(x) !== "kit" && `${x.sku} ${x.name}`.toLowerCase().includes(kitBusca.trim().toLowerCase()))
+                                  .slice(0, 12)
+                                  .map((x) => (
+                                    <button key={x.id} type="button" className="block w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-slate-100" onClick={() => adicionarPeca(p, x)}>
+                                      <span className="font-mono text-xs">{x.sku}</span> · {x.name} <span className="text-slate-400">· {brl(Number(x.cost_price))}</span>
+                                    </button>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="label">Quantidade</label>
+                            <input className="input w-20 py-1" inputMode="decimal" value={kitQtd} onChange={(e) => setKitQtd(e.target.value)} />
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
                 {aberto && (
                   <tr className="bg-slate-50">
                     <td className="td" colSpan={12}>
@@ -777,6 +904,12 @@ export default function ArmazemPage() {
           </tbody>
         </table>
       </div>
+      {qtdLinhas < visiveis.length && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn-ghost" onClick={() => setQtdLinhas((n) => n + 100)}>Mostrar mais 100 ({visiveis.length - qtdLinhas} restantes)</button>
+          <span className="text-xs text-slate-500">Mostrando {qtdLinhas} de {visiveis.length}. Use a busca ou os filtros para achar direto.</span>
+        </div>
+      )}
       <p className="text-xs text-slate-500">Altere custo ou estoque direto na tabela; ao sair do campo, o valor é salvo. Mudar o custo vale só para as vendas daqui para frente: as vendas antigas guardam o custo da época. O botão Histórico mostra cada custo e a data em que passou a valer.</p>
     </div>
   );
