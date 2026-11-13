@@ -5,9 +5,6 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { Company, CustoProduto, Product, brl, campo, formatarCnpj, mensagemErro, num } from "@/lib/types";
 import { LinhaProduto, baixarModelo, lerPlanilha } from "@/lib/planilha";
-import { entradaDoAnuncio } from "@/lib/anuncio";
-import { calcularLucro, precoParaMargem } from "@/lib/pricing";
-import type { Listing } from "@/lib/types";
 
 type Painel = null | "manual" | "excel";
 type Componente = { id: string; kit_id: string; component_id: string; quantity: number };
@@ -18,7 +15,6 @@ export default function ArmazemPage() {
   const [produtos, setProdutos] = useState<Product[]>([]);
   const [empresas, setEmpresas] = useState<Company[]>([]);
   const [anuncios, setAnuncios] = useState<Record<string, number>>({});
-  const [refAnuncio, setRefAnuncio] = useState<Record<string, Pick<Listing, "units" | "shipping_cost" | "fee_percent" | "fee_fixed" | "company_id">>>({});
   const [busca, setBusca] = useState("");
   const [mapaMp, setMapaMp] = useState<Record<string, Record<string, number>>>({});
   const [statusMap, setStatusMap] = useState<"todos" | "sim" | "nao">("todos");
@@ -74,12 +70,11 @@ export default function ArmazemPage() {
       todosProdutos.push(...((r.data ?? []) as Product[]));
       if ((r.data ?? []).length < 1000) break;
     }
-    type Lig = { product_id: string | null; marketplace_id: string } & Pick<Listing, "units" | "shipping_cost" | "fee_percent" | "fee_fixed" | "company_id">;
-    const ligacoes: Lig[] = [];
+    const ligacoes: { product_id: string | null; marketplace_id: string }[] = [];
     for (let i = 0; i < 50000; i += 1000) {
-      const r = await supabase.from("listings").select("product_id, marketplace_id, units, shipping_cost, fee_percent, fee_fixed, company_id").order("id").range(i, i + 999);
+      const r = await supabase.from("listings").select("product_id, marketplace_id").order("id").range(i, i + 999);
       if (r.error) break;
-      ligacoes.push(...((r.data ?? []) as Lig[]));
+      ligacoes.push(...((r.data ?? []) as { product_id: string | null; marketplace_id: string }[]));
       if ((r.data ?? []).length < 1000) break;
     }
     const c = await supabase.from("companies").select("*").order("created_at");
@@ -94,17 +89,13 @@ export default function ArmazemPage() {
     setEmpresas((c.data ?? []) as Company[]);
     const cont: Record<string, number> = {};
     const porMp: Record<string, Record<string, number>> = {};
-    const refs: Record<string, Pick<Listing, "units" | "shipping_cost" | "fee_percent" | "fee_fixed" | "company_id">> = {};
     ligacoes.forEach((x) => {
       if (!x.product_id) return;
-      // Anúncio de referência do SKU: o primeiro que tem taxa do Mercado Livre já lida
-      if (!refs[x.product_id] || (refs[x.product_id].fee_percent == null && x.fee_percent != null)) refs[x.product_id] = x;
       cont[x.product_id] = (cont[x.product_id] || 0) + 1;
       porMp[x.product_id] = porMp[x.product_id] ?? {};
       porMp[x.product_id][x.marketplace_id] = (porMp[x.product_id][x.marketplace_id] || 0) + 1;
     });
     setAnuncios(cont);
-    setRefAnuncio(refs);
     setMapaMp(porMp);
   }, []);
 
@@ -922,14 +913,13 @@ export default function ArmazemPage() {
               <th className="th">Anúncios</th>
               <th className="th" title="Entrar sozinho nas promoções do Mercado Livre que dão a margem mínima deste SKU">Promo auto</th>
               <th className="th" title="Margem líquida mínima para aceitar uma promoção. Pode ser negativa (ex.: -5) para aceitar prejuízo.">Margem mín. promo %</th>
-              <th className="th" title="No preço que entrega a margem mínima: quanto sobra em reais e o ROI (lucro ÷ custo). Usa a taxa, o frete e o imposto de um anúncio ligado ao SKU.">Sobra / ROI</th>
               <th className="th"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {visiveis.length === 0 && (
               <tr>
-                <td className="td text-slate-500" colSpan={13}>
+                <td className="td text-slate-500" colSpan={12}>
                   {produtos.length === 0 ? "Nenhum produto ainda. Use “Novo produto”, a planilha ou o XML da nota." : "Nada encontrado para essa busca."}
                 </td>
               </tr>
@@ -1044,25 +1034,6 @@ export default function ArmazemPage() {
                       }}
                     />
                   </td>
-                  <td className="td whitespace-nowrap text-xs">
-                    {(() => {
-                      const ref = refAnuncio[p.id];
-                      if (!ref || !(Number(p.cost_price) > 0)) return <span className="text-slate-400" title="Precisa de custo e de um anúncio ligado">—</span>;
-                      const alvo = p.promo_min_margin != null ? Number(p.promo_min_margin) : 10;
-                      const emp = empresas.find((c) => c.id === ref.company_id) ?? empresas[0] ?? null;
-                      const e = entradaDoAnuncio(ref as Listing, p, emp, Number(ref.fee_percent ?? 12), Number(ref.fee_fixed ?? 6));
-                      const preco = e ? precoParaMargem(alvo, e) : null;
-                      if (!e || preco == null) return <span className="text-slate-400" title="Com essa taxa e esse frete a margem não é possível">—</span>;
-                      const r = calcularLucro(preco, e);
-                      const roi = e.custo > 0 ? (r.lucro / e.custo) * 100 : 0;
-                      return (
-                        <div title={`Preço de venda ${brl(preco)} para ${alvo}% de margem`}>
-                          <div className={`font-medium ${r.lucro < 0 ? "text-red-700" : "text-emerald-700"}`}>{brl(r.lucro)}</div>
-                          <div className="font-mono text-[10px] text-slate-500">ROI {roi.toFixed(0)}%</div>
-                        </div>
-                      );
-                    })()}
-                  </td>
                   <td className="td whitespace-nowrap">
                     {ehKit && (
                       <button onClick={() => { setKitAberto(kitAberto === p.id ? null : p.id); setKitBusca(""); }} className="mr-3 text-xs font-semibold text-brand hover:underline">
@@ -1075,7 +1046,7 @@ export default function ArmazemPage() {
                 </tr>
                 {kitAberto === p.id && (
                   <tr className="bg-brand-light/30">
-                    <td className="td" colSpan={13}>
+                    <td className="td" colSpan={12}>
                       <div className="space-y-3 py-2">
                         <p className="text-sm font-semibold">Composição do kit {p.sku}</p>
                         <p className="text-xs text-slate-600">Escolha os produtos e a quantidade de cada um que entram neste kit. O custo do kit é a soma e se atualiza sozinho sempre que o custo de uma peça mudar (cada mudança fica no Histórico).</p>
@@ -1139,7 +1110,7 @@ export default function ArmazemPage() {
                 )}
                 {aberto && (
                   <tr className="bg-slate-50">
-                    <td className="td" colSpan={13}>
+                    <td className="td" colSpan={12}>
                       <div className="space-y-2 py-1">
                         <p className="text-xs text-slate-600">
                           Histórico de custo. Cada venda usa o custo vigente na data dela. Ao alterar o custo acima, uma linha nova é criada com a data de hoje.
