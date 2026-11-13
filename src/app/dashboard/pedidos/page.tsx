@@ -14,7 +14,6 @@ type Linha = {
   produto: string;
   sku: string;
   uf: string;
-  conta: string;
   contaId: string;
   preco: number;
   comissao: number;
@@ -74,6 +73,19 @@ export default function PedidosPage() {
   const [buscaAtiva, setBuscaAtiva] = useState("");
   // Loja (conta do Mercado Livre) escolhida: "" = todas juntas. A escolha fica lembrada neste navegador.
   const [lojaSel, setLojaSel] = useState("");
+  // Lojas = contas do Mercado Livre conectadas (a tabela de conexões é protegida: vem pela API)
+  useEffect(() => {
+    apiFetch<{ accounts: { ml_user_id: string; nickname: string | null; store_name?: string | null }[] }>("/api/ml/accounts")
+      .then((r) =>
+        setLojas(
+          r.accounts
+            .map((c) => ({ id: c.ml_user_id, nome: c.store_name || c.nickname || c.ml_user_id }))
+            .sort((x, y) => x.nome.localeCompare(y.nome, "pt-BR"))
+        )
+      )
+      .catch(() => setLojas([]));
+  }, []);
+  const nomeLoja = (id: string) => lojas.find((x) => x.id === id)?.nome ?? "";
   useEffect(() => {
     try {
       setLojaSel(localStorage.getItem("pedidos.loja") || "");
@@ -216,17 +228,14 @@ export default function PedidosPage() {
         vendas.push(...((r.data ?? []) as Sale[]));
         if ((r.data ?? []).length < 1000) break;
       }
-      const [a, pr, c] = await Promise.all([
+      const [a, pr] = await Promise.all([
         supabase.from("listings").select("id, title, ml_user_id"),
         supabase.from("products").select("id, sku"),
-        supabase.from("ml_connections").select("ml_user_id, nickname, store_name"),
       ]);
       const titulos = new Map<string, string>((a.data ?? []).map((x: { id: string; title: string }) => [x.id, x.title]));
       const skus = new Map<string, string>((pr.data ?? []).map((x: { id: string; sku: string }) => [x.id, x.sku]));
-      const contas = new Map<string, string>((c.data ?? []).map((x: { ml_user_id: string; nickname: string | null; store_name?: string | null }) => [x.ml_user_id, x.store_name || x.nickname || x.ml_user_id]));
       // Venda antiga sem a conta gravada: usa a conta do anúncio
       const contaDoAnuncio = new Map<string, string>((a.data ?? []).filter((x: { ml_user_id?: string | null }) => x.ml_user_id).map((x: { id: string; ml_user_id: string }) => [x.id, x.ml_user_id]));
-      setLojas(Array.from(contas.entries()).map(([id, nome]) => ({ id, nome })).sort((x, y) => x.nome.localeCompare(y.nome, "pt-BR")));
       setLinhas(
         vendas.map((s) => {
           const preco = Number(s.sale_price) || 0;
@@ -241,7 +250,6 @@ export default function PedidosPage() {
             sku: s.sku || (s.product_id && skus.get(s.product_id)) || "",
             uf: s.buyer_state || "—",
             contaId: s.ml_user_id || (s.listing_id && contaDoAnuncio.get(s.listing_id)) || "",
-            conta: contas.get(s.ml_user_id || (s.listing_id && contaDoAnuncio.get(s.listing_id)) || "") || "",
             preco,
             comissao: Number(s.fees_total) || 0,
             frete: Number(s.shipping_cost) || 0,
@@ -510,11 +518,11 @@ export default function PedidosPage() {
                         <td className="px-5 py-5">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="font-mono text-sm">{l.pedido}</span>
-                            {l.conta && lojas.length > 1 && <span className="rounded bg-brand-light px-1.5 py-0.5 text-[10px] font-semibold text-brand">{l.conta}</span>}
+                            {lojas.length > 1 && nomeLoja(l.contaId) && <span className="rounded bg-brand-light px-1.5 py-0.5 text-[10px] font-semibold text-brand">{nomeLoja(l.contaId)}</span>}
                           </div>
                           <div className="mt-0.5 text-xs text-slate-500">
                             {new Date(l.data).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                            {l.conta && lojas.length <= 1 ? ` · ${l.conta}` : ""}
+                            {lojas.length <= 1 && nomeLoja(l.contaId) ? ` · ${nomeLoja(l.contaId)}` : ""}
                           </div>
                           {l.pedidosML.length > 1 && <div className="mt-0.5 font-mono text-[10px] text-slate-400">pedidos {l.pedidosML.map((x) => x.slice(-6)).join(" · ")}</div>}
                         </td>
