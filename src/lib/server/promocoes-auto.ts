@@ -8,7 +8,7 @@ import { carregarContexto } from "./reprice";
 
 export const MARGEM_MINIMA_PADRAO = 10; // % — usada quando o anúncio não define a própria
 
-export type ResumoPromo = { avaliados: number; entraram: number; recusados: number; erros: number; parcial: boolean };
+export type ResumoPromo = { avaliados: number; entraram: number; recusados: number; erros: number; parcial: boolean; logErro?: string };
 
 type PromoBruta = { id?: string; type?: string; status?: string; name?: string; deadline_date?: string; finish_date?: string };
 type ItemBruto = {
@@ -31,6 +31,11 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
   const inicio = Date.now();
   const r: ResumoPromo = { avaliados: 0, entraram: 0, recusados: 0, erros: 0, parcial: false };
   const restante = () => limiteMs - (Date.now() - inicio);
+  // Grava o log da participação e avisa se o banco recusou (ex.: tabela promo_actions ainda não criada)
+  const gravarLog = async (linha: Record<string, unknown>, opcoes: { onConflict: string }) => {
+    const { error } = await admin.from("promo_actions").upsert(linha, opcoes);
+    if (error && !r.logErro) r.logErro = error.message;
+  };
 
   const ctx = await carregarContexto(admin, storeId);
   // A regra é por SKU: o produto do armazém define se participa e qual a margem mínima (que pode ser negativa).
@@ -143,7 +148,7 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
           };
 
           if (entrada && inalcancavel) {
-            await admin.from("promo_actions").upsert(
+            await gravarLog(
               { ...registro, status: "recusada", message: `Nem no preço máximo da promoção (${(faixaMax ?? 0).toFixed(2)}) a margem chega a ${minimo}%.` },
               { onConflict: "store_id,item_id,promotion_id" }
             );
@@ -151,7 +156,7 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
             continue;
           }
           if (!entrada || preco == null || !(preco > 0)) {
-            await admin.from("promo_actions").upsert(
+            await gravarLog(
               { ...registro, status: "recusada", message: !entrada ? "Sem produto ligado ou sem custo cadastrado." : "O Mercado Livre não informou o preço da promoção." },
               { onConflict: "store_id,item_id,promotion_id" }
             );
@@ -164,7 +169,7 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
           const lucroFinal = base.lucro + bonus;
           const calc = { margem: preco > 0 ? (lucroFinal / preco) * 100 : 0 };
           if (calc.margem < minimo - 0.005) {
-            await admin.from("promo_actions").upsert(
+            await gravarLog(
               { ...registro, price: preco, margin: calc.margem, status: "recusada", message: `Margem de ${calc.margem.toFixed(1)}% abaixo do mínimo de ${minimo}%.` },
               { onConflict: "store_id,item_id,promotion_id" }
             );
@@ -178,13 +183,13 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
               promotion_type: p.type,
               deal_price: Math.round(preco * 100) / 100,
             });
-            await admin.from("promo_actions").upsert(
+            await gravarLog(
               { ...registro, price: preco, margin: calc.margem, status: "entrou", message: `Entrou a ${calc.margem.toFixed(1).replace(".", ",")}% de margem (meta ${minimo}%) · preço R$ ${preco.toFixed(2).replace(".", ",")} · frete R$ ${freteUsado.toFixed(2).replace(".", ",")}${bonus > 0 ? ` · bônus ML R$ ${bonus.toFixed(2).replace(".", ",")}` : ""} · lucro R$ ${lucroFinal.toFixed(2).replace(".", ",")}.` },
               { onConflict: "store_id,item_id,promotion_id" }
             );
             r.entraram++;
           } catch (e) {
-            await admin.from("promo_actions").upsert(
+            await gravarLog(
               { ...registro, price: preco, margin: calc.margem, status: "erro", message: e instanceof Error ? e.message : "Erro ao entrar na promoção" },
               { onConflict: "store_id,item_id,promotion_id" }
             );

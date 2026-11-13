@@ -178,6 +178,7 @@ export default function PromocoesPage() {
   const [trabalhando, setTrabalhando] = useState("");
   const [confirmaLote, setConfirmaLote] = useState(false);
   const [historico, setHistorico] = useState<AcaoPromo[]>([]);
+  const [erroLog, setErroLog] = useState("");
   const [rodandoAuto, setRodandoAuto] = useState(false);
   const [busca, setBusca] = useState("");
   const [soBonus, setSoBonus] = useState(false);
@@ -231,6 +232,7 @@ export default function PromocoesPage() {
         supabase.from("promo_actions").select("*").order("updated_at", { ascending: false }).limit(300),
       ]);
       setHistorico((h.data ?? []) as AcaoPromo[]);
+      setErroLog(h.error ? h.error.message : "");
       setContas(r.contas);
       setAnuncios((l.data ?? []) as Listing[]);
       setProdutos((p.data ?? []) as Product[]);
@@ -303,11 +305,12 @@ export default function PromocoesPage() {
     setAviso("");
     setRodandoAuto(true);
     try {
-      const r = await apiFetch<{ avaliados: number; entraram: number; recusados: number; erros: number; parcial: boolean }>("/api/ml/promocoes/auto", { method: "POST" });
+      const r = await apiFetch<{ avaliados: number; entraram: number; recusados: number; erros: number; parcial: boolean; logErro?: string }>("/api/ml/promocoes/auto", { method: "POST" });
       setAviso(
         `Promoções automáticas: ${r.avaliados} anúncios avaliados, ${r.entraram} entraram, ${r.recusados} ficaram de fora por margem ou falta de custo, ${r.erros} com erro.` +
           (r.parcial ? " A rodada foi parcial; rode de novo para continuar." : "")
       );
+      if (r.logErro) setErro(`Não consegui gravar o log das promoções: ${r.logErro}. Rode o SQL da tabela promo_actions no Supabase.`);
       await carregar();
     } catch (e) {
       setErro(mensagemErro(e));
@@ -693,7 +696,9 @@ export default function PromocoesPage() {
             ))}
           </div>
         </div>
-        {historico.length === 0 ? (
+        {erroLog ? (
+          <div className="card text-sm text-red-700">Não consegui ler o log: {erroLog}. Se a tabela não existe, rode o SQL da promoção automática (tabela promo_actions) no Supabase.</div>
+        ) : historico.length === 0 ? (
           <div className="card text-sm text-slate-600">Ainda não há registros. Cada vez que a promoção automática entrar (ou recusar) um anúncio, aparece aqui com a data, a promoção, o preço e a margem.</div>
         ) : (
           <div className="card overflow-x-auto p-0">
