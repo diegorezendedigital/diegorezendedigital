@@ -5,6 +5,8 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { Company, CustoProduto, Product, brl, campo, formatarCnpj, mensagemErro, num } from "@/lib/types";
 import { LinhaProduto, baixarModelo, lerPlanilha } from "@/lib/planilha";
+import { analisarAnuncio } from "@/lib/anuncio";
+import type { Listing } from "@/lib/types";
 
 type Painel = null | "manual" | "excel";
 type Componente = { id: string; kit_id: string; component_id: string; quantity: number };
@@ -15,6 +17,7 @@ export default function ArmazemPage() {
   const [produtos, setProdutos] = useState<Product[]>([]);
   const [empresas, setEmpresas] = useState<Company[]>([]);
   const [anuncios, setAnuncios] = useState<Record<string, number>>({});
+  const [anunciosDoProduto, setAnunciosDoProduto] = useState<Record<string, Listing[]>>({});
   const [busca, setBusca] = useState("");
   const [mapaMp, setMapaMp] = useState<Record<string, Record<string, number>>>({});
   const [statusMap, setStatusMap] = useState<"todos" | "sim" | "nao">("todos");
@@ -70,11 +73,11 @@ export default function ArmazemPage() {
       todosProdutos.push(...((r.data ?? []) as Product[]));
       if ((r.data ?? []).length < 1000) break;
     }
-    const ligacoes: { product_id: string | null; marketplace_id: string }[] = [];
+    const ligacoes: Listing[] = [];
     for (let i = 0; i < 50000; i += 1000) {
-      const r = await supabase.from("listings").select("product_id, marketplace_id").order("id").range(i, i + 999);
+      const r = await supabase.from("listings").select("id, product_id, marketplace_id, external_id, title, price, units, shipping_cost, fee_percent, fee_fixed, company_id, target_margin").order("id").range(i, i + 999);
       if (r.error) break;
-      ligacoes.push(...((r.data ?? []) as { product_id: string | null; marketplace_id: string }[]));
+      ligacoes.push(...((r.data ?? []) as unknown as Listing[]));
       if ((r.data ?? []).length < 1000) break;
     }
     const c = await supabase.from("companies").select("*").order("created_at");
@@ -89,13 +92,16 @@ export default function ArmazemPage() {
     setEmpresas((c.data ?? []) as Company[]);
     const cont: Record<string, number> = {};
     const porMp: Record<string, Record<string, number>> = {};
+    const listas: Record<string, Listing[]> = {};
     ligacoes.forEach((x) => {
       if (!x.product_id) return;
+      (listas[x.product_id] = listas[x.product_id] ?? []).push(x);
       cont[x.product_id] = (cont[x.product_id] || 0) + 1;
       porMp[x.product_id] = porMp[x.product_id] ?? {};
       porMp[x.product_id][x.marketplace_id] = (porMp[x.product_id][x.marketplace_id] || 0) + 1;
     });
     setAnuncios(cont);
+    setAnunciosDoProduto(listas);
     setMapaMp(porMp);
   }, []);
 
@@ -996,7 +1002,33 @@ export default function ArmazemPage() {
                   </td>
                   <td className="td">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-xs">{anuncios[p.id] ?? 0}</span>
+                      <span className="group relative">
+                        <span className="cursor-default font-mono text-xs underline decoration-dotted">{anuncios[p.id] ?? 0}</span>
+                        {(anunciosDoProduto[p.id]?.length ?? 0) > 0 && (
+                          <span className="pointer-events-none absolute left-0 top-full z-40 hidden w-72 pt-1 group-hover:block">
+                            <span className="block rounded-xl border border-slate-200 bg-white p-3 text-left text-xs shadow-xl">
+                              {anunciosDoProduto[p.id].slice(0, 5).map((l) => {
+                                const a = analisarAnuncio(l, p, empresas.find((c) => c.id === l.company_id) ?? empresas[0] ?? null, { pct: 12, fixo: 6 });
+                                const roi = a && a.custo > 0 ? (a.lucro / a.custo) * 100 : null;
+                                return (
+                                  <span key={l.id} className="mb-2 block border-b border-slate-100 pb-2 last:mb-0 last:border-0 last:pb-0">
+                                    <span className="block truncate font-mono text-[10px] text-slate-500">{l.external_id}</span>
+                                    <span className="block">Preço do anúncio: <b>{brl(Number(l.price))}</b></span>
+                                    {a ? (
+                                      <span className="block">
+                                        Sobra: <b className={a.lucro < 0 ? "text-red-700" : "text-emerald-700"}>{brl(a.lucro)}</b> · Margem: <b>{a.margem.toFixed(1).replace(".", ",")}%</b> · ROI: <b>{roi != null ? roi.toFixed(0) : "—"}%</b>
+                                      </span>
+                                    ) : (
+                                      <span className="block text-slate-400">Sem custo cadastrado para calcular.</span>
+                                    )}
+                                  </span>
+                                );
+                              })}
+                              {anunciosDoProduto[p.id].length > 5 && <span className="block text-[10px] text-slate-400">+ {anunciosDoProduto[p.id].length - 5} anúncios</span>}
+                            </span>
+                          </span>
+                        )}
+                      </span>
                       {(
                         [
                           ["mercado_livre", "ML", "Mercado Livre", "bg-[#FFE600] text-[#333]"],
