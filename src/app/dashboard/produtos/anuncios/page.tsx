@@ -25,6 +25,56 @@ const ROTULO: Record<Resultado["status"], string> = {
   erro: "Erro",
 };
 
+// Seletor de produto leve: mostra só o produto escolhido e abre a lista (com busca) apenas ao clicar.
+// Um <select> com todos os produtos em cada linha deixava a página pesada e travada.
+function SeletorProduto({ produtos, valor, onChange }: { produtos: Product[]; valor: string | null; onChange: (id: string | null) => void }) {
+  const [aberto, setAberto] = useState(false);
+  const [q, setQ] = useState("");
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const atual = valor ? produtos.find((p) => p.id === valor) : undefined;
+  const lista = useMemo(() => {
+    if (!aberto) return [] as Product[];
+    const ts = q.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+    return produtos.filter((p) => ts.length === 0 || ts.some((t) => `${p.sku} ${p.name}`.toLowerCase().includes(t))).slice(0, 40);
+  }, [aberto, q, produtos]);
+  return (
+    <>
+      <button
+        type="button"
+        className={`input w-52 truncate py-1 text-left ${valor ? "" : "border-gold"}`}
+        title={atual ? `${atual.sku} · ${atual.name}` : "Escolher produto"}
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setPos({ x: r.left, y: Math.min(r.bottom + 4, window.innerHeight - 330) });
+          setQ("");
+          setAberto(true);
+        }}
+      >
+        {atual ? `${atual.sku} · ${atual.name}` : "Escolher produto…"}
+      </button>
+      {aberto && pos && (
+        <div className="fixed inset-0 z-50" onClick={() => setAberto(false)}>
+          <div className="absolute w-80 rounded-2xl bg-white p-2 shadow-card ring-1 ring-slate-200" style={{ left: pos.x, top: pos.y }} onClick={(e) => e.stopPropagation()}>
+            <input autoFocus className="input mb-2 py-1" placeholder="Buscar SKU ou nome (vírgula separa)" value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className="max-h-64 overflow-y-auto">
+              <button type="button" className="block w-full rounded-lg px-3 py-1.5 text-left text-sm text-slate-500 hover:bg-slate-100" onClick={() => { onChange(null); setAberto(false); }}>
+                — Sem produto —
+              </button>
+              {lista.map((p) => (
+                <button key={p.id} type="button" className={`block w-full rounded-lg px-3 py-1.5 text-left text-sm hover:bg-slate-100 ${p.id === valor ? "bg-brand-light font-medium" : ""}`} onClick={() => { onChange(p.id); setAberto(false); }}>
+                  <span className="font-mono text-xs">{p.sku}</span> · {p.name}
+                </button>
+              ))}
+              {lista.length === 0 && <p className="px-3 py-2 text-sm text-slate-500">Nenhum produto encontrado.</p>}
+              {lista.length === 40 && <p className="px-3 py-1 text-xs text-slate-400">Mostrando 40. Digite para filtrar.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function AnunciosPage() {
   const [anuncios, setAnuncios] = useState<Listing[]>([]);
   const [produtos, setProdutos] = useState<Product[]>([]);
@@ -88,8 +138,14 @@ export default function AnunciosPage() {
     return { pct: mp ? Number(mp.commission_percent) + Number(mp.extra_percent) : 12, fixo: mp ? Number(mp.fixed_fee) : 6 };
   };
 
+  const [qtd, setQtd] = useState(50);
+  const [buscaAtiva, setBuscaAtiva] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaAtiva(busca), 250);
+    return () => clearTimeout(t);
+  }, [busca]);
   const linhas = useMemo(() => {
-    const termos = busca.split(/[,\n]/).map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const termos = buscaAtiva.split(/[,\n]/).map((t) => t.trim().toLowerCase()).filter(Boolean);
     const lista = anuncios.filter((l) => l.marketplace_id === mpAtivo);
     if (agrupar) lista.sort((x, y) => (x.family_id ?? "~").localeCompare(y.family_id ?? "~") || (x.sku ?? "").localeCompare(y.sku ?? ""));
     return lista
@@ -111,7 +167,13 @@ export default function AnunciosPage() {
         if (filtro === "margem_baixa") return !!a && a.margem < Number(l.target_margin);
         return true;
       });
-  }, [anuncios, prodPorId, empPorId, empresaPadrao, busca, filtro, mps, mpAtivo, mapa, familia, agrupar]);
+  }, [anuncios, prodPorId, empPorId, empresaPadrao, buscaAtiva, filtro, mps, mpAtivo, mapa, familia, agrupar]);
+  useEffect(() => setQtd(50), [buscaAtiva, filtro, mpAtivo, mapa, familia, agrupar]);
+  const contaFamilia = useMemo(() => {
+    const m = new Map<string, number>();
+    anuncios.forEach((x) => x.family_id && m.set(x.family_id, (m.get(x.family_id) ?? 0) + 1));
+    return m;
+  }, [anuncios]);
 
   // Abas: uma por marketplace; dentro dela, Todos / Não mapeado / Mapeado (com contagem)
   const abasMp = useMemo(() => {
@@ -439,7 +501,7 @@ export default function AnunciosPage() {
                 </td>
               </tr>
             )}
-            {linhas.map(({ l, a }) => (
+            {linhas.slice(0, qtd).map(({ l, a }) => (
               <tr key={l.id} className="align-middle">
                 <td className="td max-w-[280px]">
                   <div className="flex items-center gap-2">
@@ -459,7 +521,7 @@ export default function AnunciosPage() {
                         {l.sku ? ` · SKU ${l.sku}` : ""}
                         {l.family_id && (
                           <button type="button" className="ml-1 rounded bg-brand-light px-1.5 py-0.5 font-sans text-[10px] font-semibold text-brand hover:underline" title={`Família: ${l.family_name ?? l.family_id}. Clique para ver só esta família`} onClick={() => setFamilia(familia === l.family_id ? null : l.family_id ?? null)}>
-                            família · {anuncios.filter((x) => x.family_id === l.family_id).length}
+                            família · {contaFamilia.get(l.family_id) ?? 1}
                           </button>
                         )}
                         {l.ml_user_id && contas.length > 1 ? ` · ${contas.find((c) => c.ml_user_id === l.ml_user_id)?.nickname ?? l.ml_user_id}` : ""}
@@ -468,16 +530,7 @@ export default function AnunciosPage() {
                   </div>
                 </td>
                 <td className="td">
-                  <select
-                    className={`input w-52 py-1 ${l.product_id ? "" : "border-gold"}`}
-                    value={l.product_id ?? ""}
-                    onChange={(e) => salvar(l, { product_id: e.target.value || null })}
-                  >
-                    <option value="">Escolher produto…</option>
-                    {produtos.map((p) => (
-                      <option key={p.id} value={p.id}>{p.sku} · {p.name}</option>
-                    ))}
-                  </select>
+                  <SeletorProduto produtos={produtos} valor={l.product_id} onChange={(id) => salvar(l, { product_id: id })} />
                 </td>
                 <td className="td">
                   <select className="input w-36 py-1" value={l.company_id ?? ""} onChange={(e) => salvar(l, { company_id: e.target.value || null })}>
@@ -594,6 +647,12 @@ export default function AnunciosPage() {
           </tbody>
         </table>
       </div>
+      {qtd < linhas.length && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn-ghost" onClick={() => setQtd((n) => n + 50)}>Mostrar mais 50 ({linhas.length - qtd} restantes)</button>
+          <span className="text-xs text-slate-500">Mostrando {qtd} de {linhas.length}. Use a busca para achar um anúncio direto.</span>
+        </div>
+      )}
 
       <ul className="max-w-3xl list-disc space-y-1 pl-5 text-xs text-slate-500">
         <li>Margem = lucro líquido (depois de custo, taxa do marketplace, frete e impostos do CNPJ) dividido pelo preço de venda.</li>
