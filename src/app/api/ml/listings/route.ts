@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { skuDoItem } from "@/lib/server/sku-ml";
-import { getAccessToken, getConnection, mlGet, taxaDoAnuncio } from "@/lib/server/ml";
+import { getAccessToken, getConnection, itensDoML, mlGet, taxaDoAnuncio } from "@/lib/server/ml";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -70,14 +70,7 @@ export async function POST(req: Request) {
       }
 
       // Detalhes dos anúncios (a API aceita até 20 ids por chamada).
-      const itens: ItemML[] = [];
-      for (let i = 0; i < ids.length; i += 20) {
-        const lote = ids.slice(i, i + 20);
-        const r = await mlGet<{ code: number; body: ItemML }[]>(token, `/items?ids=${lote.join(",")}`);
-        r.forEach((x) => {
-          if (x.code === 200 && x.body) itens.push(x.body);
-        });
-      }
+      const itens: ItemML[] = await itensDoML<ItemML>(token, ids);
 
       // Taxas reais de cada anúncio (melhor esforço).
       const taxas = new Map<string, { pct: number; fixo: number }>();

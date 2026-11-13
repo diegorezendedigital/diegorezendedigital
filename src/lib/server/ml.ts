@@ -60,7 +60,7 @@ type TokenResponse = {
 };
 
 async function tokenRequest(params: Record<string, string>): Promise<TokenResponse> {
-  const res = await fetch(`${ML_API}/oauth/token`, {
+  const res = await chamarML(`${ML_API}/oauth/token`, {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -134,8 +134,20 @@ export async function getAccessToken(storeId: string, mlUserId?: string | null):
 }
 
 /* ---------- Chamadas à API ---------- */
+// Toda chamada ao Mercado Livre tem prazo: uma resposta que trava não pode segurar a rodada inteira.
+const PRAZO_ML_MS = 15000;
+async function chamarML(url: string, init: RequestInit, prazoMs = PRAZO_ML_MS): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(prazoMs) });
+  } catch (e) {
+    const nome = e instanceof Error ? e.name : "";
+    if (nome === "TimeoutError" || nome === "AbortError") throw new Error(`O Mercado Livre não respondeu em ${Math.round(prazoMs / 1000)} s`);
+    throw e;
+  }
+}
+
 export async function mlGet<T = any>(token: string, path: string): Promise<T> {
-  const res = await fetch(`${ML_API}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await chamarML(`${ML_API}${path}`, { headers: { Authorization: `Bearer ${token}` } });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = (json as { message?: string }).message || `Mercado Livre respondeu ${res.status}`;
@@ -156,8 +168,46 @@ export async function mlDelete<T = any>(token: string, path: string): Promise<T>
   return mlEnviar<T>("DELETE", token, path, undefined);
 }
 
+// Detalhes de vários anúncios de uma vez. O Mercado Livre desligou o multiget antigo (/items?ids=, prazo 25/10/2026):
+// o novo é /items/bulk?ids= (até 20 por chamada), que responde [{ id, status_code, body }]. Aceita também o formato antigo
+// ({ code, body }). Se o lote falhar, busca um anúncio por vez (5 em paralelo).
+export async function itensDoML<T extends { id?: string } = any>(token: string, ids: string[]): Promise<T[]> {
+  const unicos = Array.from(new Set(ids.filter(Boolean)));
+  const saida: T[] = [];
+  for (let i = 0; i < unicos.length; i += 20) {
+    const lote = unicos.slice(i, i + 20);
+    let lidos: T[] | null = null;
+    try {
+      const r = await mlGet<unknown>(token, `/items/bulk?ids=${lote.map(encodeURIComponent).join(",")}`);
+      const lista = Array.isArray(r) ? r : Array.isArray((r as { results?: unknown[] } | null)?.results) ? (r as { results: unknown[] }).results : [];
+      if (lista.length) {
+        lidos = [];
+        for (const x of lista as { body?: T; code?: number; status_code?: number }[]) {
+          const situacao = x?.status_code ?? x?.code;
+          const corpo = x?.body;
+          if (corpo && typeof corpo === "object" && corpo.id && (situacao == null || Number(situacao) === 200)) lidos.push(corpo);
+        }
+      }
+    } catch {
+      lidos = null;
+    }
+    if (lidos == null) {
+      const unsAUns: T[] = [];
+      for (let k = 0; k < lote.length; k += 5) {
+        const parte = await Promise.all(lote.slice(k, k + 5).map((id) => mlGet<T>(token, `/items/${encodeURIComponent(id)}`).catch(() => null)));
+        parte.forEach((b) => {
+          if (b && b.id) unsAUns.push(b);
+        });
+      }
+      lidos = unsAUns;
+    }
+    saida.push(...lidos);
+  }
+  return saida;
+}
+
 async function mlEnviar<T>(metodo: "PUT" | "POST" | "DELETE", token: string, path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${ML_API}${path}`, {
+  const res = await chamarML(`${ML_API}${path}`, {
     method: metodo,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),

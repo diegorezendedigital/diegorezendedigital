@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { skuDoItem } from "@/lib/server/sku-ml";
-import { getAccessToken, listConnections, mlGet } from "@/lib/server/ml";
+import { getAccessToken, itensDoML, listConnections, mlGet } from "@/lib/server/ml";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -78,12 +78,9 @@ export async function POST(req: Request) {
       }
 
       const lista = Array.from(ids);
-      for (let i = 0; i < lista.length; i += 20) {
-        const r = await mlGet<{ code: number; body: ItemML }[]>(token, `/items?ids=${lista.slice(i, i + 20).join(",")}`);
-        r.forEach((x) => {
-          if (x.code === 200 && x.body) achados.set(x.body.id, { item: x.body, ml_user_id: c.ml_user_id, conta, company_id: (c as { company_id?: string | null }).company_id ?? null });
-        });
-      }
+      (await itensDoML<ItemML>(token, lista)).forEach((it) => {
+        achados.set(it.id, { item: it, ml_user_id: c.ml_user_id, conta, company_id: (c as { company_id?: string | null }).company_id ?? null });
+      });
 
       // Irmãos da mesma família dos itens achados
       const familias = new Set(Array.from(achados.values()).map((a) => a.item.family_id).filter(Boolean).map(String));
@@ -96,12 +93,9 @@ export async function POST(req: Request) {
               const q = await mlGet<{ results?: string[] }>(token, `/users/${c.ml_user_id}/items/search?user_product_id=${encodeURIComponent(up)}`).catch(() => ({ results: [] as string[] }));
               (q.results ?? []).forEach((i) => !achados.has(i) && novos.push(i));
             }
-            for (let i = 0; i < novos.length; i += 20) {
-              const rr = await mlGet<{ code: number; body: ItemML }[]>(token, `/items?ids=${novos.slice(i, i + 20).join(",")}`);
-              rr.forEach((x) => {
-                if (x.code === 200 && x.body) achados.set(x.body.id, { item: x.body, ml_user_id: c.ml_user_id, conta, company_id: null });
-              });
-            }
+            (await itensDoML<ItemML>(token, novos)).forEach((it) => {
+              achados.set(it.id, { item: it, ml_user_id: c.ml_user_id, conta, company_id: null });
+            });
           });
         }
       }

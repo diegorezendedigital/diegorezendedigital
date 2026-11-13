@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
-import { getAccessToken, getConnection, mlGet } from "@/lib/server/ml";
+import { getAccessToken, getConnection, itensDoML, mlGet } from "@/lib/server/ml";
 import { calcularLucro } from "@/lib/pricing";
 import { atualizarFretes } from "@/lib/server/frete";
 import type { Company, Product } from "@/lib/types";
@@ -71,15 +71,10 @@ export async function POST(req: Request) {
       if (v) skuDoItem.set(id, v);
     });
     const semSku = itemIds.filter((id) => !skuDoItem.has(id));
-    for (let i = 0; i < semSku.length; i += 20) {
+    if (semSku.length) {
       try {
-        const lote = semSku.slice(i, i + 20);
-        const r = await mlGet<{ code?: number; body?: { id?: string; seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[] } }[]>(
-          token,
-          `/items?ids=${lote.join(",")}&attributes=id,seller_custom_field,attributes`
-        );
-        (Array.isArray(r) ? r : []).forEach((x) => {
-          const b = x.body;
+        const corpos = await itensDoML<{ id?: string; seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[] }>(token, semSku);
+        corpos.forEach((b) => {
           if (!b?.id) return;
           const v = (b.seller_custom_field || b.attributes?.find((a) => a.id === "SELLER_SKU")?.value_name || "").trim();
           if (v) skuDoItem.set(b.id, v);

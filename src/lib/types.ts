@@ -202,4 +202,28 @@ export type AcaoPromo = {
   status: "entrou" | "recusada" | "erro";
   message: string | null;
   updated_at: string;
+  run_id?: string | null;
+  origem?: string | null; // manual | agendada | notificacao
+};
+
+// Rodada da promoção automática (tabela promo_runs)
+export type RodadaPromo = {
+  id: string;
+  origem: string;
+  status: "na_fila" | "rodando" | "concluida" | "erro" | "cancelada";
+  total: number;
+  feitos: number;
+  promocoes_total: number;
+  promocoes_feitas: number;
+  avaliados: number;
+  entraram: number;
+  recusados: number;
+  erros: number;
+  mensagem: string | null;
+  erro: string | null;
+  criado_em: string;
+  iniciado_em: string | null;
+  batida_em: string | null;
+  lease_ate: string | null;
+  terminado_em: string | null;
 };

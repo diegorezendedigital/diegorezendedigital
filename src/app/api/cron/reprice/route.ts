@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
 import { getAccessToken } from "@/lib/server/ml";
 import { carregarContexto, reajustarAnuncio } from "@/lib/server/reprice";
-import { rodarPromocoesAutomaticas } from "@/lib/server/promocoes-auto";
 import type { Listing } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -49,21 +48,6 @@ export async function GET(req: Request) {
     }
   }
 
-  // Promoções do Mercado Livre: entra sozinho onde a margem mínima é atingida.
-  const promos = { avaliados: 0, entraram: 0, recusados: 0, erros: 0 };
-  const { data: comPromo } = await admin.from("products").select("store_id").eq("promo_auto", true);
-  for (const storeId of Array.from(new Set<string>((comPromo ?? []).map((x) => x.store_id as string)))) {
-    const restante = 55000 - (Date.now() - inicio);
-    if (restante < 10000) return NextResponse.json({ ...resumo, promocoes: promos, parcial: true });
-    try {
-      const pr = await rodarPromocoesAutomaticas(admin, storeId, restante);
-      promos.avaliados += pr.avaliados;
-      promos.entraram += pr.entraram;
-      promos.recusados += pr.recusados;
-      promos.erros += pr.erros;
-    } catch {
-      promos.erros++;
-    }
-  }
-  return NextResponse.json({ ...resumo, promocoes: promos });
+  // As promoções automáticas têm a própria rotina (/api/cron/promocoes), que roda em segundo plano até o fim.
+  return NextResponse.json(resumo);
 }

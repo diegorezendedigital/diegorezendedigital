@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/lib/server/supabase-admin";
-import { getAccessToken, mlGet } from "@/lib/server/ml";
+import { getAccessToken, itensDoML, mlGet } from "@/lib/server/ml";
 
 type Resultado = { atualizados: number; semDados: number; gratisParaComprador: number; total: number };
 
@@ -30,18 +30,13 @@ export async function atualizarFretes(storeId: string, opts: { forcar?: boolean;
     const token = await getAccessToken(storeId, conta as string | null);
     if (!token) continue;
     const ids = lista.filter((a) => a.ml_user_id === conta).map((a) => a.external_id as string);
-    for (let i = 0; i < ids.length; i += 20) {
-      try {
-        const resp = await mlGet<{ body?: { id?: string; shipping?: { free_shipping?: boolean } } }[]>(
-          token,
-          `/items?ids=${ids.slice(i, i + 20).join(",")}&attributes=id,shipping`
-        );
-        (Array.isArray(resp) ? resp : []).forEach((x) => {
-          if (x.body?.id && typeof x.body.shipping?.free_shipping === "boolean") gratis.set(x.body.id, x.body.shipping.free_shipping);
-        });
-      } catch {
-        /* sem a informação do anúncio: usa só as vendas */
-      }
+    try {
+      const corpos = await itensDoML<{ id?: string; shipping?: { free_shipping?: boolean } }>(token, ids);
+      corpos.forEach((b) => {
+        if (b?.id && typeof b.shipping?.free_shipping === "boolean") gratis.set(b.id, b.shipping.free_shipping);
+      });
+    } catch {
+      /* sem a informação do anúncio: usa só as vendas */
     }
   }
 

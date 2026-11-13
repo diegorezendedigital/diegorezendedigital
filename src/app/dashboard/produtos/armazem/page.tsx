@@ -876,7 +876,7 @@ export default function ArmazemPage() {
               )}
               <button className="btn" disabled={massaBusy} onClick={aplicarPromoMassa}>{massaBusy ? "Aplicando…" : "Aplicar"}</button>
               <button className="btn-ghost" disabled={massaBusy} onClick={() => setPromoAberta(false)}>Cancelar</button>
-              <p className="w-full text-xs text-slate-600">Com a promoção automática ligada, todo dia o sistema entra sozinho nas promoções do Mercado Livre desses SKUs, no preço que entrega exatamente a margem mínima. Pode ser negativa para aceitar prejuízo.</p>
+              <p className="w-full text-xs text-slate-600">Com a promoção automática ligada, o sistema entra sozinho nas promoções do Mercado Livre desses SKUs (3 vezes por dia e na hora em que chega um convite), no preço que entrega exatamente a margem mínima. Pode ser negativa para aceitar prejuízo.</p>
             </div>
           )}
           {massaAberta && (

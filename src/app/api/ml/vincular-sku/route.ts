@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { skuDoItem } from "@/lib/server/sku-ml";
-import { getAccessToken, mlGet } from "@/lib/server/ml";
+import { getAccessToken, itensDoML } from "@/lib/server/ml";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -57,13 +57,12 @@ export async function POST(req: Request) {
         }
         const lote = lista.slice(i, i + 20);
         try {
-          const r = await mlGet<{ body?: { id?: string; seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[]; variations?: { seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[] }[] } }[]>(
+          const corpos = await itensDoML<{ id?: string; seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[]; variations?: { seller_custom_field?: string | null; attributes?: { id?: string; value_name?: string | null }[] }[] }>(
             token,
-            `/items?ids=${lote.map((a) => a.external_id).join(",")}&attributes=id,seller_custom_field,attributes,variations`
+            lote.map((a) => a.external_id)
           );
           const achados = new Map<string, string>();
-          (Array.isArray(r) ? r : []).forEach((x) => {
-            const b = x.body;
+          corpos.forEach((b) => {
             if (!b?.id) return;
             const v = skuDoItem(b);
             if (v) achados.set(b.id, v);

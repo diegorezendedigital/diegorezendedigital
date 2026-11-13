@@ -6,6 +6,7 @@ import { apiFetch, supabase } from "@/lib/supabase/client";
 import { AcaoPromo, Company, Listing, Marketplace, Product, brl, campo, mensagemErro, num, pct } from "@/lib/types";
 import { entradaDoAnuncio } from "@/lib/anuncio";
 import { calcularLucro } from "@/lib/pricing";
+import AutomacaoPromocoes from "@/components/AutomacaoPromocoes";
 
 type Promo = {
   id: string;
@@ -161,13 +162,6 @@ function Sub({ v, base }: { v: number; base: number }) {
   return <div className="font-mono text-[11px] font-normal text-slate-500">{((v / base) * 100).toFixed(1).replace(".", ",")}%</div>;
 }
 
-type RespostaAuto = { avaliados: number; entraram: number; recusados: number; erros: number; parcial: boolean; logErro?: string; totalPromos: number; concluidas: string[]; motivo?: string; inicioISO?: string };
-type ProgressoAuto = {
-  fase: "rodando" | "ok" | "atencao" | "parcial" | "erro";
-  rodada: number; feitas: number; total: number; avaliados: number; entraram: number; recusados: number; erros: number;
-  inicio: number; fim: number; mensagem: string; logErro?: string; motivo?: string;
-};
-
 export default function PromocoesPage() {
   const [contas, setContas] = useState<ContaPromos[] | null>(null);
   const [anuncios, setAnuncios] = useState<Listing[]>([]);
@@ -186,14 +180,6 @@ export default function PromocoesPage() {
   const [confirmaLote, setConfirmaLote] = useState(false);
   const [historico, setHistorico] = useState<AcaoPromo[]>([]);
   const [erroLog, setErroLog] = useState("");
-  const [rodandoAuto, setRodandoAuto] = useState(false);
-  const [autoProg, setAutoProg] = useState<ProgressoAuto | null>(null);
-  const [, setRelogio] = useState(0);
-  useEffect(() => {
-    if (!rodandoAuto) return;
-    const i = setInterval(() => setRelogio((x) => x + 1), 1000);
-    return () => clearInterval(i);
-  }, [rodandoAuto]);
   const [busca, setBusca] = useState("");
   const [soBonus, setSoBonus] = useState(false);
   const [resumo, setResumo] = useState<Resumo | null>(null);
@@ -266,6 +252,16 @@ export default function PromocoesPage() {
   const porItem = useMemo(() => new Map(anuncios.map((a) => [a.external_id, a])), [anuncios]);
   const prodPorId = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
   const empresaPadrao = empresas.find((c) => c.is_default) ?? null;
+  const skusAuto = useMemo(() => produtos.filter((p) => p.promo_auto).length, [produtos]);
+  const anunciosAuto = useMemo(() => {
+    const ids = new Set(produtos.filter((p) => p.promo_auto).map((p) => p.id));
+    return anuncios.filter((a) => a.marketplace_id === "mercado_livre" && a.product_id && ids.has(a.product_id)).length;
+  }, [produtos, anuncios]);
+  // Ao fim de uma rodada: recarrega o log e o resumo
+  const aoTerminarRodada = useCallback(() => {
+    carregar();
+    carregarResumo();
+  }, [carregar, carregarResumo]);
 
   // Lucro e margem do anúncio se o preço for `preco`
   // Bônus do Mercado Livre: parte do desconto que o próprio ML paga (meli_percentage, sobre o preço original)
@@ -313,59 +309,6 @@ export default function PromocoesPage() {
     if (digitado !== undefined && digitado !== "") return num(digitado);
     return i.suggested_price ?? i.max_price ?? i.price ?? 0;
   };
-
-  async function rodarAuto() {
-    setErro("");
-    setAviso("");
-    setRodandoAuto(true);
-    const inicio = Date.now();
-    const t: ProgressoAuto = { fase: "rodando", rodada: 0, feitas: 0, total: 0, avaliados: 0, entraram: 0, recusados: 0, erros: 0, inicio, fim: 0, mensagem: "Conectando ao Mercado Livre…" };
-    setAutoProg({ ...t });
-    let ja: string[] = [];
-    let desde: string | undefined;
-    try {
-      // O servidor tem ~50 s por chamada: repete até terminar todas as promoções, mostrando o andamento
-      for (let rodada = 1; rodada <= 40; rodada++) {
-        t.rodada = rodada;
-        setAutoProg({ ...t, mensagem: rodada === 1 ? "Lendo as promoções abertas e avaliando os anúncios…" : `Continuando (rodada ${rodada})…` });
-        // Se uma chamada cai (tempo esgotado, rede), tenta de novo até 3 vezes: o que já foi feito não se repete
-        let r: RespostaAuto | null = null;
-        let ultimoErro: unknown = null;
-        for (let tentativa = 1; tentativa <= 3 && !r; tentativa++) {
-          try {
-            r = await apiFetch<RespostaAuto>("/api/ml/promocoes/auto", { method: "POST", body: JSON.stringify({ ja, desde }) });
-          } catch (e) {
-            ultimoErro = e;
-            setAutoProg({ ...t, mensagem: `A chamada falhou (${mensagemErro(e)}). Tentando de novo (${tentativa}/3)…` });
-          }
-        }
-        if (!r) throw ultimoErro ?? new Error("Erro na requisição");
-        desde = r.inicioISO ?? desde;
-        ja = r.concluidas ?? ja;
-        t.avaliados += r.avaliados;
-        t.entraram += r.entraram;
-        t.recusados += r.recusados;
-        t.erros += r.erros;
-        t.total = r.totalPromos;
-        t.feitas = ja.length;
-        if (r.logErro) t.logErro = r.logErro;
-        if (r.motivo) t.motivo = r.motivo;
-        setAutoProg({ ...t });
-        if (!r.parcial) break;
-        if (rodada === 40) t.fase = "parcial";
-      }
-      t.fim = Date.now();
-      if (t.fase !== "parcial") t.fase = t.erros > 0 || t.logErro ? "atencao" : "ok";
-      if (t.total > 0) t.feitas = t.fase === "parcial" ? t.feitas : t.total;
-      setAutoProg({ ...t, mensagem: "" });
-      if (t.logErro) setErro(`Não consegui gravar o log das promoções: ${t.logErro}. Rode o SQL da tabela promo_actions no Supabase.`);
-      await carregar();
-    } catch (e) {
-      setAutoProg({ ...t, fase: "erro", fim: Date.now(), mensagem: mensagemErro(e) });
-    } finally {
-      setRodandoAuto(false);
-    }
-  }
 
   // Desconto em % sobre o preço original: digitar o % troca o preço, e digitar o preço troca o %
   const descontoDe = (base: number, preco: number) => (base > 0 && preco > 0 ? Math.round((1 - preco / base) * 1000) / 10 : null);
@@ -715,54 +658,7 @@ export default function PromocoesPage() {
 
       <PainelPromos r={resumo} carregando={carregandoResumo} onAtualizar={carregarResumo} />
 
-      <div className="card flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-2xl text-sm text-slate-600">
-          <strong>Promoção automática:</strong> em <Link href="/dashboard/produtos/armazem" className="underline">Produtos armazém</Link>, marque “Promo auto” em cada SKU e defina a margem mínima dele (padrão 10%; pode ser negativa para aceitar prejuízo, ex.: -5).
-          Todo dia o sistema entra sozinho nas promoções do Mercado Livre em que a margem, depois de taxa, frete, imposto e custo, atinge o mínimo. Ele entra no preço que entrega exatamente a margem que você definiu (com o frete real do Mercado Livre naquele preço e o bônus do ML); se o preço ficar abaixo do mínimo da promoção, entra no mínimo.
-        </p>
-        <button className="btn" onClick={rodarAuto} disabled={rodandoAuto}>{rodandoAuto ? "Rodando…" : "Rodar promoções automáticas agora"}</button>
-      </div>
-
-      {autoProg && (() => {
-        const seg = Math.round(((autoProg.fim || Date.now()) - autoProg.inicio) / 1000);
-        const tempo = `${Math.floor(seg / 60)}min ${String(seg % 60).padStart(2, "0")}s`;
-        const pct = autoProg.fase === "rodando" ? (autoProg.total > 0 ? Math.min(99, Math.round((autoProg.feitas / autoProg.total) * 100)) : 0) : autoProg.fase === "erro" ? Math.min(99, autoProg.total > 0 ? Math.round((autoProg.feitas / autoProg.total) * 100) : 0) : autoProg.fase === "parcial" ? Math.round((autoProg.feitas / Math.max(1, autoProg.total)) * 100) : 100;
-        const estilo = { rodando: "border-brand/30 bg-brand-light/40", ok: "border-emerald-200 bg-emerald-50", atencao: "border-amber-200 bg-amber-50", parcial: "border-amber-200 bg-amber-50", erro: "border-red-200 bg-red-50" }[autoProg.fase];
-        const titulo = {
-          rodando: "Rodando as promoções automáticas…",
-          ok: autoProg.avaliados === 0 ? "Terminou: não havia anúncio candidato para avaliar." : "Deu certo: a rodada terminou.",
-          atencao: "Terminou, mas com avisos. Veja abaixo.",
-          parcial: "Parou antes de acabar. Rode de novo para continuar.",
-          erro: "Deu erro e a rodada parou.",
-        }[autoProg.fase];
-        return (
-          <div className={`card space-y-3 border ${estilo}`}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <strong className="text-sm">{titulo}</strong>
-              <span className="font-mono text-xs text-slate-500">{tempo}{autoProg.rodada > 1 ? ` · rodada ${autoProg.rodada}` : ""}</span>
-            </div>
-            <div className="h-3 w-full overflow-hidden rounded-full bg-white shadow-inner">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${autoProg.fase === "erro" ? "bg-red-500" : autoProg.fase === "ok" ? "bg-emerald-500" : autoProg.fase === "rodando" && autoProg.total === 0 ? "w-1/4 animate-pulse bg-brand" : "bg-brand"}`}
-                style={autoProg.fase === "rodando" && autoProg.total === 0 ? undefined : { width: `${pct}%` }}
-              />
-            </div>
-            <p className="text-xs text-slate-600">
-              {autoProg.total > 0 ? `${autoProg.feitas} de ${autoProg.total} promoções verificadas (${pct}%)` : autoProg.mensagem}
-              {autoProg.fase === "rodando" && autoProg.total > 0 && autoProg.mensagem ? ` · ${autoProg.mensagem}` : ""}
-            </p>
-            <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-              <span>Avaliados: <b>{autoProg.avaliados}</b></span>
-              <span className="text-emerald-700">Entraram: <b>{autoProg.entraram}</b></span>
-              <span>Ficaram de fora: <b>{autoProg.recusados}</b></span>
-              <span className={autoProg.erros > 0 ? "text-red-700" : ""}>Erros: <b>{autoProg.erros}</b></span>
-            </div>
-            {autoProg.motivo && <p className="text-sm text-amber-800">Aviso: {autoProg.motivo}</p>}
-            {autoProg.fase === "erro" && <p className="text-sm text-red-700">{autoProg.mensagem}</p>}
-            {autoProg.erros > 0 && autoProg.fase !== "rodando" && <p className="text-xs text-slate-600">O motivo de cada erro está no log abaixo, no filtro “Erro”.</p>}
-          </div>
-        );
-      })()}
+      <AutomacaoPromocoes skusAuto={skusAuto} anunciosAuto={anunciosAuto} porItem={porItem} onTerminou={aoTerminarRodada} />
 
       <section className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -807,7 +703,10 @@ export default function PromocoesPage() {
                   const a = porItem.get(h.item_id);
                   return (
                     <tr key={h.id} className="border-b border-slate-100 align-top">
-                      <td className="whitespace-nowrap p-3 font-mono text-xs">{new Date(h.updated_at).toLocaleString("pt-BR")}</td>
+                      <td className="whitespace-nowrap p-3 font-mono text-xs">
+                        {new Date(h.updated_at).toLocaleString("pt-BR")}
+                        {h.origem && <div className="font-sans text-[10px] text-slate-500">{h.origem === "notificacao" ? "convite em tempo real" : h.origem === "agendada" ? "rodada agendada" : "rodada manual"}</div>}
+                      </td>
                       <td className="max-w-[280px] p-3">
                         <div className="truncate" title={a?.title}>{a?.title ?? "—"}</div>
                         <div className="font-mono text-[11px] text-slate-500">{h.item_id}{a?.sku ? ` · SKU ${a.sku}` : ""}</div>
