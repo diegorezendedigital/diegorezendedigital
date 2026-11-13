@@ -15,6 +15,7 @@ type Linha = {
   sku: string;
   uf: string;
   conta: string;
+  contaId: string;
   preco: number;
   comissao: number;
   frete: number;
@@ -65,11 +66,29 @@ const primeiroDoMes = () => `${hojeBR().slice(0, 8)}01`;
 
 export default function PedidosPage() {
   const [linhas, setLinhas] = useState<Linha[] | null>(null);
+  const [lojas, setLojas] = useState<{ id: string; nome: string }[]>([]);
   const [erro, setErro] = useState("");
   const [de, setDe] = useState(hojeBR());
   const [ate, setAte] = useState(hojeBR());
   const [busca, setBusca] = useState("");
   const [buscaAtiva, setBuscaAtiva] = useState("");
+  // Loja (conta do Mercado Livre) escolhida: "" = todas juntas. A escolha fica lembrada neste navegador.
+  const [lojaSel, setLojaSel] = useState("");
+  useEffect(() => {
+    try {
+      setLojaSel(localStorage.getItem("pedidos.loja") || "");
+    } catch {
+      /* navegador sem armazenamento */
+    }
+  }, []);
+  const escolherLoja = (id: string) => {
+    setLojaSel(id);
+    try {
+      localStorage.setItem("pedidos.loja", id);
+    } catch {
+      /* ignora */
+    }
+  };
   // Pesquisa em todas as datas: espera a pessoa parar de digitar.
   useEffect(() => {
     const t = setTimeout(() => setBuscaAtiva(busca.trim().replace(/[,()%*]/g, " ").trim()), 400);
@@ -198,13 +217,16 @@ export default function PedidosPage() {
         if ((r.data ?? []).length < 1000) break;
       }
       const [a, pr, c] = await Promise.all([
-        supabase.from("listings").select("id, title"),
+        supabase.from("listings").select("id, title, ml_user_id"),
         supabase.from("products").select("id, sku"),
-        supabase.from("ml_connections").select("ml_user_id, nickname"),
+        supabase.from("ml_connections").select("ml_user_id, nickname, store_name"),
       ]);
       const titulos = new Map<string, string>((a.data ?? []).map((x: { id: string; title: string }) => [x.id, x.title]));
       const skus = new Map<string, string>((pr.data ?? []).map((x: { id: string; sku: string }) => [x.id, x.sku]));
-      const contas = new Map<string, string>((c.data ?? []).map((x: { ml_user_id: string; nickname: string | null }) => [x.ml_user_id, x.nickname ?? x.ml_user_id]));
+      const contas = new Map<string, string>((c.data ?? []).map((x: { ml_user_id: string; nickname: string | null; store_name?: string | null }) => [x.ml_user_id, x.store_name || x.nickname || x.ml_user_id]));
+      // Venda antiga sem a conta gravada: usa a conta do anúncio
+      const contaDoAnuncio = new Map<string, string>((a.data ?? []).filter((x: { ml_user_id?: string | null }) => x.ml_user_id).map((x: { id: string; ml_user_id: string }) => [x.id, x.ml_user_id]));
+      setLojas(Array.from(contas.entries()).map(([id, nome]) => ({ id, nome })).sort((x, y) => x.nome.localeCompare(y.nome, "pt-BR")));
       setLinhas(
         vendas.map((s) => {
           const preco = Number(s.sale_price) || 0;
@@ -218,7 +240,8 @@ export default function PedidosPage() {
             produto: s.title || (s.listing_id && titulos.get(s.listing_id)) || "—",
             sku: s.sku || (s.product_id && skus.get(s.product_id)) || "",
             uf: s.buyer_state || "—",
-            conta: (s.ml_user_id && contas.get(s.ml_user_id)) || "",
+            contaId: s.ml_user_id || (s.listing_id && contaDoAnuncio.get(s.listing_id)) || "",
+            conta: contas.get(s.ml_user_id || (s.listing_id && contaDoAnuncio.get(s.listing_id)) || "") || "",
             preco,
             comissao: Number(s.fees_total) || 0,
             frete: Number(s.shipping_cost) || 0,
@@ -244,8 +267,8 @@ export default function PedidosPage() {
 
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return (linhas ?? []).filter((l) => !q || l.pedido.toLowerCase().includes(q) || l.pack.includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q);
-  }, [linhas, busca]);
+    return (linhas ?? []).filter((l) => (!lojaSel || l.contaId === lojaSel) && (!q || l.pedido.toLowerCase().includes(q) || l.pack.includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q));
+  }, [linhas, busca, lojaSel]);
 
   // Um pedido com vários produtos vira uma linha só (valores somados, produtos listados dentro dela).
   const grupos = useMemo(() => {
@@ -395,6 +418,18 @@ export default function PedidosPage() {
             </button>
           ))}
         </div>
+        {lojas.length > 1 && (
+          <div>
+            <label className="label">Loja</label>
+            <div className="flex flex-wrap gap-1.5">
+              {[{ id: "", nome: "Todas" }, ...lojas].map((l) => (
+                <button key={l.id || "todas"} className={`rounded-md border px-3 py-2 text-sm ${lojaSel === l.id ? "border-brand bg-brand-light text-brand" : "border-slate-200 text-slate-700 hover:bg-slate-100"}`} onClick={() => escolherLoja(l.id)}>
+                  {l.nome}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="min-w-[240px] flex-1">
           <label className="label">Buscar (nº do pedido, produto, SKU ou UF)</label>
           <input className="input" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="ex.: 2000012345, jaqueta, SP" />
@@ -473,10 +508,13 @@ export default function PedidosPage() {
                     <Fragment key={l.id}>
                       <tr className="border-b border-slate-100 align-top">
                         <td className="px-5 py-5">
-                          <div className="font-mono text-sm">{l.pedido}</div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-mono text-sm">{l.pedido}</span>
+                            {l.conta && lojas.length > 1 && <span className="rounded bg-brand-light px-1.5 py-0.5 text-[10px] font-semibold text-brand">{l.conta}</span>}
+                          </div>
                           <div className="mt-0.5 text-xs text-slate-500">
                             {new Date(l.data).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                            {l.conta ? ` · ${l.conta}` : ""}
+                            {l.conta && lojas.length <= 1 ? ` · ${l.conta}` : ""}
                           </div>
                           {l.pedidosML.length > 1 && <div className="mt-0.5 font-mono text-[10px] text-slate-400">pedidos {l.pedidosML.map((x) => x.slice(-6)).join(" · ")}</div>}
                         </td>
