@@ -20,6 +20,8 @@ type ItemBruto = {
   suggested_discounted_price?: number;
   original_price?: number;
   meli_percentage?: number;
+  offer_id?: string;
+  offers?: { id?: string; offer_id?: string }[];
 };
 
 // Para cada anúncio cujo SKU (produto do armazém) tem "promoção automática" ligada: se o Mercado Livre o convida para uma promoção e a margem no preço
@@ -178,11 +180,12 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
           }
 
           try {
-            await mlPost(token, `/seller-promotions/items/${encodeURIComponent(a.external_id)}?app_version=v2`, {
-              promotion_id: p.id,
-              promotion_type: p.type,
-              deal_price: Math.round(preco * 100) / 100,
-            });
+            // Campanhas do tipo "Impulsione suas vendas" (SMART) trazem uma oferta pronta do Mercado Livre: exigem o offer_id e têm preço fixo
+            const ofertaId = it.offer_id ?? it.offers?.[0]?.offer_id ?? it.offers?.[0]?.id;
+            const corpo: Record<string, unknown> = { promotion_id: p.id, promotion_type: p.type };
+            if (ofertaId) corpo.offer_id = ofertaId;
+            if (!ofertaId || (faixaMin != null && faixaMax != null)) corpo.deal_price = Math.round(preco * 100) / 100;
+            await mlPost(token, `/seller-promotions/items/${encodeURIComponent(a.external_id)}?app_version=v2`, corpo);
             await gravarLog(
               { ...registro, price: preco, margin: calc.margem, status: "entrou", message: `Entrou a ${calc.margem.toFixed(1).replace(".", ",")}% de margem (meta ${minimo}%) · preço R$ ${preco.toFixed(2).replace(".", ",")} · frete R$ ${freteUsado.toFixed(2).replace(".", ",")}${bonus > 0 ? ` · bônus ML R$ ${bonus.toFixed(2).replace(".", ",")}` : ""} · lucro R$ ${lucroFinal.toFixed(2).replace(".", ",")}.` },
               { onConflict: "store_id,item_id,promotion_id" }
