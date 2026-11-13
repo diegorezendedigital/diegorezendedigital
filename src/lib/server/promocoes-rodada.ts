@@ -2,7 +2,8 @@ import crypto from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Company, Listing, Product } from "@/lib/types";
 import { getAccessToken, mlGet } from "./ml";
-import { decidirEEntrar, motivoNaoAutomatico, novoCache, paraVoceDecidir, type ItemPromoML, type PromoML } from "./promocoes-motor";
+import { aplicarDescontoProprio, ID_DESCONTO_PROPRIO, NOME_DESCONTO_PROPRIO } from "./promocoes-desconto";
+import { decidirEEntrar, gravarAcao, margemMinimaDoSku, motivoNaoAutomatico, novoCache, paraVoceDecidir, type ItemPromoML, type PromoML } from "./promocoes-motor";
 
 // Rodadas da promoção automática em segundo plano. Cada rodada fica gravada em promo_runs com o progresso e um cursor;
 // o servidor processa ~40 s por vez e chama a si mesmo para continuar, então a rodada termina mesmo com a página fechada.
@@ -43,6 +44,8 @@ type Cursor = {
   base?: number; // convites das promoções já terminadas
   avisos?: string[];
   manuais?: PlanoPromo[]; // relâmpago e desconto por quantidade: não entram sozinhas, você decide na lista da promoção
+  propTotal?: number; // anúncios que passam pela fase do desconto próprio (preço riscado)
+  propIdx?: number; // quantos já passaram
 };
 
 const ATIVAS = ["na_fila", "rodando"];
@@ -191,8 +194,8 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
 
   const progresso = () => {
     const plano = c.plano ?? [];
-    const total = plano.reduce((s, p) => s + p.total, 0);
-    return { total, feitos: Math.min(total, (c.base ?? 0) + (c.vistos ?? 0)), promocoes_total: plano.length, promocoes_feitas: Math.min(plano.length, c.idx ?? 0) };
+    const total = plano.reduce((s, p) => s + p.total, 0) + (c.propTotal ?? 0);
+    return { total, feitos: Math.min(total, (c.base ?? 0) + (c.vistos ?? 0) + (c.propIdx ?? 0)), promocoes_total: plano.length, promocoes_feitas: Math.min(plano.length, c.idx ?? 0) };
   };
   // Grava o andamento (e renova a trava). Devolve o status atual para perceber se a rodada foi parada pela tela.
   const salvar = async (extra: Record<string, unknown> = {}): Promise<string | null> => {
@@ -302,9 +305,11 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
       c.paginaIds = [];
       c.vistos = 0;
       c.base = 0;
+      c.propTotal = anuncios.length;
+      c.propIdx = 0;
       if (!c.plano.length) {
         if (cont.erros > 0 && !plano.length) return await terminar("erro", "Não consegui ler as promoções no Mercado Livre.");
-        return await terminar("concluida", "Nenhuma promoção aberta tem convites para os seus anúncios agora.");
+        avisos.add("Nenhuma promoção aberta tem convites para os seus anúncios agora.");
       }
       if ((await salvar()) === "cancelada") return { continuar: false };
     }
@@ -428,6 +433,57 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
       } else {
         avancar();
       }
+      if ((await salvar()) === "cancelada") return { continuar: false };
+    }
+
+    // 6) Desconto próprio (preço riscado) nos anúncios que não estão em nenhuma promoção do Mercado Livre
+    c.propTotal = anuncios.length;
+    while ((c.propIdx ?? 0) < anuncios.length) {
+      if (tempoAcabou()) return await pausar();
+      const anuncio = anuncios[c.propIdx ?? 0];
+      const conta = String(anuncio.ml_user_id);
+      const token = await tokenDe(conta);
+      const produto = anuncio.product_id ? produtos.get(anuncio.product_id) : undefined;
+      if (token) {
+        let r: Awaited<ReturnType<typeof aplicarDescontoProprio>>;
+        try {
+          r = await aplicarDescontoProprio({ token, mlUserId: conta, anuncio, produto, empresa: empresaDe(anuncio), cache });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "Erro do Mercado Livre";
+          // Falha passageira (limite de chamadas, instabilidade): tenta o mesmo anúncio na próxima parte; depois de 3 falhas, registra e segue
+          c.falhas = (c.falhas ?? 0) + 1;
+          if (c.falhas < 3) return await pausar();
+          r = { status: "erro", preco: null, margem: null, minimo: margemMinimaDoSku(produto), mensagem: msg };
+        }
+        c.falhas = 0;
+        if (r.status !== "pulado") {
+          const logErro = await gravarAcao(admin, {
+            store_id: run.store_id,
+            ml_user_id: conta,
+            item_id: anuncio.external_id,
+            promotion_id: ID_DESCONTO_PROPRIO,
+            promotion_type: "PRICE_DISCOUNT",
+            promotion_name: NOME_DESCONTO_PROPRIO,
+            price: r.preco,
+            margin: r.margem,
+            min_margin: r.minimo,
+            status: r.status === "criado" || r.status === "mantido" ? "entrou" : r.status,
+            message: r.mensagem,
+            updated_at: new Date().toISOString(),
+            run_id: runId,
+            origem: run.origem,
+          });
+          if (logErro) avisos.add(`Não consegui gravar o log (${logErro}): rode o SQL da automação no Supabase.`);
+          cont.avaliados++;
+          if (r.status === "criado") cont.entraram++;
+          else if (r.status === "recusada") cont.recusados++;
+          else if (r.status === "erro") {
+            cont.erros++;
+            ultimoErro = `${anuncio.external_id} (desconto próprio): ${r.mensagem}`;
+          }
+        }
+      }
+      c.propIdx = (c.propIdx ?? 0) + 1;
       if ((await salvar()) === "cancelada") return { continuar: false };
     }
     return await terminar("concluida");

@@ -332,6 +332,7 @@ export default function AutomacaoPromocoes({
           <li>Promoção em que você escolhe o preço (tradicional, do vendedor, do dia): entra no menor preço da faixa que ainda entrega a meta, conferindo no Mercado Livre a taxa e o frete reais nesse preço.</li>
           <li>Promoção com preço pronto do Mercado Livre (como “Impulsione suas vendas”) ou co-participação: entra se a margem nesse preço, já com o bônus do ML, chegar à meta.</li>
           <li>Oferta relâmpago, desconto por quantidade e cupons não entram sozinhos: precisam de decisão sua.</li>
+          <li>Anúncio que não está em nenhuma promoção do Mercado Livre: o sistema cria um desconto próprio (preço riscado, por 14 dias) no valor que entrega exatamente a meta. O preço base nunca é alterado; se não houver folga, nada é criado. Quem já está em promoção do Mercado Livre não recebe desconto próprio, mesmo com margem acima da meta.</li>
           <li>Tudo vai para o log abaixo, com o motivo de cada entrada, recusa ou erro.</li>
         </ul>
       </details>
