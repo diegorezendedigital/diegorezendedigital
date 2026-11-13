@@ -27,7 +27,26 @@ export default function ArmazemPage() {
   const [estoqueFiltro, setEstoqueFiltro] = useState<"todos" | "com" | "sem">("todos");
   const [grupoFiltro, setGrupoFiltro] = useState<string | null>(null);
   const [custoFiltro, setCustoFiltro] = useState<"todos" | "sem" | "com">("todos");
-  const [qtdLinhas, setQtdLinhas] = useState(100);
+  // Paginação: quantos produtos por página (lembrado neste navegador) e a página atual (começa em 0)
+  const [porPagina, setPorPagina] = useState(50);
+  const [pagina, setPagina] = useState(0);
+  useEffect(() => {
+    try {
+      const v = Number(localStorage.getItem("armazem.porPagina"));
+      if ([25, 50, 100, 200].includes(v)) setPorPagina(v);
+    } catch {
+      /* navegador sem armazenamento */
+    }
+  }, []);
+  function mudarPorPagina(n: number) {
+    setPorPagina(n);
+    setPagina(0);
+    try {
+      localStorage.setItem("armazem.porPagina", String(n));
+    } catch {
+      /* ignora */
+    }
+  }
   // Kits: composição (peças + quantidade)
   const [componentes, setComponentes] = useState<Record<string, Componente[]>>({});
   const [kitAberto, setKitAberto] = useState<string | null>(null);
@@ -152,7 +171,32 @@ export default function ArmazemPage() {
     [filtrados]
   );
   const visiveis = useMemo(() => (aba === "todos" ? filtrados : filtrados.filter((p) => tipoDe(p) === aba)), [filtrados, aba]);
-  useEffect(() => setQtdLinhas(100), [busca, campoBusca, statusMap, mpFiltro, estoqueFiltro, custoFiltro, grupoFiltro, aba]);
+  useEffect(() => setPagina(0), [busca, campoBusca, statusMap, mpFiltro, estoqueFiltro, custoFiltro, grupoFiltro, aba]);
+  const totalPaginas = Math.max(1, Math.ceil(visiveis.length / porPagina));
+  const paginaAtual = Math.min(pagina, totalPaginas - 1); // se a lista encolher (excluir, filtrar), não fica numa página vazia
+  const daPagina = useMemo(() => visiveis.slice(paginaAtual * porPagina, (paginaAtual + 1) * porPagina), [visiveis, paginaAtual, porPagina]);
+  const controlesPagina = (
+    <div className="flex flex-wrap items-center gap-3 text-sm">
+      <label className="flex items-center gap-2 text-slate-600">
+        Por página
+        <select className="input w-20 py-1" value={porPagina} onChange={(e) => mudarPorPagina(Number(e.target.value))}>
+          {[25, 50, 100, 200].map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+      </label>
+      <div className="flex items-center gap-1">
+        <button className="btn-ghost px-2 py-1" disabled={paginaAtual === 0} onClick={() => setPagina(0)} aria-label="Primeira página">«</button>
+        <button className="btn-ghost px-2 py-1" disabled={paginaAtual === 0} onClick={() => setPagina(paginaAtual - 1)} aria-label="Página anterior">‹</button>
+        <span className="px-2 font-mono text-xs text-slate-600">Página {paginaAtual + 1} de {totalPaginas}</span>
+        <button className="btn-ghost px-2 py-1" disabled={paginaAtual >= totalPaginas - 1} onClick={() => setPagina(paginaAtual + 1)} aria-label="Próxima página">›</button>
+        <button className="btn-ghost px-2 py-1" disabled={paginaAtual >= totalPaginas - 1} onClick={() => setPagina(totalPaginas - 1)} aria-label="Última página">»</button>
+      </div>
+      <span className="font-mono text-xs text-slate-500">
+        {visiveis.length === 0 ? "0" : `${paginaAtual * porPagina + 1}–${Math.min(visiveis.length, (paginaAtual + 1) * porPagina)}`} de {visiveis.length}
+      </span>
+    </div>
+  );
   const grupos = useMemo(() => {
     const m = new Map<string, number>();
     produtos.forEach((p) => p.grupo && tipoDe(p) !== "kit" && m.set(p.grupo, (m.get(p.grupo) ?? 0) + 1));
@@ -904,6 +948,7 @@ export default function ArmazemPage() {
         </div>
       )}
 
+      {visiveis.length > 0 && controlesPagina}
       <div className="card overflow-x-auto p-0">
         <table className="w-full">
           <thead className="border-b border-slate-200 bg-slate-50">
@@ -930,7 +975,7 @@ export default function ArmazemPage() {
                 </td>
               </tr>
             )}
-            {visiveis.slice(0, qtdLinhas).map((p) => {
+            {daPagina.map((p) => {
               const aberto = histId === p.id;
               const ehKit = tipoDe(p) === "kit";
               const pecas = componentes[p.id] ?? [];
@@ -1181,12 +1226,7 @@ export default function ArmazemPage() {
           </tbody>
         </table>
       </div>
-      {qtdLinhas < visiveis.length && (
-        <div className="flex flex-wrap items-center gap-3">
-          <button className="btn-ghost" onClick={() => setQtdLinhas((n) => n + 100)}>Mostrar mais 100 ({visiveis.length - qtdLinhas} restantes)</button>
-          <span className="text-xs text-slate-500">Mostrando {qtdLinhas} de {visiveis.length}. Use a busca ou os filtros para achar direto.</span>
-        </div>
-      )}
+      {visiveis.length > 0 && controlesPagina}
       <p className="text-xs text-slate-500">Altere custo ou estoque direto na tabela; ao sair do campo, o valor é salvo. Mudar o custo vale só para as vendas daqui para frente: as vendas antigas guardam o custo da época. O botão Histórico mostra cada custo e a data em que passou a valer.</p>
     </div>
   );
