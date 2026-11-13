@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch, supabase } from "@/lib/supabase/client";
 import { Company, ContaML, mensagemErro } from "@/lib/types";
 import PainelML from "@/components/PainelML";
+import PainelShopee from "@/components/PainelShopee";
 
 const MARKETPLACES = [
   "Mercado Livre", "Shopee", "Amazon", "Shein", "TikTok Shop", "Shopify", "Nuvemshop", "WooCommerce",
@@ -19,6 +20,7 @@ export default function IntegracoesPage() {
   const [contas, setContas] = useState<ContaML[]>([]);
   const [erroML, setErroML] = useState("");
   const [avisoML, setAvisoML] = useState("");
+  const [qtdShopee, setQtdShopee] = useState(0);
 
   const carregarContas = useCallback(async () => {
     try {
@@ -32,6 +34,11 @@ export default function IntegracoesPage() {
   useEffect(() => {
     // Volta do Mercado Livre depois de autorizar (ou negar) o acesso.
     const qs = new URLSearchParams(window.location.search);
+    if (qs.get("canal") === "shopee") {
+      setSelecionado("Shopee"); // a volta da Shopee é tratada no painel dela
+      carregarContas();
+      return;
+    }
     if (qs.get("conectado")) setAvisoML("Conta do Mercado Livre conectada!");
     const e = qs.get("erro");
     if (e === "negado") setErroML("Você não autorizou o acesso no Mercado Livre.");
@@ -109,7 +116,7 @@ export default function IntegracoesPage() {
     return d.toLocaleString("pt-BR");
   };
 
-  const contagem = (nome: string) => (nome === "Mercado Livre" ? contas.length : 0);
+  const contagem = (nome: string) => (nome === "Mercado Livre" ? contas.length : nome === "Shopee" ? qtdShopee : 0);
 
   return (
     <div className="space-y-5">
@@ -135,7 +142,9 @@ export default function IntegracoesPage() {
         </nav>
 
         <div className="min-w-0 space-y-5">
-          {selecionado !== "Mercado Livre" ? (
+          {selecionado === "Shopee" ? (
+            <PainelShopee empresas={empresas} aoContar={setQtdShopee} />
+          ) : selecionado !== "Mercado Livre" ? (
             <div className="card text-sm text-slate-600">A integração com {selecionado} ainda não está disponível. Por enquanto, só o Mercado Livre é sincronizado automaticamente.</div>
           ) : (
             <>
