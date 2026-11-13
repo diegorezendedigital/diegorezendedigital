@@ -51,9 +51,6 @@ export async function aplicarDescontoProprio(a: Entrada): Promise<ResultadoPropr
   const id = anuncio.external_id;
   const vazio = { preco: null, margem: null, minimo };
 
-  const entrada = entradaDoAnuncio(anuncio, produto, empresa, Number(anuncio.fee_percent ?? 12), Number(anuncio.fee_fixed ?? 6));
-  if (!entrada) return { ...vazio, status: "recusada", mensagem: "SKU sem custo cadastrado: cadastre o custo no armazém para o desconto próprio ser calculado." };
-
   // 1) Está em alguma promoção do Mercado Livre? Então ela manda e o desconto próprio não entra.
   const r = await mlGet<PromoDoItem[] | { results?: PromoDoItem[] }>(token, `/seller-promotions/items/${encodeURIComponent(id)}?app_version=v2`);
   const lista = Array.isArray(r) ? r : r?.results ?? [];
@@ -61,6 +58,10 @@ export async function aplicarDescontoProprio(a: Entrada): Promise<ResultadoPropr
   const outra = ativas.find((p) => p.type && p.type !== "PRICE_DISCOUNT");
   if (outra) return { ...vazio, status: "pulado", mensagem: `Já está na promoção “${outra.name || outra.type}”.` };
   const minha = ativas.find((p) => p.type === "PRICE_DISCOUNT");
+
+  // Sem custo não dá para calcular (só avisa quando o anúncio não está numa promoção do ML, que já foi tratada nos convites)
+  const entrada = entradaDoAnuncio(anuncio, produto, empresa, Number(anuncio.fee_percent ?? 12), Number(anuncio.fee_fixed ?? 6));
+  if (!entrada) return { ...vazio, status: "recusada", mensagem: "SKU sem custo cadastrado: cadastre o custo no armazém para o desconto próprio ser calculado." };
 
   // 2) Preço base e situação do anúncio no Mercado Livre
   const [item] = await itensDoML<ItemML>(token, [id]);

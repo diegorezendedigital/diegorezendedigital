@@ -226,9 +226,9 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
   try {
     // 2) SKUs com promoção automática e os anúncios do Mercado Livre ligados a eles
     const produtos = new Map(
-      (await todas<Product>((de, ate) => admin.from("products").select("*").eq("store_id", run.store_id).eq("promo_auto", true).order("id").range(de, ate))).map((p) => [p.id, p])
+      (await todas<Product>((de, ate) => admin.from("products").select("*").eq("store_id", run.store_id).eq("promo_auto", true).not("promo_min_margin", "is", null).order("id").range(de, ate))).map((p) => [p.id, p])
     );
-    if (!produtos.size) return await terminar("concluida", "Nenhum SKU está com “Promo auto” marcado no armazém.");
+    if (!produtos.size) return await terminar("concluida", "Nenhum SKU tem “Promo auto” marcado com a margem definida no armazém.");
     const empresas = (await admin.from("companies").select("*").eq("store_id", run.store_id)).data as Company[] | null;
     const empresaPadrao = (empresas ?? []).find((x) => x.is_default) ?? null;
     const empresaDe = (a: Listing) => (empresas ?? []).find((x) => x.id === a.company_id) ?? empresaPadrao;

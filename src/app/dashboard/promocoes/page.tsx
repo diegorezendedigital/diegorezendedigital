@@ -272,9 +272,9 @@ export default function PromocoesPage() {
   const porItem = useMemo(() => new Map(anuncios.map((a) => [a.external_id, a])), [anuncios]);
   const prodPorId = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
   const empresaPadrao = empresas.find((c) => c.is_default) ?? null;
-  const skusAuto = useMemo(() => produtos.filter((p) => p.promo_auto).length, [produtos]);
+  const skusAuto = useMemo(() => produtos.filter((p) => p.promo_auto && p.promo_min_margin != null).length, [produtos]);
   const anunciosAuto = useMemo(() => {
-    const ids = new Set(produtos.filter((p) => p.promo_auto).map((p) => p.id));
+    const ids = new Set(produtos.filter((p) => p.promo_auto && p.promo_min_margin != null).map((p) => p.id));
     return anuncios.filter((a) => a.marketplace_id === "mercado_livre" && a.product_id && ids.has(a.product_id)).length;
   }, [produtos, anuncios]);
   // Abre a promoção indicada pelo painel da automação (relâmpago, desconto por quantidade) e rola até a tabela dela
@@ -325,7 +325,7 @@ export default function PromocoesPage() {
     const m = prod.promo_min_margin != null ? Number(prod.promo_min_margin) : null;
     return (
       <span title={prod.promo_auto ? "Promoção automática ligada neste SKU" : "Promoção automática desligada neste SKU"}>
-        {m != null ? pct(m) : <span className="text-slate-500">padrão 10%</span>}
+        {m != null ? pct(m) : <span className="text-rose-600">sem margem: não entra</span>}
         <div className={`font-mono text-[10px] ${prod.promo_auto ? "text-emerald-700" : "text-slate-400"}`}>{prod.promo_auto ? "auto ligado" : "auto desligado"}</div>
       </span>
     );

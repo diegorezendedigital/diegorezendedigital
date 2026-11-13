@@ -97,6 +97,10 @@ type Avaliacao = {
   cache: CacheML;
 };
 
+// A promoção automática só vale para SKU com “Promo auto” ligado E uma margem definida (0, 5, 10… até negativa). Sem margem, não entra.
+export const promoAutoAtiva = (p: Pick<Product, "promo_auto" | "promo_min_margin"> | null | undefined): boolean =>
+  !!p?.promo_auto && p.promo_min_margin != null && Number.isFinite(Number(p.promo_min_margin));
+
 export function margemMinimaDoSku(produto: Product | undefined): number {
   const v = produto?.promo_min_margin;
   return v != null && Number.isFinite(Number(v)) ? Number(v) : MARGEM_MINIMA_PADRAO;

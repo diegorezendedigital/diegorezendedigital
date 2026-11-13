@@ -37,9 +37,9 @@ async function foraDaAutomacao(admin: SupabaseClient, n: Notificacao): Promise<s
   const productId = (l as { product_id?: string | null } | null)?.product_id;
   if (!l) return n.topic === "public_offers" ? `Oferta de ${item} (anúncio fora do sistema).` : null;
   if (!productId) return `Anúncio ${item} sem SKU do armazém ligado.`;
-  const { data: p } = await admin.from("products").select("promo_auto, sku").eq("id", productId).maybeSingle();
-  const prod = p as { promo_auto?: boolean; sku?: string | null } | null;
-  return prod?.promo_auto ? null : `SKU ${prod?.sku ?? item} sem “Promo auto”: nada a fazer.`;
+  const { data: p } = await admin.from("products").select("promo_auto, promo_min_margin, sku").eq("id", productId).maybeSingle();
+  const prod = p as { promo_auto?: boolean; promo_min_margin?: number | null; sku?: string | null } | null;
+  return prod?.promo_auto && prod.promo_min_margin != null ? null : `SKU ${prod?.sku ?? item} sem “Promo auto” e margem definida: nada a fazer.`;
 }
 
 // Processa uma notificação e devolve um texto curto do que aconteceu (gravado em ml_notificacoes.resultado)
@@ -64,7 +64,7 @@ export async function processarNotificacao(admin: SupabaseClient, n: Notificacao
   if (!a.product_id) return `Anúncio ${info.item_id} sem SKU do armazém ligado.`;
   const { data: prod } = await admin.from("products").select("*").eq("id", a.product_id).maybeSingle();
   const produto = prod as Product | null;
-  if (!produto?.promo_auto) return `SKU ${produto?.sku ?? info.item_id} sem “Promo auto”: nada a fazer.`;
+  if (!produto?.promo_auto || produto.promo_min_margin == null) return `SKU ${produto?.sku ?? info.item_id} sem “Promo auto” e margem definida: nada a fazer.`;
 
   // Já entrou antes nesta promoção? Não repete.
   const { data: ja } = await admin

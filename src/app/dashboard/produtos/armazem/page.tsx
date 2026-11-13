@@ -493,7 +493,7 @@ export default function ArmazemPage() {
     if (Object.keys(alteracao).length === 0) return setErro("Escolha o que alterar.");
     const resumo = [
       promoAuto !== "manter" ? `promoção automática ${promoAuto === "ligar" ? "LIGADA" : "DESLIGADA"}` : "",
-      promoMargemModo === "definir" ? `margem mínima ${promoMargem}%` : promoMargemModo === "padrao" ? "margem mínima padrão (10%)" : "",
+      promoMargemModo === "definir" ? `margem mínima ${promoMargem}%` : promoMargemModo === "padrao" ? "margem removida (não entra em promoção)" : "",
     ].filter(Boolean).join(" e ");
     if (!confirm(`Aplicar em ${alvo.length} produto(s): ${resumo}?`)) return;
     setMassaBusy(true);
@@ -864,7 +864,7 @@ export default function ArmazemPage() {
                 <label className="label">Margem mínima da promoção</label>
                 <select className="input h-10 py-0" value={promoMargemModo} onChange={(e) => setPromoMargemModo(e.target.value as typeof promoMargemModo)}>
                   <option value="definir">Definir margem (%)</option>
-                  <option value="padrao">Usar a padrão (10%)</option>
+                  <option value="padrao">Remover a margem (não entra)</option>
                   <option value="manter">Não mudar</option>
                 </select>
               </div>

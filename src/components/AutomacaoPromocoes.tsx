@@ -194,7 +194,7 @@ export default function AutomacaoPromocoes({
               </>
             ) : (
               <>
-                Nenhum SKU ligado. Em <Link href="/dashboard/produtos/armazem" className="underline">Produtos armazém</Link>, marque “Promo auto” e defina a margem mínima (padrão 10%).
+                Nenhum SKU ligado. Em <Link href="/dashboard/produtos/armazem" className="underline">Produtos armazém</Link>, marque “Promo auto” e defina a margem mínima (0, 5, 10, 15… pode ser negativa). Sem margem definida, o SKU não entra.
               </>
             )}
           </p>
@@ -328,7 +328,7 @@ export default function AutomacaoPromocoes({
       <details className="text-sm text-slate-600">
         <summary className="cursor-pointer font-medium text-slate-700">Como a promoção automática decide</summary>
         <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>Só olha os anúncios cujo SKU tem “Promo auto”; a meta é a margem mínima do SKU (padrão 10%, pode ser negativa).</li>
+          <li>Só olha os anúncios cujo SKU tem “Promo auto” ligado e uma margem mínima definida (0, 5, 10, 15… pode ser negativa). Sem margem definida, o SKU não entra em nada.</li>
           <li>Promoção em que você escolhe o preço (tradicional, do vendedor, do dia): entra no menor preço da faixa que ainda entrega a meta, conferindo no Mercado Livre a taxa e o frete reais nesse preço.</li>
           <li>Promoção com preço pronto do Mercado Livre (como “Impulsione suas vendas”) ou co-participação: entra se a margem nesse preço, já com o bônus do ML, chegar à meta.</li>
           <li>Oferta relâmpago, desconto por quantidade e cupons não entram sozinhos: precisam de decisão sua.</li>
