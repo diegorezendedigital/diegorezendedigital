@@ -8,7 +8,7 @@ import { carregarContexto } from "./reprice";
 
 export const MARGEM_MINIMA_PADRAO = 10; // % — usada quando o anúncio não define a própria
 
-export type ResumoPromo = { avaliados: number; entraram: number; recusados: number; erros: number; parcial: boolean; logErro?: string };
+export type ResumoPromo = { avaliados: number; entraram: number; recusados: number; erros: number; parcial: boolean; logErro?: string; totalPromos: number; concluidas: string[]; motivo?: string; inicioISO?: string };
 
 type PromoBruta = { id?: string; type?: string; status?: string; name?: string; deadline_date?: string; finish_date?: string };
 type ItemBruto = {
@@ -29,9 +29,16 @@ type ItemBruto = {
 // Entra no preço que entrega EXATAMENTE a margem definida (arredondada para cima, em centavos), usando o frete real do Mercado Livre
 // naquele preço e o bônus do Mercado Livre da promoção. Se esse preço fica abaixo do mínimo permitido, entra no mínimo (margem maior);
 // se fica acima do máximo permitido, a promoção não dá a margem e o anúncio fica de fora.
-export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: string, limiteMs = 50000): Promise<ResumoPromo> {
+export async function rodarPromocoesAutomaticas(
+  admin: SupabaseClient,
+  storeId: string,
+  limiteMs = 50000,
+  // ja: promoções (conta:id) que uma chamada anterior desta mesma rodada já terminou; desde: início da rodada (pares já registrados nela não são refeitos)
+  retomar: { ja?: string[]; desde?: string } = {}
+): Promise<ResumoPromo> {
   const inicio = Date.now();
-  const r: ResumoPromo = { avaliados: 0, entraram: 0, recusados: 0, erros: 0, parcial: false };
+  const r: ResumoPromo = { avaliados: 0, entraram: 0, recusados: 0, erros: 0, parcial: false, totalPromos: 0, concluidas: [], inicioISO: retomar.desde ?? new Date(inicio).toISOString() };
+  const jaFeitas = new Set(retomar.ja ?? []);
   const restante = () => limiteMs - (Date.now() - inicio);
   // Grava o log da participação e avisa se o banco recusou (ex.: tabela promo_actions ainda não criada)
   const gravarLog = async (linha: Record<string, unknown>, opcoes: { onConflict: string }) => {
@@ -44,9 +51,20 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
   const regra = (pid: string | null) => (pid ? (ctx.produtos.get(pid) as (Product & { promo_auto?: boolean; promo_min_margin?: number | null }) | undefined) : undefined);
   const { data } = await admin.from("listings").select("*").eq("store_id", storeId).eq("marketplace_id", "mercado_livre");
   const anuncios = ((data ?? []) as Listing[]).filter((a) => !!regra(a.product_id)?.promo_auto);
-  if (!anuncios.length) return r;
+  if (!anuncios.length) {
+    r.motivo = "Nenhum SKU está com “Promo auto” marcado e ligado a um anúncio do Mercado Livre.";
+    return r;
+  }
   const contas = await listConnections(storeId);
+  // Pares anúncio+promoção que esta rodada já registrou (recusados/erros): não refaz ao continuar
+  const feitosNaRodada = new Set<string>();
+  if (retomar.desde) {
+    const { data: reg } = await admin.from("promo_actions").select("item_id, promotion_id").eq("store_id", storeId).gte("updated_at", retomar.desde).limit(5000);
+    ((reg ?? []) as { item_id: string; promotion_id: string }[]).forEach((x) => feitosNaRodada.add(`${x.item_id}|${x.promotion_id}`));
+  }
 
+  // Primeiro levanta as promoções abertas de cada conta, para saber o total (barra de progresso) antes de entrar em qualquer uma
+  const planos: { conta: (typeof contas)[number]; meus: Map<string, Listing>; token: string; promos: PromoBruta[] }[] = [];
   for (const conta of contas) {
     const meus = new Map(anuncios.filter((a) => a.ml_user_id === conta.ml_user_id).map((a) => [a.external_id, a]));
     if (!meus.size) continue;
@@ -56,21 +74,35 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
     } catch {
       token = null;
     }
-    if (!token) continue;
-
+    if (!token) {
+      r.erros++;
+      r.motivo = `A conta ${conta.ml_user_id} está sem acesso ao Mercado Livre: reconecte em Integrações.`;
+      continue;
+    }
     let promos: PromoBruta[] = [];
     try {
       const resp = await mlGet<{ results?: PromoBruta[] } | PromoBruta[]>(token, `/seller-promotions/users/${conta.ml_user_id}?app_version=v2`);
       promos = Array.isArray(resp) ? resp : resp.results ?? [];
-    } catch {
+    } catch (e) {
       r.erros++;
+      r.motivo = `Não consegui ler as promoções da conta ${conta.ml_user_id}: ${e instanceof Error ? e.message : "erro do Mercado Livre"}`;
       continue;
     }
+    promos = promos.filter(
+      (p) => p.id && p.type && (p.status === "started" || p.status === "pending" || p.status === "programmed") && !(p.deadline_date && new Date(p.deadline_date).getTime() < Date.now())
+    );
+    r.totalPromos += promos.length;
+    planos.push({ conta, meus, token, promos });
+  }
 
+  for (const { conta, meus, token, promos } of planos) {
     for (const p of promos) {
       if (!p.id || !p.type) continue;
-      if (p.status !== "started" && p.status !== "pending" && p.status !== "programmed") continue;
-      if (p.deadline_date && new Date(p.deadline_date).getTime() < Date.now()) continue;
+      const chave = `${conta.ml_user_id}:${p.id}`;
+      if (jaFeitas.has(chave)) {
+        r.concluidas.push(chave);
+        continue;
+      }
 
       let depois: string | null = null;
       for (let pagina = 0; pagina < 8; pagina++) {
@@ -88,14 +120,16 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
           );
           itens = resp.results ?? [];
           depois = resp.paging?.searchAfter ?? resp.paging?.search_after ?? null;
-        } catch {
+        } catch (e) {
           r.erros++;
+          r.motivo = `Não consegui ler os anúncios da promoção ${p.name ?? p.id}: ${e instanceof Error ? e.message : "erro do Mercado Livre"}`;
           break;
         }
 
         for (const it of itens) {
           const a = it.id ? meus.get(it.id) : undefined;
           if (!a || it.status !== "candidate") continue;
+          if (feitosNaRodada.has(`${a.external_id}|${p.id}`)) continue;
           r.avaliados++;
 
           const rg = regra(a.product_id);
@@ -201,6 +235,7 @@ export async function rodarPromocoesAutomaticas(admin: SupabaseClient, storeId: 
         }
         if (!depois || itens.length === 0) break;
       }
+      r.concluidas.push(chave);
     }
   }
   return r;
