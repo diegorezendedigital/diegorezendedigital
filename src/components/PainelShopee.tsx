@@ -23,6 +23,7 @@ export default function PainelShopee({ empresas, aoContar }: { empresas: Company
   const [precisaSQL, setPrecisaSQL] = useState(false);
   const [confirmando, setConfirmando] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
+  const [diag, setDiag] = useState("");
 
   const carregar = useCallback(async () => {
     try {
@@ -55,6 +56,18 @@ export default function PainelShopee({ empresas, aoContar }: { empresas: Company
       window.location.href = url;
     } catch (e) {
       setErro(mensagemErro(e));
+    }
+  }
+
+  async function verificar() {
+    setDiag("Verificando…");
+    try {
+      const d = await apiFetch<{ partner_id: string | null; chave_definida: boolean; chave_tamanho: number; chave_hexadecimal: boolean; chave_tinha_espaco_ou_aspas: boolean; redirect: string | null; servidor: string }>("/api/shopee/diagnostico");
+      setDiag(
+        `Partner ID: ${d.partner_id ?? "não definido"} · chave: ${d.chave_definida ? `${d.chave_tamanho} caracteres${d.chave_hexadecimal ? " (só letras a–f e números)" : " (tem outros caracteres)"}${d.chave_tinha_espaco_ou_aspas ? " · tinha espaço/aspas, já ignorados" : ""}` : "NÃO definida"} · retorno: ${d.redirect ?? "não definido"} · servidor: ${d.servidor}`
+      );
+    } catch (e) {
+      setDiag(mensagemErro(e));
     }
   }
 
@@ -100,9 +113,11 @@ notify pgrst, 'reload schema';`;
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
+        <button className="text-sm text-brand hover:underline" onClick={verificar}>Verificar configuração</button>
         <button className="btn ml-auto" onClick={conectar} disabled={precisaSQL}>+ Conectar loja Shopee</button>
       </div>
 
+      {diag && <p className="break-words font-mono text-xs text-slate-600">{diag}</p>}
       {aviso && <p className="text-sm text-emerald-800">{aviso}</p>}
       {erro && <p className="text-sm text-red-700">{erro}</p>}
 

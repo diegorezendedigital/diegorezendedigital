@@ -7,10 +7,26 @@ import { supabaseAdmin } from "./supabase-admin";
 // O servidor padrão é o de TESTE (sandbox). Para produção, defina SHOPEE_HOST na Vercel.
 export const HOST_TESTE = "https://partner.test-stable.shopeemobile.com";
 
+// Limpa espaço, quebra de linha e aspas que costumam vir junto quando a chave é copiada e colada
 function env(name: string): string {
-  const v = process.env[name];
+  const v = (process.env[name] ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
   if (!v) throw new Error(`Variável de ambiente ausente: ${name}`);
   return v;
+}
+
+// Para conferir a configuração sem mostrar a chave: só tamanho e tipo de caractere
+export function diagnosticoShopee() {
+  const cru = process.env.SHOPEE_PARTNER_KEY ?? "";
+  const limpa = cru.trim().replace(/^["']+|["']+$/g, "").trim();
+  return {
+    partner_id: (process.env.SHOPEE_PARTNER_ID ?? "").trim() || null,
+    chave_definida: cru.length > 0,
+    chave_tamanho: limpa.length,
+    chave_hexadecimal: /^[0-9a-f]+$/i.test(limpa),
+    chave_tinha_espaco_ou_aspas: cru !== limpa,
+    redirect: process.env.SHOPEE_REDIRECT_URL ?? null,
+    servidor: shopeeHost(),
+  };
 }
 
 export const shopeeHost = () => (process.env.SHOPEE_HOST || HOST_TESTE).replace(/\/+$/, "");
