@@ -23,6 +23,7 @@ export type ItemPromoML = {
   meli_percentage?: number | null;
   seller_percentage?: number | null;
   offer_id?: string | null;
+  stock?: { min?: number | null; max?: number | null } | null; // relâmpago: estoque que precisa ser reservado
 };
 
 // Como cada tipo aceita a entrada (seller-promotions v2):
@@ -32,14 +33,16 @@ export type ItemPromoML = {
 const TIPOS_COM_OFERTA = new Set(["SMART", "PRICE_MATCHING", "PRE_NEGOTIATED", "UNHEALTHY_STOCK", "BANK"]);
 const TIPOS_COM_PRECO = new Set(["DEAL", "SELLER_CAMPAIGN", "DOD", "LIGHTNING"]);
 const NAO_AUTOMATICOS: Record<string, string> = {
-  LIGHTNING: "Oferta relâmpago exige reservar estoque: entre manualmente.",
-  VOLUME: "Desconto por quantidade não tem um preço único para calcular a margem: entre manualmente.",
+  LIGHTNING: "Oferta relâmpago reserva estoque: você decide na lista da promoção.",
+  VOLUME: "Desconto por quantidade não tem um preço único para calcular a margem: você decide na lista da promoção.",
   SELLER_COUPON_CAMPAIGN: "Cupom do vendedor: configure direto no Mercado Livre.",
   PRICE_DISCOUNT: "Desconto criado por você: não é um convite.",
   PRICE_MATCHING_MELI_ALL: "O Mercado Livre ativa essa sozinho (100% por conta dele).",
 };
 
 export const precisaOferta = (tipo: string) => TIPOS_COM_OFERTA.has(tipo);
+// Convites que não entram sozinhos, mas que você pode aceitar pela lista da promoção
+export const paraVoceDecidir = (tipo: string) => tipo === "LIGHTNING" || tipo === "VOLUME";
 export const motivoNaoAutomatico = (tipo: string): string | null => NAO_AUTOMATICOS[tipo] ?? null;
 
 const centavos = (v: number) => Math.round(v * 100) / 100;
@@ -47,11 +50,16 @@ const reais = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 const porcento = (v: number) => `${v.toFixed(1).replace(".", ",")}%`;
 
 // Corpo do POST /seller-promotions/items/{id} conforme o tipo
-export function corpoDeEntrada(promo: { id: string; type: string }, opcoes: { offerId?: string | null; preco?: number | null; temFaixa?: boolean }): Record<string, unknown> {
+export function corpoDeEntrada(
+  promo: { id: string; type: string },
+  opcoes: { offerId?: string | null; preco?: number | null; temFaixa?: boolean; estoque?: number | null }
+): Record<string, unknown> {
   const corpo: Record<string, unknown> = { promotion_id: promo.id, promotion_type: promo.type };
   if (opcoes.offerId) corpo.offer_id = opcoes.offerId;
   const mandaPreco = opcoes.preco != null && opcoes.preco > 0 && (TIPOS_COM_PRECO.has(promo.type) || (!opcoes.offerId && opcoes.temFaixa));
   if (mandaPreco) corpo.deal_price = centavos(Number(opcoes.preco));
+  // Oferta relâmpago: o Mercado Livre exige informar quantas unidades ficam reservadas para ela
+  if (promo.type === "LIGHTNING") corpo.stock = Math.max(1, Math.floor(Number(opcoes.estoque) || 1));
   return corpo;
 }
 
@@ -267,6 +275,12 @@ export async function decidirEEntrar(
     return { status: "entrou", mensagem: d.motivo, logErro };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Erro ao entrar na promoção";
+    // "Candidate not valid": o convite expirou ou o anúncio deixou de ser elegível; não é falha do sistema
+    if (/candidate not valid|invalid candidate/i.test(msg)) {
+      const texto = "O Mercado Livre não aceitou o convite (Candidate not valid): ele expirou ou o anúncio deixou de ser elegível. Se voltar a ser convidado, entra na próxima aplicação.";
+      const logErro = await gravarAcao(admin, { ...linhaBase, price: d.preco, margin: d.margem, status: "recusada", message: texto, updated_at: new Date().toISOString() });
+      return { status: "recusada", mensagem: texto, logErro };
+    }
     // Se o anúncio já está na promoção (entrou por outra rodada, por um convite em tempo real ou pela tela), não é erro
     const agora = await itemNaPromocao(a.token, a.promo, a.anuncio.external_id).catch(() => null);
     if (agora && ["started", "pending", "programmed"].includes(String(agora.status))) {

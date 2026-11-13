@@ -226,4 +226,6 @@ export type RodadaPromo = {
   batida_em: string | null;
   lease_ate: string | null;
   terminado_em: string | null;
+  // Promoções que não entram sozinhas (relâmpago, desconto por quantidade) e convidaram seus anúncios; total = convites (-1 = não contado)
+  cursor?: { manuais?: { conta: string; id: string; tipo: string; nome: string; total: number }[] } | null;
 };

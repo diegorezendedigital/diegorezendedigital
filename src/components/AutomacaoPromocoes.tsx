@@ -28,16 +28,20 @@ const duracao = (de: string, ate?: string | null) => {
 };
 const faltaTabela = (msg: string) => /promo_runs|ml_notificacoes|run_id|does not exist|schema cache|relation/i.test(msg);
 
+const TIPO_MANUAL: Record<string, string> = { LIGHTNING: "oferta relâmpago (reserva estoque)", VOLUME: "desconto por quantidade" };
+
 export default function AutomacaoPromocoes({
   skusAuto,
   anunciosAuto,
   porItem,
   onTerminou,
+  onAbrirPromocao,
 }: {
   skusAuto: number;
   anunciosAuto: number;
   porItem: Map<string, Listing>;
   onTerminou: () => void;
+  onAbrirPromocao?: (conta: string, promocaoId: string) => void;
 }) {
   const [rodada, setRodada] = useState<RodadaPromo | null>(null);
   const [carregou, setCarregou] = useState(false);
@@ -293,6 +297,29 @@ export default function AutomacaoPromocoes({
               })}
             </ul>
           )}
+        </div>
+      )}
+
+      {r && (r.cursor?.manuais?.length ?? 0) > 0 && (
+        <div className="space-y-2 rounded-xl bg-slate-50 p-4 text-sm">
+          <p className="font-medium text-slate-700">Para você decidir: estas promoções não entram sozinhas</p>
+          <ul className="space-y-1.5">
+            {(r.cursor?.manuais ?? []).map((m) => (
+              <li key={`${m.conta}|${m.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-medium">{m.nome}</span>
+                <span className="text-xs text-slate-500">
+                  {TIPO_MANUAL[m.tipo] ?? m.tipo}
+                  {m.total > 0 ? ` · ${m.total} convite${m.total === 1 ? "" : "s"}` : ""} · conta {m.conta}
+                </span>
+                {onAbrirPromocao && (
+                  <button type="button" className="text-xs font-medium text-brand underline" onClick={() => onAbrirPromocao(m.conta, m.id)}>
+                    Abrir e escolher
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-slate-500">Ao abrir, a tabela mostra a margem de cada anúncio no preço da promoção; clique em “Participar” nos que valerem a pena.</p>
         </div>
       )}
 

@@ -31,6 +31,7 @@ type Item = {
   end_date: string | null;
   meli_percentage?: number | null;
   seller_percentage?: number | null;
+  stock?: { min?: number | null; max?: number | null } | null; // oferta relâmpago: estoque a reservar
 };
 type Resumo = {
   promocoes: number;
@@ -276,6 +277,13 @@ export default function PromocoesPage() {
     const ids = new Set(produtos.filter((p) => p.promo_auto).map((p) => p.id));
     return anuncios.filter((a) => a.marketplace_id === "mercado_livre" && a.product_id && ids.has(a.product_id)).length;
   }, [produtos, anuncios]);
+  // Abre a promoção indicada pelo painel da automação (relâmpago, desconto por quantidade) e rola até a tabela dela
+  function abrirPromocao(conta: string, promocaoId: string) {
+    const promo = contas?.find((c) => c.ml_user_id === conta)?.promocoes.find((p) => p.id === promocaoId);
+    if (!promo) return setErro("Essa promoção não está mais na lista do Mercado Livre. Atualize a página.");
+    if (!(aberta?.promo.id === promo.id && aberta.ml_user_id === conta)) abrir(conta, promo);
+    setTimeout(() => document.getElementById("promocao-aberta")?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+  }
   // Ao fim de uma rodada: recarrega o log e o resumo
   const aoTerminarRodada = useCallback(() => {
     carregar();
@@ -492,7 +500,7 @@ export default function PromocoesPage() {
     try {
       await apiFetch("/api/ml/promocoes/aderir", {
         method: "POST",
-        body: JSON.stringify({ ml_user_id: ctx.ml_user_id, item_id: i.id, promotion_id: ctx.promo.id, promotion_type: ctx.promo.type, deal_price: preco }),
+        body: JSON.stringify({ ml_user_id: ctx.ml_user_id, item_id: i.id, promotion_id: ctx.promo.id, promotion_type: ctx.promo.type, deal_price: preco, stock: i.stock?.min ?? undefined }),
       });
       setItens((l) => l.map((x) => (x.id === i.id && ctx === aberta ? { ...x, status: "started", price: preco } : x)));
       setCachePromos((c) => (c[i.id] ? { ...c, [i.id]: { ...c[i.id], promocoes: c[i.id].promocoes.map((x) => (x.promo_id === ctx.promo.id ? { ...x, status: "started", price: preco } : x)) } } : c));
@@ -677,7 +685,7 @@ export default function PromocoesPage() {
 
       <PainelPromos r={resumo} carregando={carregandoResumo} onAtualizar={carregarResumo} />
 
-      <AutomacaoPromocoes skusAuto={skusAuto} anunciosAuto={anunciosAuto} porItem={porItem} onTerminou={aoTerminarRodada} />
+      <AutomacaoPromocoes skusAuto={skusAuto} anunciosAuto={anunciosAuto} porItem={porItem} onTerminou={aoTerminarRodada} onAbrirPromocao={abrirPromocao} />
 
       <section className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -938,7 +946,7 @@ export default function PromocoesPage() {
       )}
 
       {aberta && (
-        <section className="space-y-3">
+        <section id="promocao-aberta" className="scroll-mt-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">
               {aberta.promo.name} <span className="text-sm font-normal text-slate-500">· {TIPOS[aberta.promo.type] ?? aberta.promo.type}</span>
@@ -1061,9 +1069,16 @@ export default function PromocoesPage() {
                         {dentro ? (
                           <button className="text-red-700 hover:underline" onClick={() => sair(i)} disabled={trabalhando === i.id}>Sair</button>
                         ) : i.status === "candidate" ? (
-                          <button className="btn-ghost" onClick={() => aderir(i)} disabled={trabalhando === i.id}>
-                            {trabalhando === i.id ? "Entrando…" : "Participar"}
-                          </button>
+                          <>
+                            <button className="btn-ghost" onClick={() => aderir(i)} disabled={trabalhando === i.id}>
+                              {trabalhando === i.id ? "Entrando…" : "Participar"}
+                            </button>
+                            {aberta?.promo.type === "LIGHTNING" && (
+                              <div className="mt-1 text-[11px] text-slate-500" title="Unidades que ficam reservadas para a oferta relâmpago; quando acabam, a oferta termina neste anúncio">
+                                reserva {i.stock?.min ?? 1} un.{i.stock?.max ? ` (ML aceita até ${i.stock.max})` : ""}
+                              </div>
+                            )}
+                          </>
                         ) : null}
                       </td>
                     </tr>

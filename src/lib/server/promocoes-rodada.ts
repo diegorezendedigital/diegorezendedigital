@@ -2,7 +2,7 @@ import crypto from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Company, Listing, Product } from "@/lib/types";
 import { getAccessToken, mlGet } from "./ml";
-import { decidirEEntrar, motivoNaoAutomatico, novoCache, type ItemPromoML, type PromoML } from "./promocoes-motor";
+import { decidirEEntrar, motivoNaoAutomatico, novoCache, paraVoceDecidir, type ItemPromoML, type PromoML } from "./promocoes-motor";
 
 // Rodadas da promoção automática em segundo plano. Cada rodada fica gravada em promo_runs com o progresso e um cursor;
 // o servidor processa ~40 s por vez e chama a si mesmo para continuar, então a rodada termina mesmo com a página fechada.
@@ -42,6 +42,7 @@ type Cursor = {
   falhas?: number; // falhas seguidas ao ler a página atual
   base?: number; // convites das promoções já terminadas
   avisos?: string[];
+  manuais?: PlanoPromo[]; // relâmpago e desconto por quantidade: não entram sozinhas, você decide na lista da promoção
 };
 
 const ATIVAS = ["na_fila", "rodando"];
@@ -248,6 +249,7 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
     // 3) Plano: promoções abertas de cada conta e quantos convites cada uma tem (feito uma vez por rodada)
     if (!c.plano) {
       const plano: PlanoPromo[] = [];
+      const manuais: PlanoPromo[] = [];
       for (const conta of Array.from(porConta.keys())) {
         const token = await tokenDe(conta);
         if (!token) {
@@ -264,22 +266,23 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
           ultimoErro = `Promoções da conta ${conta}: ${e instanceof Error ? e.message : "erro do Mercado Livre"}`;
           continue;
         }
-        let manuais = 0;
         for (const p of promos) {
           if (!p.id || !p.type) continue;
           if (!["started", "pending", "programmed"].includes(String(p.status))) continue;
           if (p.deadline_date && new Date(p.deadline_date).getTime() < Date.now()) continue;
           if (motivoNaoAutomatico(p.type)) {
-            manuais++;
+            // Relâmpago e desconto por quantidade ficam para você decidir; cupom, desconto próprio e "100% ML" não são convites
+            if (paraVoceDecidir(p.type)) manuais.push({ conta, id: p.id, tipo: p.type, nome: p.name || p.id, total: -1 });
             continue;
           }
           plano.push({ conta, id: p.id, tipo: p.type, nome: p.name || p.id, total: -1 });
         }
-        if (manuais) avisos.add(`${manuais} promoção(ões) da conta ${conta} não entram sozinhas (relâmpago, desconto por quantidade, cupom ou 100% ML).`);
       }
-      for (let i = 0; i < plano.length; i += 4) {
+      // Quantos convites cada promoção tem (as de decisão manual também, para só mostrar as que convidaram você)
+      const contar = [...plano, ...manuais];
+      for (let i = 0; i < contar.length; i += 4) {
         await Promise.all(
-          plano.slice(i, i + 4).map(async (pp) => {
+          contar.slice(i, i + 4).map(async (pp) => {
             const token = await tokenDe(pp.conta);
             if (!token) return;
             try {
@@ -293,6 +296,7 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
         );
       }
       c.plano = plano.filter((p) => p.total !== 0).map((p) => ({ ...p, total: Math.max(0, p.total) }));
+      c.manuais = manuais.filter((p) => p.total !== 0);
       c.idx = 0;
       c.pagina = null;
       c.paginaIds = [];

@@ -18,6 +18,7 @@ type ItemBruto = {
   meli_percentage?: number;
   seller_percentage?: number;
   offer_id?: string;
+  stock?: { min?: number; max?: number };
 };
 
 // Anúncios de uma promoção: quais podem entrar (candidatos), já estão dentro ou aguardam, com a faixa de preço permitida.
@@ -51,6 +52,7 @@ export async function POST(req: Request) {
         meli_percentage: i.meli_percentage ?? null,
         seller_percentage: i.seller_percentage ?? null,
         offer_id: i.offer_id ?? null,
+        stock: i.stock ?? null,
       })),
       total: r.paging?.total ?? null,
       search_after: r.paging?.searchAfter ?? r.paging?.search_after ?? null,
