@@ -172,7 +172,6 @@ export default function CalculadoraTikTok() {
   const rMeta = precoMeta != null ? calcularLucro(precoMeta, entrada(precoMeta)) : null;
   const margemMostrada = base === "pct" ? margemAlvo : rMeta ? campo(Math.round(rMeta.margem * 100) / 100) : "";
   const sobraMostrada = base === "valor" ? sobraAlvo : rMeta ? campo(Math.round(rMeta.lucro * 100) / 100) : "";
-  const tabela = [0, 10, 15, 20, 25, 30];
 
   if (carregando) return <p className="text-sm text-slate-500">Carregando seus produtos…</p>;
 
@@ -340,34 +339,6 @@ export default function CalculadoraTikTok() {
         </div>
       </div>
 
-      {custoN > 0 && (
-        <div className="card">
-          <h2 className="mb-2 font-semibold">Preço para cada margem</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-slate-500">
-                  <th className="py-1 pr-4">Margem</th>
-                  <th className="py-1 pr-4">Preço de venda</th>
-                  <th className="py-1">Lucro</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tabela.map((m) => {
-                  const p = precoMinimo(m);
-                  return (
-                    <tr key={m} className="border-t border-slate-100">
-                      <td className="py-1 pr-4">{m}%</td>
-                      <td className="py-1 pr-4 font-medium">{p != null ? brl(p) : "—"}</td>
-                      <td className="py-1">{p != null ? brl(calcularLucro(p, entrada(p)).lucro) : "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
