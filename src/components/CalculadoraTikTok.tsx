@@ -31,6 +31,8 @@ export default function CalculadoraTikTok() {
   const [sobraAlvo, setSobraAlvo] = useState("");
   // Qual dos dois o usuário digitou por último: o outro é calculado.
   const [base, setBase] = useState<"pct" | "valor">("pct");
+  // Enquanto a pessoa não digita o preço à mão, ele acompanha a meta (margem ou sobra).
+  const [precoManual, setPrecoManual] = useState(false);
   const [comissaoManual, setComissaoManual] = useState("");
   const [tarifaManual, setTarifaManual] = useState("");
 
@@ -89,7 +91,10 @@ export default function CalculadoraTikTok() {
     setBusca(p.name);
     setAberta(false);
     setCusto(campo(custoDe(p).custo));
-    if (Number(p.sale_price) > 0) setPreco(campo(Number(p.sale_price)));
+    if (Number(p.sale_price) > 0) {
+      setPreco(campo(Number(p.sale_price)));
+      setPrecoManual(true);
+    }
   }
 
   function limpar() {
@@ -170,6 +175,10 @@ export default function CalculadoraTikTok() {
   const metaOk = custoN > 0 && (base === "pct" ? true : sobraN > 0);
   const precoMeta = !metaOk ? null : base === "pct" ? precoMinimo(margemN) : precoParaSobra(sobraN);
   const rMeta = precoMeta != null ? calcularLucro(precoMeta, entrada(precoMeta)) : null;
+  useEffect(() => {
+    if (!precoManual && precoMeta != null) setPreco(campo(Math.ceil(precoMeta * 100) / 100));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [precoManual, precoMeta]);
   const margemMostrada = base === "pct" ? margemAlvo : rMeta ? campo(Math.round(rMeta.margem * 100) / 100) : "";
   const sobraMostrada = base === "valor" ? sobraAlvo : rMeta ? campo(Math.round(rMeta.lucro * 100) / 100) : "";
 
@@ -230,6 +239,7 @@ export default function CalculadoraTikTok() {
               onChange={(e) => {
                 setMargemAlvo(e.target.value);
                 setBase("pct");
+                setPrecoManual(false);
               }}
             />
           </div>
@@ -242,6 +252,7 @@ export default function CalculadoraTikTok() {
               onChange={(e) => {
                 setSobraAlvo(e.target.value);
                 setBase("valor");
+                setPrecoManual(false);
               }}
               placeholder="ex.: 10,00"
             />
@@ -263,7 +274,10 @@ export default function CalculadoraTikTok() {
             type="button"
             className="btn-ghost"
             disabled={precoMeta == null}
-            onClick={() => precoMeta != null && setPreco(campo(Math.ceil(precoMeta * 100) / 100))}
+            onClick={() => {
+              if (precoMeta != null) setPreco(campo(Math.ceil(precoMeta * 100) / 100));
+              setPrecoManual(false);
+            }}
           >
             Usar este preço na simulação
           </button>
@@ -276,7 +290,10 @@ export default function CalculadoraTikTok() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Preço de venda (R$)</label>
-              <input className="input" inputMode="decimal" value={preco} onChange={(e) => setPreco(e.target.value)} />
+              <input className="input" inputMode="decimal" value={preco} onChange={(e) => {
+                  setPreco(e.target.value);
+                  setPrecoManual(true);
+                }} />
               <p className="mt-1 text-[11px] text-slate-500">Depois do desconto do vendedor</p>
             </div>
             <div>
