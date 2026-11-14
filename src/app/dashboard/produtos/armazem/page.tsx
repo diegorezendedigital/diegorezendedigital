@@ -1114,7 +1114,7 @@ export default function ArmazemPage() {
                     />
                   </td>
                   <td className="td whitespace-nowrap">
-                    <CelulaCanal margem={p.tiktok_margem} preco={p.tiktok_preco} href={`/dashboard/calculadora?produto=${p.id}`} />
+                    <CelulaCanal margem={p.tiktok_margem} preco={p.tiktok_preco} config={p.tiktok_config} href={`/dashboard/calculadora?produto=${p.id}`} />
                   </td>
                   <td className="td whitespace-nowrap">
                     <CelulaCanal margem={p.shopee_margem} preco={p.shopee_preco} />
@@ -1241,7 +1241,7 @@ export default function ArmazemPage() {
 }
 
 // Margem e preço de venda de um canal (ou um traço enquanto não foi salvo).
-function CelulaCanal({ margem, preco, href }: { margem?: number | null; preco?: number | null; href?: string }) {
+function CelulaCanal({ margem, preco, config, href }: { margem?: number | null; preco?: number | null; config?: Record<string, unknown> | null; href?: string }) {
   if (margem == null) {
     return href ? (
       <Link href={href} className="text-xs text-brand hover:underline">
@@ -1255,6 +1255,12 @@ function CelulaCanal({ margem, preco, href }: { margem?: number | null; preco?: 
     <div className="leading-tight">
       <div className="font-semibold">{campo(Number(margem))}%</div>
       {preco != null && <div className="text-xs text-slate-500">vende a {brl(Number(preco))}</div>}
+      {preco != null && <div className="text-xs font-medium text-emerald-700">sobra {brl((Number(preco) * Number(margem)) / 100)}</div>}
+      {config?.usarAds === true ? (
+        <div className="text-xs text-cyan-700">com ads: ROAS {String(config.roas ?? "")}</div>
+      ) : config ? (
+        <div className="text-xs text-slate-400">sem ads</div>
+      ) : null}
       {href && (
         <Link href={href} className="text-[11px] text-brand hover:underline">
           Editar
