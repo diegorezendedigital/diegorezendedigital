@@ -30,9 +30,9 @@ export default function CalculadoraTikTok() {
 
   // Anúncios: ao ligar, ROAS e ACOS andam juntos (ACOS = 100 / ROAS) e entra a comissão do afiliado.
   const [usarAds, setUsarAds] = useState(false);
-  const [roas, setRoas] = useState("20");
-  const [acos, setAcos] = useState("5");
-  const [afiliado, setAfiliado] = useState("8");
+  const [roas, setRoas] = useState("10");
+  const [acos, setAcos] = useState("10");
+  const [afiliado, setAfiliado] = useState("2");
 
   const [margemAlvo, setMargemAlvo] = useState("15");
   const [sobraAlvo, setSobraAlvo] = useState("");
@@ -100,9 +100,9 @@ export default function CalculadoraTikTok() {
       setFreteGratis(String(cfg.freteGratis ?? "6"));
       setExtra(String(cfg.extra ?? "0"));
       setUsarAds(cfg.usarAds === true);
-      setRoas(String(cfg.roas ?? "20"));
-      setAcos(String(cfg.acos ?? "5"));
-      setAfiliado(String(cfg.afiliado ?? "8"));
+      setRoas(String(cfg.roas ?? "10"));
+      setAcos(String(cfg.acos ?? "10"));
+      setAfiliado(String(cfg.afiliado ?? "2"));
       setMargemAlvo(campo(Number(p.tiktok_margem)));
       setBase("pct");
       if (p.tiktok_preco != null) {
@@ -415,7 +415,14 @@ export default function CalculadoraTikTok() {
           <div className={`rounded-xl border p-3 transition-colors ${usarAds ? "border-cyan-300 bg-cyan-50/60" : "border-slate-200 bg-slate-50"}`}>
             <button
               type="button"
-              onClick={() => setUsarAds((v) => !v)}
+              onClick={() => {
+                // Ao ligar o ads: ROAS 10 (ACOS 10%) e afiliado em 2%; dá para editar depois.
+                if (!usarAds) {
+                  mudarRoas("10");
+                  setAfiliado("2");
+                }
+                setUsarAds((v) => !v);
+              }}
               aria-pressed={usarAds}
               className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
                 usarAds ? "bg-cyan-600 text-white" : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
