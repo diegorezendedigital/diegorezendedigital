@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import CalculadoraTikTok from "@/components/CalculadoraTikTok";
 import { Marketplace, Product, brl, calcularTaxas, campo, num, pct } from "@/lib/types";
 
-export default function CalculadoraPage() {
+function CalculadoraGeral() {
   const [mps, setMps] = useState<Marketplace[]>([]);
   const [produtos, setProdutos] = useState<Product[]>([]);
   const [mpId, setMpId] = useState("mercado_livre");
@@ -78,8 +79,6 @@ export default function CalculadoraPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold">Calculadora de margem</h1>
-
       <div className="grid gap-4 md:grid-cols-2">
         <div className="card space-y-3">
           <div>
@@ -154,6 +153,29 @@ export default function CalculadoraPage() {
           {msg && <p className="text-sm text-slate-600">{msg}</p>}
         </div>
       </div>
+    </div>
+  );
+}
+
+export default function CalculadoraPage() {
+  const [aba, setAba] = useState<"tiktok" | "outros">("tiktok");
+  return (
+    <div className="space-y-4">
+      <h1 className="text-xl font-bold">Calculadora de margem</h1>
+      <div className="flex gap-2" role="tablist">
+        {([["tiktok", "TikTok Shop"], ["outros", "Outros marketplaces"]] as const).map(([id, nome]) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={aba === id}
+            onClick={() => setAba(id)}
+            className={`rounded-full px-4 py-2 text-sm font-medium ${aba === id ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}
+          >
+            {nome}
+          </button>
+        ))}
+      </div>
+      {aba === "tiktok" ? <CalculadoraTikTok /> : <CalculadoraGeral />}
     </div>
   );
 }
