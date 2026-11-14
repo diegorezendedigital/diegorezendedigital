@@ -26,6 +26,7 @@ export default function CalculadoraTikTok() {
   const [custo, setCusto] = useState("");
   const [frete, setFrete] = useState("0");
   const [afiliado, setAfiliado] = useState("8");
+  const [freteGratis, setFreteGratis] = useState("6");
   const [margemAlvo, setMargemAlvo] = useState("15");
   const [comissaoManual, setComissaoManual] = useState("");
   const [tarifaManual, setTarifaManual] = useState("");
@@ -117,13 +118,14 @@ export default function CalculadoraTikTok() {
 
   function entrada(p: number): EntradaPreco {
     const t = taxasDe(p);
-    return { custo: custoN, credito: 0, feePct: t.com + num(afiliado), feeFixo: t.fixa, frete: num(frete), empresa };
+    return { custo: custoN, credito: 0, feePct: t.com + num(afiliado) + num(freteGratis), feeFixo: t.fixa, frete: num(frete), empresa };
   }
 
   const t = taxasDe(precoN);
   const r = calcularLucro(precoN, entrada(precoN));
   const comissaoR = (precoN * t.com) / 100;
   const afiliadoR = (precoN * num(afiliado)) / 100;
+  const freteGratisR = (precoN * num(freteGratis)) / 100;
   const roi = custoN > 0 ? (r.lucro / custoN) * 100 : 0;
 
   // Menor preço que entrega a margem, faixa por faixa (a tarifa muda no limite de R$ 50).
@@ -212,6 +214,11 @@ export default function CalculadoraTikTok() {
               <input className="input" inputMode="decimal" value={imposto} onChange={(e) => setImposto(e.target.value)} />
             </div>
             <div>
+              <label className="label">Frete grátis (%)</label>
+              <input className="input" inputMode="decimal" value={freteGratis} onChange={(e) => setFreteGratis(e.target.value)} />
+              <p className="mt-1 text-[11px] text-slate-500">Programa de taxas de envio, nas 2 faixas</p>
+            </div>
+            <div>
               <label className="label">Comissão do afiliado (%)</label>
               <input className="input" inputMode="decimal" value={afiliado} onChange={(e) => setAfiliado(e.target.value)} />
             </div>
@@ -239,6 +246,7 @@ export default function CalculadoraTikTok() {
             <Linha t="(-) Custo do produto" v={brl(custoN)} />
             <Linha t={`(-) Comissão (${pct(t.com)})`} v={brl(comissaoR)} />
             <Linha t="(-) Tarifa por item" v={brl(t.fixa)} />
+            {freteGratisR > 0 && <Linha t={`(-) Frete grátis (${pct(num(freteGratis))})`} v={brl(freteGratisR)} />}
             {afiliadoR > 0 && <Linha t={`(-) Afiliado (${pct(num(afiliado))})`} v={brl(afiliadoR)} />}
             <Linha t="(-) Frete" v={brl(num(frete))} />
             <Linha t={`(-) Imposto (${pct(num(imposto))})`} v={brl(r.impostos)} />

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { brl, num, pct } from "@/lib/types";
-import { CANAIS, Canal, CanalId, precoParaMargem, taxasDoPreco } from "@/lib/taxas-publicas";
+import { CANAIS, Canal, CanalId, faixaDoPreco, precoParaMargem, taxasDoPreco } from "@/lib/taxas-publicas";
 
 const campo =
   "w-full rounded-lg border border-line bg-white px-4 py-3 text-sm outline-none focus:border-ink focus:ring-2 focus:ring-gold/30";
@@ -127,7 +127,7 @@ export default function CalculadoraGratisPage() {
               <div className="mt-3 grid grid-cols-2 gap-4">
                 <div>
                   <label className={rotulo} htmlFor="com">Comissão (%)</label>
-                  <input id="com" className={campo} inputMode="decimal" value={comissaoManual} onChange={(e) => setComissaoManual(e.target.value)} placeholder={temPreco ? String(r.comissaoPct).replace(".", ",") : "da faixa"} />
+                  <input id="com" className={campo} inputMode="decimal" value={comissaoManual} onChange={(e) => setComissaoManual(e.target.value)} placeholder={temPreco ? String(faixaDoPreco(canal, precoN).comissao).replace(".", ",") : "da faixa"} />
                 </div>
                 <div>
                   <label className={rotulo} htmlFor="fixa">Taxa fixa (R$)</label>
@@ -144,7 +144,7 @@ export default function CalculadoraGratisPage() {
             <div className="space-y-2">
               <Linha t="Preço de venda" v={brl(precoN)} />
               <Linha t="Custo do produto" v={`− ${brl(custoN)}`} />
-              <Linha t={`Comissão (${pct(r.comissaoPct)})`} v={`− ${brl(r.comissao)}`} />
+              <Linha t={canal.extraPct ? `Comissão + frete grátis (${pct(r.comissaoPct)})` : `Comissão (${pct(r.comissaoPct)})`} v={`− ${brl(r.comissao)}`} />
               <Linha t="Taxa fixa" v={`− ${brl(r.fixa)}`} />
               <Linha t="Frete" v={`− ${brl(freteN)}`} />
               <Linha t="Imposto" v={`− ${brl(r.imp)}`} />

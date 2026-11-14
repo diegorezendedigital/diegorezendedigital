@@ -3,7 +3,7 @@ import Link from "next/link";
 const marketplaces = [
   { nome: "Mercado Livre", taxa: "10% a 14% + taxa fixa abaixo de R$ 79" },
   { nome: "Shopee", taxa: "14% a 20% + R$ 4,50 a R$ 26 por item" },
-  { nome: "TikTok Shop", taxa: "6% a 10% + R$ 4 a R$ 6 por item" },
+  { nome: "TikTok Shop", taxa: "6% a 10% + 6% de frete grátis + R$ 4 a R$ 6 por item" },
 ];
 
 export default function LandingPage() {

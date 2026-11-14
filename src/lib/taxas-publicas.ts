@@ -12,6 +12,8 @@ export type Canal = {
   cor: string;
   faixas: Faixa[];
   nota: string;
+  /** % extra sobre o preço, além da comissão da faixa (ex.: programa de frete grátis do TikTok Shop). */
+  extraPct?: number;
 };
 
 export const CANAIS: Canal[] = [
@@ -51,7 +53,8 @@ export const CANAIS: Canal[] = [
       { ate: 49.99, comissao: 10, fixa: 4 },
       { ate: Infinity, comissao: 6, fixa: 6 },
     ],
-    nota: "Tarifa por faixa de preço (desde 15/07/2026). Comissão de afiliado, se você oferecer, é custo à parte.",
+    extraPct: 6,
+    nota: "Comissão de 10% (abaixo de R$ 50) ou 6% + tarifa por item, mais 6% do programa de frete grátis nas duas faixas (desde 15/07/2026). Comissão de afiliado, se você oferecer, é custo à parte.",
   },
 ];
 
@@ -70,7 +73,7 @@ export function faixaDoPreco(canal: Canal, preco: number): Faixa {
 
 export function taxasDoPreco(canal: Canal, preco: number, aj: Ajustes) {
   const f = faixaDoPreco(canal, preco);
-  const comissaoPct = aj.comissao ?? f.comissao;
+  const comissaoPct = (aj.comissao ?? f.comissao) + (canal.extraPct ?? 0);
   const fixaBase = f.fixa === "metade" ? preco / 2 : f.fixa;
   const fixa = (aj.fixa ?? fixaBase) + aj.extraFixa;
   const comissao = (preco * comissaoPct) / 100;
@@ -89,7 +92,7 @@ export function precoParaMargem(
   let inicio = 0;
   let melhor: number | null = null;
   for (const f of canal.faixas) {
-    const comissaoPct = aj.comissao ?? f.comissao;
+    const comissaoPct = (aj.comissao ?? f.comissao) + (canal.extraPct ?? 0);
     const denom = 1 - (comissaoPct + impostoPct + margemPct) / 100;
     if (denom > 0) {
       const fixaFaixa = f.fixa === "metade" ? 0 : aj.fixa ?? f.fixa;
