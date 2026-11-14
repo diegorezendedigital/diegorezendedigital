@@ -29,6 +29,11 @@ export type Product = {
   cost_updated_at: string | null;
   promo_auto?: boolean;
   promo_min_margin?: number | null;
+  tiktok_margem?: number | null;
+  tiktok_preco?: number | null;
+  tiktok_config?: Record<string, unknown> | null;
+  shopee_margem?: number | null;
+  shopee_preco?: number | null;
   tipo?: "unico" | "multi" | "kit";
   grupo?: string | null;
 };

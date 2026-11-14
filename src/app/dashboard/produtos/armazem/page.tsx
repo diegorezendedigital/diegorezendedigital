@@ -963,14 +963,16 @@ export default function ArmazemPage() {
               <th className="th">Estoque</th>
               <th className="th">Anúncios</th>
               <th className="th" title="Entrar sozinho nas promoções do Mercado Livre que dão a margem mínima deste SKU">Promo auto</th>
-              <th className="th" title="Margem líquida mínima para aceitar uma promoção. Pode ser negativa (ex.: -5) para aceitar prejuízo.">Margem mín. promo %</th>
+              <th className="th" title="Margem líquida do Mercado Livre: também é a mínima para aceitar uma promoção. Pode ser negativa (ex.: -5) para aceitar prejuízo.">Margem Mercado Livre %</th>
+              <th className="th" title="Margem e preço de venda salvos na calculadora do TikTok Shop">Margem TikTok</th>
+              <th className="th" title="Margem e preço de venda da Shopee">Margem Shopee</th>
               <th className="th"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {visiveis.length === 0 && (
               <tr>
-                <td className="td text-slate-500" colSpan={12}>
+                <td className="td text-slate-500" colSpan={14}>
                   {produtos.length === 0 ? "Nenhum produto ainda. Use “Novo produto”, a planilha ou o XML da nota." : "Nada encontrado para essa busca."}
                 </td>
               </tr>
@@ -1112,6 +1114,12 @@ export default function ArmazemPage() {
                     />
                   </td>
                   <td className="td whitespace-nowrap">
+                    <CelulaCanal margem={p.tiktok_margem} preco={p.tiktok_preco} href={`/dashboard/calculadora?produto=${p.id}`} />
+                  </td>
+                  <td className="td whitespace-nowrap">
+                    <CelulaCanal margem={p.shopee_margem} preco={p.shopee_preco} />
+                  </td>
+                  <td className="td whitespace-nowrap">
                     {ehKit && (
                       <button onClick={() => { setKitAberto(kitAberto === p.id ? null : p.id); setKitBusca(""); }} className="mr-3 text-xs font-semibold text-brand hover:underline">
                         Composição{pecas.length ? ` (${pecas.length})` : ""}
@@ -1123,7 +1131,7 @@ export default function ArmazemPage() {
                 </tr>
                 {kitAberto === p.id && (
                   <tr className="bg-brand-light/30">
-                    <td className="td" colSpan={12}>
+                    <td className="td" colSpan={14}>
                       <div className="space-y-3 py-2">
                         <p className="text-sm font-semibold">Composição do kit {p.sku}</p>
                         <p className="text-xs text-slate-600">Escolha os produtos e a quantidade de cada um que entram neste kit. O custo do kit é a soma e se atualiza sozinho sempre que o custo de uma peça mudar (cada mudança fica no Histórico).</p>
@@ -1187,7 +1195,7 @@ export default function ArmazemPage() {
                 )}
                 {aberto && (
                   <tr className="bg-slate-50">
-                    <td className="td" colSpan={12}>
+                    <td className="td" colSpan={14}>
                       <div className="space-y-2 py-1">
                         <p className="text-xs text-slate-600">
                           Histórico de custo. Cada venda usa o custo vigente na data dela. Ao alterar o custo acima, uma linha nova é criada com a data de hoje.
@@ -1228,6 +1236,30 @@ export default function ArmazemPage() {
       </div>
       {visiveis.length > 0 && controlesPagina}
       <p className="text-xs text-slate-500">Altere custo ou estoque direto na tabela; ao sair do campo, o valor é salvo. Mudar o custo vale só para as vendas daqui para frente: as vendas antigas guardam o custo da época. O botão Histórico mostra cada custo e a data em que passou a valer.</p>
+    </div>
+  );
+}
+
+// Margem e preço de venda de um canal (ou um traço enquanto não foi salvo).
+function CelulaCanal({ margem, preco, href }: { margem?: number | null; preco?: number | null; href?: string }) {
+  if (margem == null) {
+    return href ? (
+      <Link href={href} className="text-xs text-brand hover:underline">
+        Calcular
+      </Link>
+    ) : (
+      <span className="text-slate-400">—</span>
+    );
+  }
+  return (
+    <div className="leading-tight">
+      <div className="font-semibold">{campo(Number(margem))}%</div>
+      {preco != null && <div className="text-xs text-slate-500">vende a {brl(Number(preco))}</div>}
+      {href && (
+        <Link href={href} className="text-[11px] text-brand hover:underline">
+          Editar
+        </Link>
+      )}
     </div>
   );
 }

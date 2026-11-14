@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { Product, brl, campo, num, pct } from "@/lib/types";
 import { calcularLucro, precoParaMargem, type EntradaPreco } from "@/lib/pricing";
@@ -40,6 +40,11 @@ export default function CalculadoraTikTok() {
   const [base, setBase] = useState<"pct" | "valor">("pct");
   // Enquanto a pessoa não digita o preço à mão, ele acompanha a meta (margem ou sobra).
   const [precoManual, setPrecoManual] = useState(false);
+
+  const [salvando, setSalvando] = useState(false);
+  const [salvo, setSalvo] = useState("");
+  const [erroSalvar, setErroSalvar] = useState("");
+  const abriuDoLink = useRef(false);
 
   useEffect(() => {
     (async () => {
@@ -86,10 +91,65 @@ export default function CalculadoraTikTok() {
     setBusca(p.name);
     setAberta(false);
     setCusto(campo(custoDe(p)));
+    setSalvo("");
+    setErroSalvar("");
+    const cfg = (p.tiktok_config ?? null) as Record<string, string | boolean> | null;
+    if (p.tiktok_margem != null && cfg) {
+      // Já tem configuração salva para o TikTok Shop: volta como foi salva.
+      setImposto(String(cfg.imposto ?? "10"));
+      setFreteGratis(String(cfg.freteGratis ?? "6"));
+      setExtra(String(cfg.extra ?? "0"));
+      setUsarAds(cfg.usarAds === true);
+      setRoas(String(cfg.roas ?? "20"));
+      setAcos(String(cfg.acos ?? "5"));
+      setAfiliado(String(cfg.afiliado ?? "8"));
+      setMargemAlvo(campo(Number(p.tiktok_margem)));
+      setBase("pct");
+      if (p.tiktok_preco != null) {
+        setPreco(campo(Number(p.tiktok_preco)));
+        setPrecoManual(true);
+      }
+      return;
+    }
     if (Number(p.sale_price) > 0) {
       setPreco(campo(Number(p.sale_price)));
       setPrecoManual(true);
     }
+  }
+
+  // Abre direto num produto quando vem do Armazém (?produto=id).
+  useEffect(() => {
+    if (carregando || abriuDoLink.current) return;
+    abriuDoLink.current = true;
+    const id = new URLSearchParams(window.location.search).get("produto");
+    const p = id ? produtos.find((x) => x.id === id) : null;
+    if (p) escolher(p);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carregando]);
+
+  async function salvar() {
+    if (!produto || precoN <= 0) return;
+    setSalvando(true);
+    setSalvo("");
+    setErroSalvar("");
+    const margemSalva = base === "pct" ? margemN : arred2(r.margem);
+    const dados = {
+      tiktok_margem: margemSalva,
+      tiktok_preco: precoN,
+      tiktok_config: { imposto, freteGratis, extra, usarAds, roas, acos, afiliado },
+    };
+    const { error } = await supabase.from("products").update(dados).eq("id", produto.id);
+    setSalvando(false);
+    if (error) {
+      setErroSalvar(
+        /column|schema cache/i.test(error.message)
+          ? "Faltou criar as colunas no Supabase. Rode o SQL das margens por canal e tente de novo."
+          : error.message
+      );
+      return;
+    }
+    setProdutos((lista) => lista.map((x) => (x.id === produto.id ? { ...x, ...dados } : x)));
+    setSalvo(`Salvo no armazém: margem ${pct(margemSalva)} · vende a ${brl(precoN)}`);
   }
 
   function limpar() {
@@ -429,6 +489,20 @@ export default function CalculadoraTikTok() {
               <div className="text-xs opacity-80">Retorno sobre o custo</div>
               <div className="text-2xl font-bold">{pct(precoN > 0 ? roi : 0)}</div>
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={salvar}
+              disabled={!produto || precoN <= 0 || salvando}
+              className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {salvando ? "Salvando…" : "Salvar no armazém"}
+            </button>
+            {!produto && <span className="text-xs text-slate-500">Escolha um produto na busca para poder salvar.</span>}
+            {salvo && <span className="text-sm font-medium text-emerald-700">{salvo}</span>}
+            {erroSalvar && <span className="text-sm text-red-700">{erroSalvar}</span>}
           </div>
         </div>
       </div>
