@@ -1257,7 +1257,7 @@ function CelulaCanal({ margem, preco, config, href }: { margem?: number | null; 
       {preco != null && <div className="text-xs text-slate-500">vende a {brl(Number(preco))}</div>}
       {preco != null && <div className="text-xs font-medium text-emerald-700">sobra {brl((Number(preco) * Number(margem)) / 100)}</div>}
       {config?.usarAds === true ? (
-        <div className="text-xs text-cyan-700">com ads: ROAS {String(config.roas ?? "")}</div>
+        <div className="text-xs text-cyan-700">com ads: ROAS {String(config.roas ?? "")} · afiliado {String(config.afiliado ?? "")}%</div>
       ) : config ? (
         <div className="text-xs text-slate-400">sem ads</div>
       ) : null}
