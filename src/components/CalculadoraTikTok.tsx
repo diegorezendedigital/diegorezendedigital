@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { Company, Product, brl, campo, num, pct } from "@/lib/types";
+import { Product, brl, campo, num, pct } from "@/lib/types";
 import { calcularLucro, precoParaMargem, type EntradaPreco } from "@/lib/pricing";
 import { CANAIS } from "@/lib/taxas-publicas";
 
@@ -15,18 +15,17 @@ type Comp = { kit_id: string; component_id: string; quantity: number };
 export default function CalculadoraTikTok() {
   const [produtos, setProdutos] = useState<Product[]>([]);
   const [componentes, setComponentes] = useState<Comp[]>([]);
-  const [empresas, setEmpresas] = useState<Company[]>([]);
   const [carregando, setCarregando] = useState(true);
 
   const [busca, setBusca] = useState("");
   const [aberta, setAberta] = useState(false);
   const [produto, setProduto] = useState<Product | null>(null);
 
-  const [empresaId, setEmpresaId] = useState("");
+  const [imposto, setImposto] = useState("10");
   const [preco, setPreco] = useState("");
   const [custo, setCusto] = useState("");
   const [frete, setFrete] = useState("0");
-  const [afiliado, setAfiliado] = useState("0");
+  const [afiliado, setAfiliado] = useState("8");
   const [margemAlvo, setMargemAlvo] = useState("15");
   const [comissaoManual, setComissaoManual] = useState("");
   const [tarifaManual, setTarifaManual] = useState("");
@@ -40,15 +39,9 @@ export default function CalculadoraTikTok() {
         todos.push(...lote);
         if (lote.length < 1000) break;
       }
-      const [c, e] = await Promise.all([
-        supabase.from("product_components").select("kit_id, component_id, quantity"),
-        supabase.from("companies").select("*").order("created_at"),
-      ]);
+      const c = await supabase.from("product_components").select("kit_id, component_id, quantity");
       setProdutos(todos);
       setComponentes((c.data ?? []) as Comp[]);
-      const emps = (e.data ?? []) as Company[];
-      setEmpresas(emps);
-      setEmpresaId((emps.find((x) => x.is_default) ?? emps[0])?.id ?? "");
       setCarregando(false);
     })();
   }, []);
@@ -101,8 +94,15 @@ export default function CalculadoraTikTok() {
     setCusto("");
   }
 
-  const empresa = empresas.find((e) => e.id === empresaId) ?? null;
-  const credito = produto ? custoDe(produto).credito : 0;
+  // Imposto simples: % sobre o preço de venda, editável (padrão 10%).
+  const empresa: EntradaPreco["empresa"] = {
+    regime: "simples",
+    simples_aliquota: num(imposto),
+    icms_pct: 0,
+    pis_pct: 0,
+    cofins_pct: 0,
+    irpj_csll_pct: 0,
+  };
   const precoN = num(preco);
   const custoN = num(custo);
   const margemN = num(margemAlvo);
@@ -117,7 +117,7 @@ export default function CalculadoraTikTok() {
 
   function entrada(p: number): EntradaPreco {
     const t = taxasDe(p);
-    return { custo: custoN, credito, feePct: t.com + num(afiliado), feeFixo: t.fixa, frete: num(frete), empresa };
+    return { custo: custoN, credito: 0, feePct: t.com + num(afiliado), feeFixo: t.fixa, frete: num(frete), empresa };
   }
 
   const t = taxasDe(precoN);
@@ -208,20 +208,14 @@ export default function CalculadoraTikTok() {
               <input className="input" inputMode="decimal" value={frete} onChange={(e) => setFrete(e.target.value)} />
             </div>
             <div>
+              <label className="label">Imposto (%)</label>
+              <input className="input" inputMode="decimal" value={imposto} onChange={(e) => setImposto(e.target.value)} />
+            </div>
+            <div>
               <label className="label">Comissão do afiliado (%)</label>
               <input className="input" inputMode="decimal" value={afiliado} onChange={(e) => setAfiliado(e.target.value)} />
             </div>
           </div>
-          {empresas.length > 0 && (
-            <div>
-              <label className="label">Empresa (define os impostos)</label>
-              <select className="input" value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
-                {empresas.map((e) => (
-                  <option key={e.id} value={e.id}>{e.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
           <details className="text-sm">
             <summary className="cursor-pointer text-slate-600">Ajustar as taxas do TikTok Shop</summary>
             <div className="mt-2 grid grid-cols-2 gap-3">
@@ -247,12 +241,12 @@ export default function CalculadoraTikTok() {
             <Linha t="(-) Tarifa por item" v={brl(t.fixa)} />
             {afiliadoR > 0 && <Linha t={`(-) Afiliado (${pct(num(afiliado))})`} v={brl(afiliadoR)} />}
             <Linha t="(-) Frete" v={brl(num(frete))} />
-            <Linha t="(-) Impostos" v={brl(r.impostos)} />
+            <Linha t={`(-) Imposto (${pct(num(imposto))})`} v={brl(r.impostos)} />
           </dl>
           <div className={`rounded-lg p-3 ${precoN > 0 && r.lucro < 0 ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-800"}`}>
-            <div className="text-xs">Lucro por venda</div>
+            <div className="text-xs">Sobra por venda</div>
             <div className="text-2xl font-bold">{brl(precoN > 0 ? r.lucro : 0)}</div>
-            <div className="text-sm">Margem {pct(precoN > 0 ? r.margem : 0)} · Retorno sobre o custo {pct(precoN > 0 ? roi : 0)}</div>
+            <div className="text-sm">Margem que sobra: <b>{pct(precoN > 0 ? r.margem : 0)}</b> do preço · Retorno sobre o custo {pct(precoN > 0 ? roi : 0)}</div>
           </div>
 
           <div className="border-t border-slate-200 pt-3">
