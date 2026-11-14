@@ -34,6 +34,9 @@ export type Product = {
   tiktok_config?: Record<string, unknown> | null;
   shopee_margem?: number | null;
   shopee_preco?: number | null;
+  shopee_config?: Record<string, unknown> | null;
+  ml_preco?: number | null;
+  ml_config?: Record<string, unknown> | null;
   tipo?: "unico" | "multi" | "kit";
   grupo?: string | null;
 };

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import CalculadoraTikTok from "@/components/CalculadoraTikTok";
+import CalculadoraCanal from "@/components/CalculadoraCanal";
 import { Marketplace, Product, brl, calcularTaxas, campo, num, pct } from "@/lib/types";
 
 function CalculadoraGeral() {
@@ -157,13 +157,32 @@ function CalculadoraGeral() {
   );
 }
 
+type Aba = "tiktok_shop" | "shopee" | "mercado_livre" | "outros";
+
+const ABAS: [Aba, string][] = [
+  ["tiktok_shop", "TikTok Shop"],
+  ["shopee", "Shopee"],
+  ["mercado_livre", "Mercado Livre"],
+  ["outros", "Outros marketplaces"],
+];
+
 export default function CalculadoraPage() {
-  const [aba, setAba] = useState<"tiktok" | "outros">("tiktok");
+  const [aba, setAba] = useState<Aba>("tiktok_shop");
+  const [pronto, setPronto] = useState(false);
+
+  // Vindo do Armazém (?canal=shopee&produto=id) abre direto no canal certo.
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get("canal");
+    if (ABAS.some(([id]) => id === c)) setAba(c as Aba);
+    setPronto(true);
+  }, []);
+
+  if (!pronto) return null;
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">Calculadora de margem</h1>
-      <div className="flex gap-2" role="tablist">
-        {([["tiktok", "TikTok Shop"], ["outros", "Outros marketplaces"]] as const).map(([id, nome]) => (
+      <div className="flex flex-wrap gap-2" role="tablist">
+        {ABAS.map(([id, nome]) => (
           <button
             key={id}
             role="tab"
@@ -175,7 +194,7 @@ export default function CalculadoraPage() {
           </button>
         ))}
       </div>
-      {aba === "tiktok" ? <CalculadoraTikTok /> : <CalculadoraGeral />}
+      {aba === "outros" ? <CalculadoraGeral /> : <CalculadoraCanal key={aba} canal={aba} />}
     </div>
   );
 }

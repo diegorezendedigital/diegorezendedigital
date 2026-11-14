@@ -4,16 +4,27 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { Product, brl, campo, num, pct } from "@/lib/types";
 import { calcularLucro, precoParaMargem, type EntradaPreco } from "@/lib/pricing";
-import { CANAIS } from "@/lib/taxas-publicas";
+import { CANAIS, type CanalId } from "@/lib/taxas-publicas";
 
-const TIKTOK = CANAIS.find((c) => c.id === "tiktok_shop")!;
+// O que muda de um canal para outro: onde a margem/preço são salvos no produto e quais campos aparecem.
+const CFG: Record<CanalId, {
+  margemKey: string; precoKey: string; configKey: string;
+  freteGratis: boolean; fretePago: boolean; comissaoEditavel: boolean; cpf: boolean; rotuloTarifa: string;
+}> = {
+  tiktok_shop: { margemKey: "tiktok_margem", precoKey: "tiktok_preco", configKey: "tiktok_config", freteGratis: true, fretePago: false, comissaoEditavel: false, cpf: false, rotuloTarifa: "Tarifa por item" },
+  shopee: { margemKey: "shopee_margem", precoKey: "shopee_preco", configKey: "shopee_config", freteGratis: false, fretePago: false, comissaoEditavel: false, cpf: true, rotuloTarifa: "Taxa fixa por item" },
+  mercado_livre: { margemKey: "promo_min_margin", precoKey: "ml_preco", configKey: "ml_config", freteGratis: false, fretePago: true, comissaoEditavel: true, cpf: false, rotuloTarifa: "Taxa fixa por item" },
+};
 
 const semAcento = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const arred2 = (v: number) => Math.round(v * 100) / 100;
 
 type Comp = { kit_id: string; component_id: string; quantity: number };
 
-export default function CalculadoraTikTok() {
+export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
+  const CAN = CANAIS.find((c) => c.id === canal)!;
+  const cfgCanal = CFG[canal];
+
   const [produtos, setProdutos] = useState<Product[]>([]);
   const [componentes, setComponentes] = useState<Comp[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -26,6 +37,9 @@ export default function CalculadoraTikTok() {
   const [preco, setPreco] = useState("");
   const [custo, setCusto] = useState("");
   const [extra, setExtra] = useState("0");
+  const [frete, setFrete] = useState("0");
+  const [comissao, setComissao] = useState("");
+  const [cpf, setCpf] = useState(false);
   const [freteGratis, setFreteGratis] = useState("6");
 
   // Anúncios: ao ligar, ROAS e ACOS andam juntos (ACOS = 100 / ROAS) e entra a comissão do afiliado.
@@ -95,22 +109,30 @@ export default function CalculadoraTikTok() {
     setCusto(campo(custoDe(p)));
     setSalvo("");
     setErroSalvar("");
-    const cfg = (p.tiktok_config ?? null) as Record<string, string | boolean> | null;
-    if (p.tiktok_margem != null && cfg) {
-      // Já tem configuração salva para o TikTok Shop: volta como foi salva.
-      setImposto(String(cfg.imposto ?? "10"));
-      setFreteGratis(String(cfg.freteGratis ?? "6"));
-      setExtra(String(cfg.extra ?? "0"));
-      setUsarAds(cfg.usarAds === true);
-      setRoas(String(cfg.roas ?? "10"));
-      setAcos(String(cfg.acos ?? "10"));
-      setAfiliado(String(cfg.afiliado ?? "2"));
-      setMargemAlvo(campo(Number(p.tiktok_margem)));
-      setBase("pct");
-      if (p.tiktok_preco != null) {
-        setPreco(campo(Number(p.tiktok_preco)));
-        setPrecoManual(true);
+    const reg = p as unknown as Record<string, unknown>;
+    const margemSalva = reg[cfgCanal.margemKey];
+    const precoSalvo = reg[cfgCanal.precoKey];
+    const cfg = (reg[cfgCanal.configKey] ?? null) as Record<string, string | boolean> | null;
+    if (margemSalva != null) {
+      // Já tem margem salva para este canal: volta como foi salva.
+      if (cfg) {
+        setImposto(String(cfg.imposto ?? "10"));
+        setFreteGratis(String(cfg.freteGratis ?? "6"));
+        setExtra(String(cfg.extra ?? "0"));
+        setFrete(String(cfg.frete ?? "0"));
+        setComissao(String(cfg.comissao ?? ""));
+        setCpf(cfg.cpf === true);
+        setUsarAds(cfg.usarAds === true);
+        setRoas(String(cfg.roas ?? "10"));
+        setAcos(String(cfg.acos ?? "10"));
+        setAfiliado(String(cfg.afiliado ?? "2"));
       }
+      setMargemAlvo(campo(Number(margemSalva)));
+      setBase("pct");
+      if (precoSalvo != null) {
+        setPreco(campo(Number(precoSalvo)));
+        setPrecoManual(true);
+      } else setPrecoManual(false);
       return;
     }
     if (Number(p.sale_price) > 0) {
@@ -136,9 +158,9 @@ export default function CalculadoraTikTok() {
     setErroSalvar("");
     const margemSalva = base === "pct" ? margemN : arred2(r.margem);
     const dados = {
-      tiktok_margem: margemSalva,
-      tiktok_preco: precoN,
-      tiktok_config: { imposto, freteGratis, extra, usarAds, roas, acos, afiliado },
+      [cfgCanal.margemKey]: margemSalva,
+      [cfgCanal.precoKey]: precoN,
+      [cfgCanal.configKey]: { imposto, freteGratis, extra, frete, comissao, cpf, usarAds, roas, acos, afiliado },
     };
     const { error } = await supabase.from("products").update(dados).eq("id", produto.id);
     setSalvando(false);
@@ -186,10 +208,14 @@ export default function CalculadoraTikTok() {
   const adsPct = usarAds ? num(acos) : 0;
   const afiliadoPct = usarAds ? num(afiliado) : 0;
 
-  // Comissão e tarifa da faixa do preço (abaixo de R$ 50 é uma, a partir de R$ 50 é outra).
+  // Comissão e tarifa da faixa do preço (a tabela de cada canal está em taxas-publicas).
+  // "metade" (Mercado Livre abaixo de R$ 12,50): a taxa fixa é metade do preço, tratada como +50% de comissão.
   function taxasDe(p: number) {
-    const f = TIKTOK.faixas.find((x) => p <= x.ate) ?? TIKTOK.faixas[TIKTOK.faixas.length - 1];
-    return { com: f.comissao, fixa: typeof f.fixa === "number" ? f.fixa : 0 };
+    const f = CAN.faixas.find((x) => p <= x.ate) ?? CAN.faixas[CAN.faixas.length - 1];
+    const metade = f.fixa === "metade";
+    const com = cfgCanal.comissaoEditavel && comissao.trim() ? num(comissao) : f.comissao;
+    const fixa = (typeof f.fixa === "number" ? f.fixa : 0) + (cfgCanal.cpf && cpf ? 3 : 0);
+    return { com, fixa, metade };
   }
 
   function entrada(p: number): EntradaPreco {
@@ -197,9 +223,9 @@ export default function CalculadoraTikTok() {
     return {
       custo: custoN,
       credito: 0,
-      feePct: t.com + afiliadoPct + num(freteGratis) + adsPct,
+      feePct: t.com + (t.metade ? 50 : 0) + afiliadoPct + (cfgCanal.freteGratis ? num(freteGratis) : 0) + adsPct,
       feeFixo: t.fixa,
-      frete: num(extra),
+      frete: num(extra) + (cfgCanal.fretePago ? num(frete) : 0),
       empresa,
     };
   }
@@ -211,7 +237,7 @@ export default function CalculadoraTikTok() {
   // Menor preço que entrega a margem, faixa por faixa (a tarifa muda no limite de R$ 50).
   function precoMinimo(m: number): number | null {
     let inicio = 0;
-    for (const f of TIKTOK.faixas) {
+    for (const f of CAN.faixas) {
       const ent = entrada(Math.min(f.ate, inicio + 0.01));
       const p = precoParaMargem(m, ent);
       if (p != null && p <= f.ate) {
@@ -227,7 +253,7 @@ export default function CalculadoraTikTok() {
   // Menor preço que deixa "v" reais de sobra por venda, faixa por faixa.
   function precoParaSobra(v: number): number | null {
     let inicio = 0;
-    for (const f of TIKTOK.faixas) {
+    for (const f of CAN.faixas) {
       const ent = entrada(Math.min(f.ate, inicio + 0.01));
       const denom = 1 - (ent.feePct + num(imposto)) / 100;
       if (denom > 0) {
@@ -260,9 +286,10 @@ export default function CalculadoraTikTok() {
   // Fatias da pizza: para onde vai cada real do preço de venda.
   const fatias: Fatia[] = [
     { nome: "Custo do produto", valor: custoN, cor: "#6366f1" },
-    { nome: `Comissão TikTok (${pct(t.com)})`, valor: (precoN * t.com) / 100, cor: "#f43f5e" },
-    { nome: "Tarifa por item", valor: precoN > 0 ? t.fixa : 0, cor: "#fb923c" },
-    { nome: `Frete grátis (${pct(num(freteGratis))})`, valor: (precoN * num(freteGratis)) / 100, cor: "#f59e0b" },
+    { nome: `Comissão ${CAN.nome} (${pct(t.com)})`, valor: (precoN * t.com) / 100, cor: "#f43f5e" },
+    { nome: cfgCanal.rotuloTarifa, valor: precoN > 0 ? (t.metade ? precoN / 2 : t.fixa) : 0, cor: "#fb923c" },
+    { nome: `Frete grátis (${pct(num(freteGratis))})`, valor: cfgCanal.freteGratis ? (precoN * num(freteGratis)) / 100 : 0, cor: "#f59e0b" },
+    { nome: "Frete pago por você", valor: cfgCanal.fretePago ? num(frete) : 0, cor: "#14b8a6" },
     { nome: `Afiliado (${pct(afiliadoPct)})`, valor: (precoN * afiliadoPct) / 100, cor: "#a855f7" },
     { nome: `Publicidade (${pct(adsPct)})`, valor: (precoN * adsPct) / 100, cor: "#06b6d4" },
     { nome: `Imposto (${pct(num(imposto))})`, valor: r.impostos, cor: "#64748b" },
@@ -405,11 +432,39 @@ export default function CalculadoraTikTok() {
               <label className="label">Imposto (%)</label>
               <input className="input" inputMode="decimal" value={imposto} onChange={(e) => setImposto(e.target.value)} />
             </div>
-            <div>
-              <label className="label">Frete grátis (%)</label>
-              <input className="input" inputMode="decimal" value={freteGratis} onChange={(e) => setFreteGratis(e.target.value)} />
-              <p className="mt-1 text-[11px] text-slate-500">Nas 2 faixas de preço</p>
-            </div>
+            {cfgCanal.freteGratis && (
+              <div>
+                <label className="label">Frete grátis (%)</label>
+                <input className="input" inputMode="decimal" value={freteGratis} onChange={(e) => setFreteGratis(e.target.value)} />
+                <p className="mt-1 text-[11px] text-slate-500">Nas 2 faixas de preço</p>
+              </div>
+            )}
+            {cfgCanal.fretePago && (
+              <div>
+                <label className="label">Frete pago por você (R$)</label>
+                <input className="input" inputMode="decimal" value={frete} onChange={(e) => setFrete(e.target.value)} />
+                <p className="mt-1 text-[11px] text-slate-500">Envio que sai do seu bolso</p>
+              </div>
+            )}
+            {cfgCanal.comissaoEditavel && (
+              <div>
+                <label className="label">Comissão (%)</label>
+                <input
+                  className="input"
+                  inputMode="decimal"
+                  value={comissao}
+                  onChange={(e) => setComissao(e.target.value)}
+                  placeholder={String(CAN.faixas[CAN.faixas.length - 1].comissao)}
+                />
+                <p className="mt-1 text-[11px] text-slate-500">Depende da categoria (10% a 14% no Clássico)</p>
+              </div>
+            )}
+            {cfgCanal.cpf && (
+              <label className="col-span-2 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={cpf} onChange={(e) => setCpf(e.target.checked)} />
+                Vendo como pessoa física (CPF): R$ 3 a mais por item
+              </label>
+            )}
             <div className="col-span-2">
               <label className="label">Custo extra por venda (R$)</label>
               <input className="input" inputMode="decimal" value={extra} onChange={(e) => setExtra(e.target.value)} />
@@ -458,7 +513,7 @@ export default function CalculadoraTikTok() {
             )}
           </div>
           <p className="text-[11px] text-slate-500">
-            {TIKTOK.faixas[0].comissao}% + R$ {campo(Number(TIKTOK.faixas[0].fixa))} por item abaixo de R$ 50 e {TIKTOK.faixas[1].comissao}% + R$ {campo(Number(TIKTOK.faixas[1].fixa))} a partir de R$ 50 (aplicado sozinho). Confira no Seller Center.
+            {CAN.nota} Aplicado sozinho pelo preço. Confira na sua central do vendedor.
           </p>
         </div>
 

@@ -1112,12 +1112,21 @@ export default function ArmazemPage() {
                         if (v !== (p.promo_min_margin == null ? null : Number(p.promo_min_margin))) salvarPromo(p, { promo_min_margin: v });
                       }}
                     />
+                    {p.promo_min_margin != null && p.ml_preco != null && (
+                      <div className="mt-1 text-xs leading-tight">
+                        <div className="text-slate-500">vende a {brl(Number(p.ml_preco))}</div>
+                        <div className="font-medium text-emerald-700">sobra {brl((Number(p.ml_preco) * Number(p.promo_min_margin)) / 100)}</div>
+                      </div>
+                    )}
+                    <Link href={`/dashboard/calculadora?canal=mercado_livre&produto=${p.id}`} className="text-[11px] text-brand hover:underline">
+                      Calcular
+                    </Link>
                   </td>
                   <td className="td whitespace-nowrap">
-                    <CelulaCanal margem={p.tiktok_margem} preco={p.tiktok_preco} config={p.tiktok_config} href={`/dashboard/calculadora?produto=${p.id}`} />
+                    <CelulaCanal margem={p.tiktok_margem} preco={p.tiktok_preco} config={p.tiktok_config} href={`/dashboard/calculadora?canal=tiktok_shop&produto=${p.id}`} />
                   </td>
                   <td className="td whitespace-nowrap">
-                    <CelulaCanal margem={p.shopee_margem} preco={p.shopee_preco} />
+                    <CelulaCanal margem={p.shopee_margem} preco={p.shopee_preco} config={p.shopee_config} href={`/dashboard/calculadora?canal=shopee&produto=${p.id}`} />
                   </td>
                   <td className="td whitespace-nowrap">
                     {ehKit && (

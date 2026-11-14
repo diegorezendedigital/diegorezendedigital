@@ -5,3 +5,6 @@ alter table public.products add column if not exists tiktok_preco numeric;
 alter table public.products add column if not exists tiktok_config jsonb;
 alter table public.products add column if not exists shopee_margem numeric;
 alter table public.products add column if not exists shopee_preco numeric;
+alter table public.products add column if not exists shopee_config jsonb;
+alter table public.products add column if not exists ml_preco numeric;
+alter table public.products add column if not exists ml_config jsonb;
