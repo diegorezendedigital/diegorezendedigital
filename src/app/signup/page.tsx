@@ -1,21 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 const campo =
   "w-full rounded-lg border border-line bg-white px-4 py-3 text-sm outline-none focus:border-ink focus:ring-2 focus:ring-gold/30";
 
-export default function SignupPage() {
+function SignupForm() {
   const router = useRouter();
+  const params = useSearchParams();
+  const sessionId = params.get("session_id");
+  // "checando": confirmando o pagamento; "liberado": pagamento confirmado; "bloqueado": ainda sem assinatura.
+  const [acesso, setAcesso] = useState<"checando" | "liberado" | "bloqueado">(sessionId ? "checando" : "bloqueado");
+  const [jaAssinei, setJaAssinei] = useState(false);
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    fetch(`/api/stripe/sessao?id=${encodeURIComponent(sessionId)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.pago && j.email) {
+          setEmail(j.email);
+          setAcesso("liberado");
+        } else setAcesso("bloqueado");
+      })
+      .catch(() => setAcesso("bloqueado"));
+  }, [sessionId]);
+
+  const mostrarForm = acesso === "liberado" || jaAssinei;
 
   async function criar(e: React.FormEvent) {
     e.preventDefault();
@@ -33,7 +53,11 @@ export default function SignupPage() {
     });
     setEnviando(false);
     if (error) {
-      setErro(error.message);
+      setErro(
+        /assinatura|database error/i.test(error.message)
+          ? "Não encontramos uma assinatura ativa para este e-mail. Assine em Planos ou use o e-mail da compra."
+          : error.message
+      );
       return;
     }
     if (data.session) router.push("/dashboard/produtos");
@@ -56,8 +80,25 @@ export default function SignupPage() {
           Diego Rezende <span className="text-gold">Digital</span>
         </Link>
         <h1 className="font-display text-2xl font-medium mt-8 mb-1">Criar conta</h1>
-        <p className="text-ink/60 text-sm mb-8">Comece a calcular a margem real das suas vendas. É grátis.</p>
+        <p className="text-ink/60 text-sm mb-8">Última etapa: crie o seu acesso.</p>
 
+        {acesso === "checando" && <p className="text-sm text-ink/60">Confirmando o seu pagamento…</p>}
+
+        {!mostrarForm && acesso !== "checando" && (
+          <div className="rounded-2xl border border-line bg-white p-5 text-sm">
+            <p className="font-medium">Para criar a conta é preciso uma assinatura.</p>
+            <p className="mt-1 text-ink/60">A calculadora gratuita continua aberta para todos.</p>
+            <Link href="/planos" className="mt-4 block rounded-full bg-ink px-4 py-3 text-center font-medium text-paper hover:bg-inkdeep transition-colors">
+              Ver planos e assinar
+            </Link>
+            <button type="button" onClick={() => setJaAssinei(true)} className="mt-3 w-full text-center text-ink/70 underline underline-offset-4">
+              Já assinei, criar minha conta
+            </button>
+          </div>
+        )}
+
+        {mostrarForm && (
+          <>
         <button
           type="button"
           onClick={entrarComGoogle}
@@ -83,7 +124,7 @@ export default function SignupPage() {
             <label htmlFor="email" className="mb-1 block font-mono text-xs uppercase tracking-widest text-clay">
               E-mail
             </label>
-            <input id="email" type="email" className={campo} value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input id="email" type="email" className={campo} value={email} onChange={(e) => setEmail(e.target.value)} required readOnly={acesso === "liberado"} />
           </div>
           <div>
             <label htmlFor="senha" className="mb-1 block font-mono text-xs uppercase tracking-widest text-clay">
@@ -101,6 +142,9 @@ export default function SignupPage() {
           </button>
         </form>
 
+          </>
+        )}
+
         <p className="mt-6 text-center text-sm text-ink/60">
           Já tem conta?{" "}
           <Link href="/login" className="font-medium text-ink underline underline-offset-4">
@@ -109,5 +153,13 @@ export default function SignupPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupForm />
+    </Suspense>
   );
 }

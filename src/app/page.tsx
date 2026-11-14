@@ -1,11 +1,9 @@
 import Link from "next/link";
 
 const marketplaces = [
-  { nome: "Mercado Livre", taxa: "12% + R$ 6" },
-  { nome: "Shopee", taxa: "14% + R$ 4" },
-  { nome: "Amazon", taxa: "15%" },
-  { nome: "Magazine Luiza", taxa: "16% + R$ 5" },
-  { nome: "Americanas", taxa: "15% + R$ 5" },
+  { nome: "Mercado Livre", taxa: "10% a 14% + taxa fixa abaixo de R$ 79" },
+  { nome: "Shopee", taxa: "14% a 20% + R$ 4,50 a R$ 26 por item" },
+  { nome: "TikTok Shop", taxa: "6% a 10% + R$ 4 a R$ 6 por item" },
 ];
 
 export default function LandingPage() {
@@ -23,6 +21,9 @@ export default function LandingPage() {
             </Link>
             <Link href="#marketplaces" className="hover:text-gold transition-colors">
               Marketplaces
+            </Link>
+            <Link href="/calculadora-gratis" className="hover:text-gold transition-colors">
+              Calculadora grátis
             </Link>
             <Link
               href="/login"
@@ -52,16 +53,16 @@ export default function LandingPage() {
             </p>
             <div className="mt-10 flex items-center gap-4">
               <Link
-                href="/signup"
+                href="/calculadora-gratis"
                 className="rounded-full bg-ink text-paper px-7 py-3.5 font-medium hover:bg-inkdeep transition-colors"
               >
-                Criar minha conta
+                Usar a calculadora grátis
               </Link>
               <Link
-                href="#como-funciona"
+                href="/planos"
                 className="text-ink/70 hover:text-ink underline underline-offset-4 decoration-line"
               >
-                Ver como funciona
+                Ver planos
               </Link>
             </div>
           </div>
@@ -78,20 +79,20 @@ export default function LandingPage() {
                 <span>− R$ 89,00</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-paper/60">Comissão Mercado Livre (12%)</span>
-                <span>− R$ 23,99</span>
+                <span className="text-paper/60">Comissão Mercado Livre (14%)</span>
+                <span>− R$ 27,99</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-paper/60">Taxa fixa</span>
-                <span>− R$ 6,00</span>
+                <span className="text-paper/60">Taxa fixa (acima de R$ 79)</span>
+                <span>− R$ 0,00</span>
               </div>
             </div>
             <div className="receipt-tick my-6" />
             <div className="flex justify-between items-baseline">
               <span className="text-goldlight uppercase text-xs tracking-widest">Lucro real</span>
-              <span className="text-2xl text-goldlight font-semibold">R$ 80,91</span>
+              <span className="text-2xl text-goldlight font-semibold">R$ 82,91</span>
             </div>
-            <p className="text-paper/40 text-xs mt-2">40,5% de margem líquida</p>
+            <p className="text-paper/40 text-xs mt-2">41,5% de margem líquida</p>
           </div>
         </div>
       </section>
@@ -129,7 +130,7 @@ export default function LandingPage() {
       {/* Marketplaces */}
       <section id="marketplaces" className="border-t border-line">
         <div className="mx-auto max-w-6xl px-6 py-20">
-          <h2 className="font-display text-3xl font-semibold mb-2">Marketplaces já configurados</h2>
+          <h2 className="font-display text-3xl font-semibold mb-2">Os 3 marketplaces que atendemos</h2>
           <p className="text-ink/60 mb-10">Taxas de referência prontas — ajuste conforme sua categoria.</p>
           <div className="divide-y divide-line border-y border-line">
             {marketplaces.map((m) => (
@@ -146,12 +147,20 @@ export default function LandingPage() {
       <section className="border-t border-line bg-inkdeep text-paper">
         <div className="mx-auto max-w-6xl px-6 py-20 text-center">
           <h2 className="font-display text-3xl md:text-4xl font-semibold mb-6">Pare de vender no escuro.</h2>
-          <Link
-            href="/signup"
-            className="inline-block rounded-full bg-gold text-inkdeep px-8 py-4 font-medium hover:bg-goldlight transition-colors"
-          >
-            Começar agora, é grátis
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <Link
+              href="/calculadora-gratis"
+              className="inline-block rounded-full bg-gold text-inkdeep px-8 py-4 font-medium hover:bg-goldlight transition-colors"
+            >
+              Usar a calculadora grátis
+            </Link>
+            <Link
+              href="/planos"
+              className="inline-block rounded-full border border-paper/40 px-8 py-4 font-medium hover:bg-paper hover:text-inkdeep transition-colors"
+            >
+              Assinar e criar minha conta
+            </Link>
+          </div>
         </div>
       </section>
 
