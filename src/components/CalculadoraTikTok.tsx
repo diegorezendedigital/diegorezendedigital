@@ -28,6 +28,9 @@ export default function CalculadoraTikTok() {
   const [afiliado, setAfiliado] = useState("8");
   const [freteGratis, setFreteGratis] = useState("6");
   const [margemAlvo, setMargemAlvo] = useState("15");
+  const [sobraAlvo, setSobraAlvo] = useState("");
+  // Qual dos dois o usuário digitou por último: o outro é calculado.
+  const [base, setBase] = useState<"pct" | "valor">("pct");
   const [comissaoManual, setComissaoManual] = useState("");
   const [tarifaManual, setTarifaManual] = useState("");
 
@@ -144,7 +147,31 @@ export default function CalculadoraTikTok() {
     return null;
   }
 
-  const minimo = custoN > 0 ? precoMinimo(margemN) : null;
+  // Menor preço que deixa "v" reais de sobra por venda, faixa por faixa.
+  function precoParaSobra(v: number): number | null {
+    let inicio = 0;
+    for (const f of TIKTOK.faixas) {
+      const ent = entrada(Math.min(f.ate, inicio + 0.01));
+      const denom = 1 - (ent.feePct + num(imposto)) / 100;
+      if (denom > 0) {
+        const p = (v + custoN + ent.frete + ent.feeFixo) / denom;
+        if (p <= f.ate) {
+          if (p > inicio) return p;
+          const piso = inicio + 0.01;
+          if (calcularLucro(piso, entrada(piso)).lucro >= v) return piso;
+        }
+      }
+      inicio = f.ate;
+    }
+    return null;
+  }
+
+  const sobraN = num(sobraAlvo);
+  const metaOk = custoN > 0 && (base === "pct" ? true : sobraN > 0);
+  const precoMeta = !metaOk ? null : base === "pct" ? precoMinimo(margemN) : precoParaSobra(sobraN);
+  const rMeta = precoMeta != null ? calcularLucro(precoMeta, entrada(precoMeta)) : null;
+  const margemMostrada = base === "pct" ? margemAlvo : rMeta ? campo(Math.round(rMeta.margem * 100) / 100) : "";
+  const sobraMostrada = base === "valor" ? sobraAlvo : rMeta ? campo(Math.round(rMeta.lucro * 100) / 100) : "";
   const tabela = [0, 10, 15, 20, 25, 30];
 
   if (carregando) return <p className="text-sm text-slate-500">Carregando seus produtos…</p>;
@@ -189,6 +216,59 @@ export default function CalculadoraTikTok() {
           {aberta && busca.trim() && sugestoes.length === 0 && (
             <p className="mt-1 text-xs text-slate-500">Nenhum produto encontrado. Você também pode digitar o custo abaixo.</p>
           )}
+        </div>
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-semibold">Quanto quero ganhar</h2>
+        <div className="grid gap-3 md:grid-cols-3">
+          <div>
+            <label className="label">Margem desejada (%)</label>
+            <input
+              className="input"
+              inputMode="decimal"
+              value={margemMostrada}
+              onChange={(e) => {
+                setMargemAlvo(e.target.value);
+                setBase("pct");
+              }}
+            />
+          </div>
+          <div>
+            <label className="label">Quero que sobre por venda (R$)</label>
+            <input
+              className="input"
+              inputMode="decimal"
+              value={sobraMostrada}
+              onChange={(e) => {
+                setSobraAlvo(e.target.value);
+                setBase("valor");
+              }}
+              placeholder="ex.: 10,00"
+            />
+          </div>
+          <div className="rounded-lg bg-emerald-50 p-3 text-emerald-800">
+            <div className="text-xs">Preço de venda</div>
+            <div className="text-2xl font-bold">
+              {custoN <= 0 ? "informe o custo" : precoMeta != null ? brl(precoMeta) : metaOk ? "impossível" : "—"}
+            </div>
+            {rMeta && precoMeta != null && (
+              <div className="text-xs">
+                Sobra {brl(rMeta.lucro)} · margem {pct(rMeta.margem)}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={precoMeta == null}
+            onClick={() => precoMeta != null && setPreco(campo(Math.ceil(precoMeta * 100) / 100))}
+          >
+            Usar este preço na simulação
+          </button>
+          <p className="text-xs text-slate-500">Digite a margem ou o valor que quer que sobre: o outro campo e o preço são calculados.</p>
         </div>
       </div>
 
@@ -257,15 +337,6 @@ export default function CalculadoraTikTok() {
             <div className="text-sm">Margem que sobra: <b>{pct(precoN > 0 ? r.margem : 0)}</b> do preço · Retorno sobre o custo {pct(precoN > 0 ? roi : 0)}</div>
           </div>
 
-          <div className="border-t border-slate-200 pt-3">
-            <label className="label">Margem desejada (%)</label>
-            <div className="flex items-center gap-3">
-              <input className="input w-24" inputMode="decimal" value={margemAlvo} onChange={(e) => setMargemAlvo(e.target.value)} />
-              <span className="text-sm">
-                Preço mínimo: <b>{custoN <= 0 ? "informe o custo" : minimo != null ? brl(minimo) : "impossível com essas taxas"}</b>
-              </span>
-            </div>
-          </div>
         </div>
       </div>
 
