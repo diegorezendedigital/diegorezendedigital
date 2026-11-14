@@ -262,7 +262,7 @@ export default function CalculadoraTikTok() {
     { nome: "Tarifa por item", valor: precoN > 0 ? t.fixa : 0, cor: "#fb923c" },
     { nome: `Frete grátis (${pct(num(freteGratis))})`, valor: (precoN * num(freteGratis)) / 100, cor: "#f59e0b" },
     { nome: `Afiliado (${pct(afiliadoPct)})`, valor: (precoN * afiliadoPct) / 100, cor: "#a855f7" },
-    { nome: `Anúncios (${pct(adsPct)})`, valor: (precoN * adsPct) / 100, cor: "#06b6d4" },
+    { nome: `Publicidade (${pct(adsPct)})`, valor: (precoN * adsPct) / 100, cor: "#06b6d4" },
     { nome: `Imposto (${pct(num(imposto))})`, valor: r.impostos, cor: "#64748b" },
     { nome: "Custo extra", valor: num(extra), cor: "#94a3b8" },
     { nome: "Sobra (lucro)", valor: Math.max(r.lucro, 0), cor: "#10b981", destaque: true },
