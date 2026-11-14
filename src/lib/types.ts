@@ -202,6 +202,7 @@ export type AcaoPromo = {
   status: "entrou" | "recusada" | "erro";
   message: string | null;
   updated_at: string;
+  ml_user_id?: string | null; // conta do Mercado Livre
   run_id?: string | null;
   origem?: string | null; // manual | agendada | notificacao
 };
@@ -227,5 +228,5 @@ export type RodadaPromo = {
   lease_ate: string | null;
   terminado_em: string | null;
   // Promoções que não entram sozinhas (relâmpago, desconto por quantidade) e convidaram seus anúncios; total = convites (-1 = não contado)
-  cursor?: { manuais?: { conta: string; id: string; tipo: string; nome: string; total: number }[] } | null;
+  cursor?: { conta?: string; manuais?: { conta: string; id: string; tipo: string; nome: string; total: number }[] } | null;
 };

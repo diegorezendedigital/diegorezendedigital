@@ -34,6 +34,7 @@ export type Rodada = {
 
 type PlanoPromo = { conta: string; id: string; tipo: string; nome: string; total: number };
 type Cursor = {
+  conta?: string; // se definido, a rodada vale só para essa conta do Mercado Livre
   plano?: PlanoPromo[];
   idx?: number; // promoção atual
   pagina?: string | null; // search_after da página atual (null = primeira página)
@@ -128,10 +129,10 @@ export async function rodadaAtiva(admin: SupabaseClient, storeId: string): Promi
 export const faltaTabela = (msg: string) => /promo_runs|ml_notificacoes|does not exist|schema cache|relation/i.test(msg);
 
 // Cria a rodada (ou devolve a que já está em andamento)
-export async function criarRodada(admin: SupabaseClient, storeId: string, origem: "manual" | "agendada"): Promise<{ rodada: Rodada; nova: boolean }> {
+export async function criarRodada(admin: SupabaseClient, storeId: string, origem: "manual" | "agendada", conta?: string | null): Promise<{ rodada: Rodada; nova: boolean }> {
   const ativa = await rodadaAtiva(admin, storeId);
   if (ativa) return { rodada: ativa, nova: false };
-  const { data, error } = await admin.from("promo_runs").insert({ store_id: storeId, origem, status: "na_fila" }).select("*").single();
+  const { data, error } = await admin.from("promo_runs").insert({ store_id: storeId, origem, status: "na_fila", ...(conta ? { cursor: { conta } } : {}) }).select("*").single();
   if (error) {
     // Outra chamada criou ao mesmo tempo (índice de uma rodada ativa por loja)
     const outra = await rodadaAtiva(admin, storeId).catch(() => null);
@@ -234,8 +235,8 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
     const empresaDe = (a: Listing) => (empresas ?? []).find((x) => x.id === a.company_id) ?? empresaPadrao;
     const anuncios = (
       await todas<Listing>((de, ate) => admin.from("listings").select("*").eq("store_id", run.store_id).eq("marketplace_id", "mercado_livre").not("product_id", "is", null).order("id").range(de, ate))
-    ).filter((a) => a.product_id && produtos.has(a.product_id) && a.ml_user_id);
-    if (!anuncios.length) return await terminar("concluida", "Os SKUs com “Promo auto” não estão ligados a nenhum anúncio do Mercado Livre.");
+    ).filter((a) => a.product_id && produtos.has(a.product_id) && a.ml_user_id && (!c.conta || String(a.ml_user_id) === c.conta));
+    if (!anuncios.length) return await terminar("concluida", c.conta ? "Essa conta não tem anúncios ligados a SKUs com “Promo auto”." : "Os SKUs com “Promo auto” não estão ligados a nenhum anúncio do Mercado Livre.");
     const porConta = new Map<string, Map<string, Listing>>();
     anuncios.forEach((a) => {
       const conta = String(a.ml_user_id);

@@ -34,12 +34,14 @@ export default function AutomacaoPromocoes({
   skusAuto,
   anunciosAuto,
   porItem,
+  contas = [],
   onTerminou,
   onAbrirPromocao,
 }: {
   skusAuto: number;
   anunciosAuto: number;
   porItem: Map<string, Listing>;
+  contas?: { id: string; nome: string }[];
   onTerminou: () => void;
   onAbrirPromocao?: (conta: string, promocaoId: string) => void;
 }) {
@@ -50,6 +52,24 @@ export default function AutomacaoPromocoes({
   const [copiado, setCopiado] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
+  // Conta escolhida para aplicar ("" = todas). Lembrada neste navegador.
+  const [contaSel, setContaSel] = useState("");
+  useEffect(() => {
+    try {
+      setContaSel(localStorage.getItem("promocoes.contaAplicar") || "");
+    } catch {
+      /* navegador sem armazenamento */
+    }
+  }, []);
+  const nomeConta = (id: string | null | undefined) => (id ? contas.find((c) => c.id === id)?.nome ?? id : "");
+  function escolherConta(id: string) {
+    setContaSel(id);
+    try {
+      localStorage.setItem("promocoes.contaAplicar", id);
+    } catch {
+      /* ignora */
+    }
+  }
   const [, setTique] = useState(0);
   const retomadaEm = useRef(0);
   const estavaAtiva = useRef(false);
@@ -125,7 +145,7 @@ export default function AutomacaoPromocoes({
     setErro("");
     setEnviando(true);
     try {
-      const r = await apiFetch<{ rodada: RodadaPromo | null }>("/api/ml/promocoes/auto", { method: "POST", body: JSON.stringify({ acao: "iniciar" }) });
+      const r = await apiFetch<{ rodada: RodadaPromo | null }>("/api/ml/promocoes/auto", { method: "POST", body: JSON.stringify({ acao: "iniciar", conta: contaSel || undefined }) });
       if (r.rodada) {
         setRodada(r.rodada);
         setFeed([]);
@@ -205,8 +225,16 @@ export default function AutomacaoPromocoes({
               Parar
             </button>
           )}
+          {contas.length > 1 && (
+            <select className="input w-52 py-2" value={contaSel} onChange={(e) => escolherConta(e.target.value)} disabled={ativa} aria-label="Conta para aplicar as promoções" title="Escolha em qual conta aplicar">
+              <option value="">Todas as contas</option>
+              {contas.map((c) => (
+                <option key={c.id} value={c.id}>{c.nome}</option>
+              ))}
+            </select>
+          )}
           <button className="btn" onClick={iniciar} disabled={ativa || enviando || skusAuto === 0 || faltaSQL}>
-            {ativa ? "Aplicando…" : enviando ? "Começando…" : "Aplicar promoções"}
+            {ativa ? "Aplicando…" : enviando ? "Começando…" : contaSel && contas.length > 1 ? `Aplicar em ${nomeConta(contaSel)}` : "Aplicar promoções"}
           </button>
         </div>
       </div>
@@ -244,7 +272,7 @@ export default function AutomacaoPromocoes({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <strong className="text-sm">{titulo}</strong>
             <span className="font-mono text-xs text-slate-500">
-              {duracao(r.iniciado_em || r.criado_em, ativa ? null : r.terminado_em)} · {ORIGEM[r.origem] ?? r.origem}
+              {duracao(r.iniciado_em || r.criado_em, ativa ? null : r.terminado_em)} · {ORIGEM[r.origem] ?? r.origem} · {r.cursor?.conta ? `conta ${nomeConta(r.cursor.conta)}` : "todas as contas"}
             </span>
           </div>
           <div className="h-3 w-full overflow-hidden rounded-full bg-white shadow-inner">
@@ -287,6 +315,7 @@ export default function AutomacaoPromocoes({
                     </span>
                     <span className="font-mono text-[11px] text-slate-500">{hora(f.updated_at)}</span>
                     <span className="min-w-0 flex-1">
+                      {contas.length > 1 && f.ml_user_id && <span className="mr-1.5 rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-brand">{nomeConta(f.ml_user_id)}</span>}
                       <span className="font-medium">{a?.title ?? f.item_id}</span> em {f.promotion_name ?? f.promotion_id}
                       {f.price != null && ` · ${brl(Number(f.price))}`}
                       {f.margin != null && ` · ${pct(Number(f.margin))}`}
@@ -309,7 +338,7 @@ export default function AutomacaoPromocoes({
                 <span className="font-medium">{m.nome}</span>
                 <span className="text-xs text-slate-500">
                   {TIPO_MANUAL[m.tipo] ?? m.tipo}
-                  {m.total > 0 ? ` · ${m.total} convite${m.total === 1 ? "" : "s"}` : ""} · conta {m.conta}
+                  {m.total > 0 ? ` · ${m.total} convite${m.total === 1 ? "" : "s"}` : ""} · conta {nomeConta(m.conta)}
                 </span>
                 {onAbrirPromocao && (
                   <button type="button" className="text-xs font-medium text-brand underline" onClick={() => onAbrirPromocao(m.conta, m.id)}>

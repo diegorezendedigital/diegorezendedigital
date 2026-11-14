@@ -193,6 +193,9 @@ export default function PromocoesPage() {
   const [importando, setImportando] = useState(false);
   const [descTexto, setDescTexto] = useState<Record<string, string>>({});
   const [logFiltro, setLogFiltro] = useState<"todos" | "entrou" | "recusada" | "erro">("todos");
+  const [logConta, setLogConta] = useState(""); // "" = todas as contas
+  const nomeDaConta = (id: string | null | undefined) => (id ? (contas ?? []).find((c) => c.ml_user_id === id)?.conta ?? id : "");
+  const historicoConta = useMemo(() => (logConta ? historico.filter((h) => h.ml_user_id === logConta) : historico), [historico, logConta]);
   // Log aberto ou recolhido (lembra a última escolha neste navegador)
   const [logAberto, setLogAberto] = useState(true);
   useEffect(() => {
@@ -685,7 +688,7 @@ export default function PromocoesPage() {
 
       <PainelPromos r={resumo} carregando={carregandoResumo} onAtualizar={carregarResumo} />
 
-      <AutomacaoPromocoes skusAuto={skusAuto} anunciosAuto={anunciosAuto} porItem={porItem} onTerminou={aoTerminarRodada} onAbrirPromocao={abrirPromocao} />
+      <AutomacaoPromocoes skusAuto={skusAuto} anunciosAuto={anunciosAuto} porItem={porItem} contas={(contas ?? []).map((c) => ({ id: c.ml_user_id, nome: c.conta }))} onTerminou={aoTerminarRodada} onAbrirPromocao={abrirPromocao} />
 
       <section className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -699,11 +702,19 @@ export default function PromocoesPage() {
             </button>
           </h2>
           <div className="flex flex-wrap items-center gap-2">
+            {logAberto && (contas ?? []).length > 1 && (
+              <select className="input w-48 py-1" value={logConta} onChange={(e) => setLogConta(e.target.value)} aria-label="Filtrar o log por conta">
+                <option value="">Todas as contas</option>
+                {(contas ?? []).map((c) => (
+                  <option key={c.ml_user_id} value={c.ml_user_id}>{c.conta}</option>
+                ))}
+              </select>
+            )}
             {logAberto && ([
-              ["todos", "Todos", historico.length],
-              ["entrou", "Entrou", historico.filter((h) => h.status === "entrou").length],
-              ["recusada", "Ficou de fora", historico.filter((h) => h.status === "recusada").length],
-              ["erro", "Erro", historico.filter((h) => h.status === "erro").length],
+              ["todos", "Todos", historicoConta.length],
+              ["entrou", "Entrou", historicoConta.filter((h) => h.status === "entrou").length],
+              ["recusada", "Ficou de fora", historicoConta.filter((h) => h.status === "recusada").length],
+              ["erro", "Erro", historicoConta.filter((h) => h.status === "erro").length],
             ] as const).map(([id, nome, qtd]) => (
               <button
                 key={id}
@@ -737,7 +748,7 @@ export default function PromocoesPage() {
                 </tr>
               </thead>
               <tbody>
-                {historico.filter((h) => logFiltro === "todos" || h.status === logFiltro).map((h) => {
+                {historicoConta.filter((h) => logFiltro === "todos" || h.status === logFiltro).map((h) => {
                   const a = porItem.get(h.item_id);
                   return (
                     <tr key={h.id} className="border-b border-slate-100 align-top">
@@ -749,7 +760,10 @@ export default function PromocoesPage() {
                         <div className="truncate" title={a?.title}>{a?.title ?? "—"}</div>
                         <div className="font-mono text-[11px] text-slate-500">{h.item_id}{a?.sku ? ` · SKU ${a.sku}` : ""}</div>
                       </td>
-                      <td className="p-3">{h.promotion_name ?? h.promotion_id}</td>
+                      <td className="p-3">
+                        {h.promotion_name ?? h.promotion_id}
+                        {h.ml_user_id && <div className="mt-0.5"><span className="rounded bg-brand-light px-1.5 py-0.5 text-[10px] font-semibold text-brand">{nomeDaConta(h.ml_user_id)}</span></div>}
+                      </td>
                       <td className="p-3 text-right">{h.price != null ? brl(Number(h.price)) : "—"}</td>
                       <td className="p-3 text-right">
                         {h.margin != null ? pct(Number(h.margin)) : "—"}

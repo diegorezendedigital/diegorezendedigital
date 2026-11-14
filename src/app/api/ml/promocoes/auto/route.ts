@@ -22,7 +22,14 @@ export async function POST(req: Request) {
     if (acao === "continuar" && !rodada) return NextResponse.json({ rodada: null });
     let nova = false;
     if (!rodada) {
-      const r = await criarRodada(admin, user.id, "manual");
+      // Conta escolhida na tela ("" = todas). Só vale se for uma conta desta loja.
+      let conta: string | null = null;
+      if (b.conta) {
+        const { data: c } = await admin.from("ml_connections").select("ml_user_id").eq("store_id", user.id);
+        conta = (c ?? []).map((x) => String(x.ml_user_id)).find((x) => x === String(b.conta)) ?? null;
+        if (!conta) return NextResponse.json({ error: "Conta não encontrada." }, { status: 400 });
+      }
+      const r = await criarRodada(admin, user.id, "manual", conta);
       rodada = r.rodada;
       nova = r.nova;
     }
