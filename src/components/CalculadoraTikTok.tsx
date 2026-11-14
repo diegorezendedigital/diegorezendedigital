@@ -74,7 +74,8 @@ export default function CalculadoraTikTok() {
     return Number(p.cost_price ?? 0);
   }
 
-  const sugestoes = useMemo(() => {
+  // Todos os que combinam com a busca (antes só 8 apareciam, escondendo as outras cores e tamanhos).
+  const achados = useMemo(() => {
     const termos = semAcento(busca).split(/\s+/).filter(Boolean);
     if (termos.length === 0) return [];
     return produtos
@@ -82,9 +83,10 @@ export default function CalculadoraTikTok() {
       .filter((p) => {
         const alvo = semAcento(`${p.name} ${p.sku ?? ""} ${p.ean ?? ""}`);
         return termos.every((t) => alvo.includes(t));
-      })
-      .slice(0, 8);
+      });
   }, [busca, produtos]);
+  const LIMITE_LISTA = 100;
+  const sugestoes = achados.slice(0, LIMITE_LISTA);
 
   function escolher(p: Product) {
     setProduto(p);
@@ -298,7 +300,11 @@ export default function CalculadoraTikTok() {
             )}
           </div>
           {aberta && sugestoes.length > 0 && (
-            <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-xl" role="listbox">
+            <ul className="absolute z-20 mt-1 max-h-96 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-xl" role="listbox">
+              <li className="sticky top-0 border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
+                {achados.length} {achados.length === 1 ? "produto encontrado" : "produtos encontrados"}
+                {achados.length > LIMITE_LISTA ? ` (mostrando os ${LIMITE_LISTA} primeiros: digite mais para filtrar)` : ""}
+              </li>
               {sugestoes.map((p) => (
                 <li key={p.id}>
                   <button
