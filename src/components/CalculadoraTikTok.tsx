@@ -27,6 +27,8 @@ export default function CalculadoraTikTok() {
   const [frete, setFrete] = useState("0");
   const [afiliado, setAfiliado] = useState("8");
   const [freteGratis, setFreteGratis] = useState("6");
+  const [roas, setRoas] = useState("");
+  const [extra, setExtra] = useState("0");
   const [margemAlvo, setMargemAlvo] = useState("15");
   const [sobraAlvo, setSobraAlvo] = useState("");
   // Qual dos dois o usuário digitou por último: o outro é calculado.
@@ -124,15 +126,20 @@ export default function CalculadoraTikTok() {
     return { com, fixa };
   }
 
+  // ROAS = venda / gasto com anúncio, então o anúncio custa 100 / ROAS por cento do preço (ROAS 20 = 5%).
+  const roasN = num(roas);
+  const adsPct = roasN > 0 ? 100 / roasN : 0;
+
   function entrada(p: number): EntradaPreco {
     const t = taxasDe(p);
-    return { custo: custoN, credito: 0, feePct: t.com + num(afiliado) + num(freteGratis), feeFixo: t.fixa, frete: num(frete), empresa };
+    return { custo: custoN, credito: 0, feePct: t.com + num(afiliado) + num(freteGratis) + adsPct, feeFixo: t.fixa, frete: num(frete) + num(extra), empresa };
   }
 
   const t = taxasDe(precoN);
   const r = calcularLucro(precoN, entrada(precoN));
   const comissaoR = (precoN * t.com) / 100;
   const afiliadoR = (precoN * num(afiliado)) / 100;
+  const adsR = (precoN * adsPct) / 100;
   const freteGratisR = (precoN * num(freteGratis)) / 100;
   const roi = custoN > 0 ? (r.lucro / custoN) * 100 : 0;
 
@@ -310,6 +317,18 @@ export default function CalculadoraTikTok() {
               <input className="input" inputMode="decimal" value={imposto} onChange={(e) => setImposto(e.target.value)} />
             </div>
             <div>
+              <label className="label">Custo extra por venda (R$)</label>
+              <input className="input" inputMode="decimal" value={extra} onChange={(e) => setExtra(e.target.value)} />
+              <p className="mt-1 text-[11px] text-slate-500">Embalagem, brinde, etc.</p>
+            </div>
+            <div>
+              <label className="label">ROAS (anúncios)</label>
+              <input className="input" inputMode="decimal" value={roas} onChange={(e) => setRoas(e.target.value)} placeholder="ex.: 20" />
+              <p className="mt-1 text-[11px] text-slate-500">
+                {roasN > 0 ? `ROAS ${campo(roasN)} = ${pct(adsPct)} do preço de venda` : "Deixe em branco se não anuncia"}
+              </p>
+            </div>
+            <div>
               <label className="label">Frete grátis (%)</label>
               <input className="input" inputMode="decimal" value={freteGratis} onChange={(e) => setFreteGratis(e.target.value)} />
               <p className="mt-1 text-[11px] text-slate-500">Programa de taxas de envio, nas 2 faixas</p>
@@ -345,6 +364,8 @@ export default function CalculadoraTikTok() {
             {freteGratisR > 0 && <Linha t={`(-) Frete grátis (${pct(num(freteGratis))})`} v={brl(freteGratisR)} />}
             {afiliadoR > 0 && <Linha t={`(-) Afiliado (${pct(num(afiliado))})`} v={brl(afiliadoR)} />}
             <Linha t="(-) Frete" v={brl(num(frete))} />
+            {num(extra) > 0 && <Linha t="(-) Custo extra" v={brl(num(extra))} />}
+            {adsR > 0 && <Linha t={`(-) Anúncios (ROAS ${campo(roasN)} = ${pct(adsPct)})`} v={brl(adsR)} />}
             <Linha t={`(-) Imposto (${pct(num(imposto))})`} v={brl(r.impostos)} />
           </dl>
           <div className={`rounded-lg p-3 ${precoN > 0 && r.lucro < 0 ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-800"}`}>
