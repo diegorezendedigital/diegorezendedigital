@@ -59,10 +59,10 @@ export default function LandingPage() {
                 Usar a calculadora grátis
               </Link>
               <Link
-                href="/planos"
+                href="/login"
                 className="text-ink/70 hover:text-ink underline underline-offset-4 decoration-line"
               >
-                Ver planos
+                Já tenho conta
               </Link>
             </div>
           </div>
@@ -155,10 +155,10 @@ export default function LandingPage() {
               Usar a calculadora grátis
             </Link>
             <Link
-              href="/planos"
+              href="/login"
               className="inline-block rounded-full border border-paper/40 px-8 py-4 font-medium hover:bg-paper hover:text-inkdeep transition-colors"
             >
-              Assinar e criar minha conta
+              Entrar
             </Link>
           </div>
         </div>

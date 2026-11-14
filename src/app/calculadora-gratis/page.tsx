@@ -55,15 +55,10 @@ export default function CalculadoraGratisPage() {
             Diego Rezende <span className="text-gold">Digital</span>
           </Link>
           <nav className="flex items-center gap-4 text-sm">
-            <Link href="/login" className="hover:text-gold transition-colors">
+            <Link href="/login" className="rounded-full border border-ink px-4 py-2 hover:bg-ink hover:text-paper transition-colors">
               Entrar
             </Link>
-            <Link
-              href="/planos"
-              className="rounded-full border border-ink px-4 py-2 hover:bg-ink hover:text-paper transition-colors"
-            >
-              Assinar
-            </Link>
+
           </nav>
         </div>
       </header>
@@ -204,12 +199,12 @@ export default function CalculadoraGratisPage() {
 
       <section className="border-t border-line bg-inkdeep text-paper">
         <div className="mx-auto max-w-6xl px-6 py-16 text-center">
-          <h2 className="font-display text-3xl font-semibold mb-3">Calculou um produto. Agora imagine o catálogo inteiro.</h2>
+          <h2 className="font-display text-3xl font-semibold mb-3">Quer controlar o catálogo inteiro?</h2>
           <p className="mx-auto mb-8 max-w-xl text-paper/70">
-            Com a assinatura você conecta suas lojas, acompanha pedidos e margem real de cada venda e automatiza promoções.
+            Em breve: conexão das suas lojas, pedidos, margem real de cada venda e promoções automáticas.
           </p>
-          <Link href="/planos" className="inline-block rounded-full bg-gold px-8 py-4 font-medium text-inkdeep hover:bg-goldlight transition-colors">
-            Ver planos e assinar
+          <Link href="/login" className="inline-block rounded-full bg-gold px-8 py-4 font-medium text-inkdeep hover:bg-goldlight transition-colors">
+            Já tenho conta
           </Link>
         </div>
       </section>

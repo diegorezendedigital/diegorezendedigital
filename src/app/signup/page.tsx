@@ -8,6 +8,32 @@ import { supabase } from "@/lib/supabase/client";
 const campo =
   "w-full rounded-lg border border-line bg-white px-4 py-3 text-sm outline-none focus:border-ink focus:ring-2 focus:ring-gold/30";
 
+// Cadastros fechados por enquanto: troque para true quando a assinatura estiver configurada.
+const CADASTROS_ABERTOS = false;
+
+function CadastrosFechados() {
+  return (
+      <main className="min-h-screen bg-paper font-body text-ink antialiased flex items-center justify-center px-6">
+        <div className="w-full max-w-sm">
+          <Link href="/" className="font-display text-xl font-semibold">
+            Diego Rezende <span className="text-gold">Digital</span>
+          </Link>
+          <h1 className="font-display text-2xl font-medium mt-8 mb-1">Cadastros em breve</h1>
+          <p className="text-ink/60 text-sm mb-6">
+            Os novos cadastros estão fechados por enquanto. A calculadora gratuita continua aberta para todos.
+          </p>
+          <Link href="/calculadora-gratis" className="block rounded-full bg-ink px-4 py-3 text-center text-sm font-medium text-paper hover:bg-inkdeep transition-colors">
+            Usar a calculadora grátis
+          </Link>
+          <p className="mt-6 text-center text-sm text-ink/60">
+            Já tem conta?{" "}
+            <Link href="/login" className="font-medium text-ink underline underline-offset-4">Entrar</Link>
+          </p>
+        </div>
+      </main>
+  );
+}
+
 function SignupForm() {
   const router = useRouter();
   const params = useSearchParams();
@@ -159,7 +185,7 @@ function SignupForm() {
 export default function SignupPage() {
   return (
     <Suspense fallback={null}>
-      <SignupForm />
+      {CADASTROS_ABERTOS ? <SignupForm /> : <CadastrosFechados />}
     </Suspense>
   );
 }
