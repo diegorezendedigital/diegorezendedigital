@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase/client";
 import { Product, brl, campo, num, pct } from "@/lib/types";
 import { calcularLucro, precoParaMargem, type EntradaPreco } from "@/lib/pricing";
 import { CANAIS, type CanalId } from "@/lib/taxas-publicas";
+import { medidasDoProduto, pesoCubicoKg, pesoFaturavelKg } from "@/lib/frete-ml";
 
 // O que muda de um canal para outro: onde a margem/preço são salvos no produto e quais campos aparecem.
 const CFG: Record<CanalId, {
@@ -40,6 +41,11 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
   const [frete, setFrete] = useState("0");
   const [comissao, setComissao] = useState("");
   const [cpf, setCpf] = useState(false);
+  // Peso e medidas do produto (frete do Mercado Livre).
+  const [peso, setPeso] = useState("");
+  const [comp, setComp] = useState("");
+  const [larg, setLarg] = useState("");
+  const [alt, setAlt] = useState("");
   const [freteGratis, setFreteGratis] = useState("6");
 
   // Anúncios: ao ligar, ROAS e ACOS andam juntos (ACOS = 100 / ROAS) e entra a comissão do afiliado.
@@ -107,6 +113,11 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
     setBusca(p.name);
     setAberta(false);
     setCusto(campo(custoDe(p)));
+    const med = medidasDoProduto(p);
+    setPeso(med.pesoKg > 0 ? campo(med.pesoKg) : "");
+    setComp(med.comprimentoCm > 0 ? campo(med.comprimentoCm) : "");
+    setLarg(med.larguraCm > 0 ? campo(med.larguraCm) : "");
+    setAlt(med.alturaCm > 0 ? campo(med.alturaCm) : "");
     setSalvo("");
     setErroSalvar("");
     const reg = p as unknown as Record<string, unknown>;
@@ -161,6 +172,14 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
       [cfgCanal.margemKey]: margemSalva,
       [cfgCanal.precoKey]: precoN,
       [cfgCanal.configKey]: { imposto, freteGratis, extra, frete, comissao, cpf, usarAds, roas, acos, afiliado },
+      ...(cfgCanal.fretePago
+        ? {
+            peso_kg: peso.trim() ? num(peso) : null,
+            comprimento_cm: comp.trim() ? num(comp) : null,
+            largura_cm: larg.trim() ? num(larg) : null,
+            altura_cm: alt.trim() ? num(alt) : null,
+          }
+        : {}),
     };
     const { error } = await supabase.from("products").update(dados).eq("id", produto.id);
     setSalvando(false);
@@ -230,6 +249,10 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
       empresa,
     };
   }
+
+  const medidas = { pesoKg: num(peso), comprimentoCm: num(comp), larguraCm: num(larg), alturaCm: num(alt) };
+  const cubico = pesoCubicoKg(medidas);
+  const faturavel = pesoFaturavelKg(medidas);
 
   const t = taxasDe(precoN);
   const r = calcularLucro(precoN, entrada(precoN));
@@ -479,6 +502,26 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
               <p className="mt-1 text-[11px] text-slate-500">Embalagem, brinde, o que mais pesar na venda</p>
             </div>
           </div>
+
+          {cfgCanal.fretePago && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="mb-2 text-sm font-semibold">Peso e medidas</p>
+              <div className="grid grid-cols-4 gap-2">
+                {([["Peso (kg)", peso, setPeso], ["Compr. (cm)", comp, setComp], ["Larg. (cm)", larg, setLarg], ["Alt. (cm)", alt, setAlt]] as const).map(([rot, val, set]) => (
+                  <div key={rot}>
+                    <label className="label">{rot}</label>
+                    <input className="input px-2" inputMode="decimal" value={val} onChange={(e) => set(e.target.value)} />
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-slate-600">
+                {cubico > 0 || num(peso) > 0
+                  ? `Peso cúbico ${campo(Math.round(cubico * 1000) / 1000)} kg · peso que o frete considera ${campo(Math.round(faturavel * 1000) / 1000)} kg`
+                  : "Informe o peso e as 3 medidas para calcular o peso cúbico."}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">Vem do armazém e é salvo junto. A regra de frete por faixa de valor e peso entra aqui em seguida.</p>
+            </div>
+          )}
 
           {/* Anúncios */}
           <div className={`rounded-xl border p-3 transition-colors ${usarAds ? "border-cyan-300 bg-cyan-50/60" : "border-slate-200 bg-slate-50"}`}>

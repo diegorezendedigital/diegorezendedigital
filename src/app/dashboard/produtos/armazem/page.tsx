@@ -6,12 +6,13 @@ import { supabase } from "@/lib/supabase/client";
 import { Company, CustoProduto, Product, brl, campo, formatarCnpj, mensagemErro, num } from "@/lib/types";
 import { LinhaProduto, baixarModelo, lerPlanilha } from "@/lib/planilha";
 import { analisarAnuncio } from "@/lib/anuncio";
+import { pesoCubicoKg, pesoFaturavelKg, medidasDoProduto } from "@/lib/frete-ml";
 import type { Listing } from "@/lib/types";
 
 type Painel = null | "manual" | "excel";
 type Componente = { id: string; kit_id: string; component_id: string; quantity: number };
 
-const formVazio = { sku: "", nome: "", custo: "", ean: "", ncm: "", estoque: "", company: "", tipo: "unico", cores: "", tamanhos: "", kitDeGrupo: "", kitGrupo: "", kitN: "2", kitPrefixo: "" };
+const formVazio = { sku: "", nome: "", custo: "", ean: "", ncm: "", peso: "", comp: "", larg: "", alt: "", estoque: "", company: "", tipo: "unico", cores: "", tamanhos: "", kitDeGrupo: "", kitGrupo: "", kitN: "2", kitPrefixo: "" };
 
 export default function ArmazemPage() {
   const [produtos, setProdutos] = useState<Product[]>([]);
@@ -65,6 +66,8 @@ export default function ArmazemPage() {
   const [massaData, setMassaData] = useState("");
   const [massaBusy, setMassaBusy] = useState(false);
   const [promoAberta, setPromoAberta] = useState(false);
+  const [pesoAberto, setPesoAberto] = useState(false);
+  const [pesoMassa, setPesoMassa] = useState({ peso: "", comp: "", larg: "", alt: "" });
   const [promoAuto, setPromoAuto] = useState<"manter" | "ligar" | "desligar">("ligar");
   const [promoMargemModo, setPromoMargemModo] = useState<"manter" | "definir" | "padrao">("definir");
   const [promoMargem, setPromoMargem] = useState("");
@@ -367,6 +370,10 @@ export default function ArmazemPage() {
           name: x.name,
           cost_price: num(form.custo),
           ncm: form.ncm.trim() || null,
+          peso_kg: form.peso.trim() ? num(form.peso) : null,
+          comprimento_cm: form.comp.trim() ? num(form.comp) : null,
+          largura_cm: form.larg.trim() ? num(form.larg) : null,
+          altura_cm: form.alt.trim() ? num(form.alt) : null,
           stock_qty: num(form.estoque),
           company_id: form.company || null,
           cost_updated_at: new Date().toISOString(),
@@ -433,6 +440,10 @@ export default function ArmazemPage() {
       cost_price: num(form.custo),
       ean: form.ean.trim() || null,
       ncm: form.ncm.trim() || null,
+      peso_kg: form.peso.trim() ? num(form.peso) : null,
+      comprimento_cm: form.comp.trim() ? num(form.comp) : null,
+      largura_cm: form.larg.trim() ? num(form.larg) : null,
+      altura_cm: form.alt.trim() ? num(form.alt) : null,
       stock_qty: num(form.estoque),
       company_id: form.company || null,
       cost_updated_at: new Date().toISOString(),
@@ -519,6 +530,49 @@ export default function ArmazemPage() {
       setErro(error.message);
       return;
     }
+    carregar();
+  }
+
+  async function salvarCampos(p: Product, alteracao: Record<string, number | null>) {
+    setErro("");
+    const { error } = await supabase.from("products").update(alteracao).eq("id", p.id);
+    if (error) {
+      setErro(/column|schema cache/i.test(error.message) ? "Faltou criar as colunas de peso e medidas no Supabase (rode o SQL que o assistente mandou)." : error.message);
+      return;
+    }
+    carregar();
+  }
+
+  // Peso e medidas em massa: só muda o que estiver preenchido
+  async function aplicarPesoMassa() {
+    setErro("");
+    setAviso("");
+    const alvo = selVisiveis.length > 0 ? selVisiveis : produtos.filter((p) => sel.has(p.id));
+    if (alvo.length === 0) return;
+    const alteracao: Record<string, number> = {};
+    if (pesoMassa.peso.trim()) alteracao.peso_kg = num(pesoMassa.peso);
+    if (pesoMassa.comp.trim()) alteracao.comprimento_cm = num(pesoMassa.comp);
+    if (pesoMassa.larg.trim()) alteracao.largura_cm = num(pesoMassa.larg);
+    if (pesoMassa.alt.trim()) alteracao.altura_cm = num(pesoMassa.alt);
+    if (Object.keys(alteracao).length === 0) return setErro("Preencha pelo menos um campo (peso ou medidas).");
+    if (!confirm(`Aplicar peso e medidas em ${alvo.length} produto(s)?`)) return;
+    setMassaBusy(true);
+    let falhas = 0;
+    try {
+      for (let i = 0; i < alvo.length; i += 100) {
+        const r = await supabase.from("products").update(alteracao).in("id", alvo.slice(i, i + 100).map((p) => p.id));
+        if (r.error) {
+          falhas += Math.min(100, alvo.length - i);
+          setErro(/column|schema cache/i.test(r.error.message) ? "Faltou criar as colunas de peso e medidas no Supabase (rode o SQL que o assistente mandou)." : r.error.message);
+        }
+      }
+    } finally {
+      setMassaBusy(false);
+    }
+    setAviso(`${alvo.length - falhas} produto(s) com peso e medidas atualizados.`);
+    setPesoAberto(false);
+    setPesoMassa({ peso: "", comp: "", larg: "", alt: "" });
+    setSel(new Set());
     carregar();
   }
 
@@ -766,6 +820,24 @@ export default function ArmazemPage() {
             <label className="label">NCM</label>
             <input className="input" inputMode="numeric" value={form.ncm} onChange={(e) => f("ncm", e.target.value)} />
           </div>
+          <div>
+            <label className="label">Peso (kg)</label>
+            <input className="input" inputMode="decimal" value={form.peso} onChange={(e) => f("peso", e.target.value)} placeholder="0,35" />
+          </div>
+          <div className="col-span-2 grid grid-cols-3 gap-3">
+            <div>
+              <label className="label">Comprimento (cm)</label>
+              <input className="input" inputMode="decimal" value={form.comp} onChange={(e) => f("comp", e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Largura (cm)</label>
+              <input className="input" inputMode="decimal" value={form.larg} onChange={(e) => f("larg", e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Altura (cm)</label>
+              <input className="input" inputMode="decimal" value={form.alt} onChange={(e) => f("alt", e.target.value)} />
+            </div>
+          </div>
           <div className="col-span-2">
             <label className="label">CNPJ de compra</label>
             <select className="input" value={form.company} onChange={(e) => f("company", e.target.value)}>
@@ -891,9 +963,25 @@ export default function ArmazemPage() {
             <button className="btn" onClick={() => { setMassaAberta(true); setPromoAberta(false); setMassaData(hojeISO()); }}>Editar custo em massa</button>
           )}
           {!promoAberta && (
-            <button className="btn" onClick={() => { setPromoAberta(true); setMassaAberta(false); }}>Promoção automática / margem mínima</button>
+            <button className="btn" onClick={() => { setPromoAberta(true); setMassaAberta(false); setPesoAberto(false); }}>Promoção automática / margem mínima</button>
+          )}
+          {!pesoAberto && (
+            <button className="btn" onClick={() => { setPesoAberto(true); setPromoAberta(false); setMassaAberta(false); }}>Peso e medidas</button>
           )}
           <button className="text-sm text-slate-600 hover:underline" onClick={() => { setSel(new Set()); setMassaAberta(false); setPromoAberta(false); }}>Limpar seleção</button>
+          {pesoAberto && (
+            <div className="flex w-full flex-wrap items-end gap-3">
+              {([["peso", "Peso (kg)"], ["comp", "Comprimento (cm)"], ["larg", "Largura (cm)"], ["alt", "Altura (cm)"]] as const).map(([k, rot]) => (
+                <div key={k}>
+                  <label className="label">{rot}</label>
+                  <input className="input h-10 w-32" inputMode="decimal" value={pesoMassa[k]} onChange={(e) => setPesoMassa((v) => ({ ...v, [k]: e.target.value }))} />
+                </div>
+              ))}
+              <button className="btn" disabled={massaBusy} onClick={aplicarPesoMassa}>{massaBusy ? "Aplicando…" : "Aplicar"}</button>
+              <button className="btn-ghost" disabled={massaBusy} onClick={() => setPesoAberto(false)}>Cancelar</button>
+              <p className="w-full text-xs text-slate-600">Só muda o que estiver preenchido. O peso cúbico (comprimento x largura x altura / 6000) é calculado sozinho e usado no frete do Mercado Livre.</p>
+            </div>
+          )}
           {promoAberta && (
             <div className="flex w-full flex-wrap items-end gap-3">
               <div>
@@ -963,6 +1051,7 @@ export default function ArmazemPage() {
               <th className="th">Estoque</th>
               <th className="th">Anúncios</th>
               <th className="th" title="Entrar sozinho nas promoções do Mercado Livre que dão a margem mínima deste SKU">Promo auto</th>
+              <th className="th" title="Peso real (kg) e medidas (cm). O peso cúbico é calculado sozinho.">Peso e medidas</th>
               <th className="th" title="Margem líquida do Mercado Livre: também é a mínima para aceitar uma promoção. Pode ser negativa (ex.: -5) para aceitar prejuízo.">Margem Mercado Livre %</th>
               <th className="th" title="Margem e preço de venda salvos na calculadora do TikTok Shop">Margem TikTok</th>
               <th className="th" title="Margem e preço de venda da Shopee">Margem Shopee</th>
@@ -972,7 +1061,7 @@ export default function ArmazemPage() {
           <tbody className="divide-y divide-slate-100">
             {visiveis.length === 0 && (
               <tr>
-                <td className="td text-slate-500" colSpan={14}>
+                <td className="td text-slate-500" colSpan={15}>
                   {produtos.length === 0 ? "Nenhum produto ainda. Use “Novo produto”, a planilha ou o XML da nota." : "Nada encontrado para essa busca."}
                 </td>
               </tr>
@@ -1092,6 +1181,9 @@ export default function ArmazemPage() {
                     </div>
                   </td>
                   <td className="td">
+                    <PesoMedidas p={p} onSalvar={salvarCampos} />
+                  </td>
+                  <td className="td">
                     <input
                       type="checkbox"
                       checked={!!p.promo_auto}
@@ -1140,7 +1232,7 @@ export default function ArmazemPage() {
                 </tr>
                 {kitAberto === p.id && (
                   <tr className="bg-brand-light/30">
-                    <td className="td" colSpan={14}>
+                    <td className="td" colSpan={15}>
                       <div className="space-y-3 py-2">
                         <p className="text-sm font-semibold">Composição do kit {p.sku}</p>
                         <p className="text-xs text-slate-600">Escolha os produtos e a quantidade de cada um que entram neste kit. O custo do kit é a soma e se atualiza sozinho sempre que o custo de uma peça mudar (cada mudança fica no Histórico).</p>
@@ -1204,7 +1296,7 @@ export default function ArmazemPage() {
                 )}
                 {aberto && (
                   <tr className="bg-slate-50">
-                    <td className="td" colSpan={14}>
+                    <td className="td" colSpan={15}>
                       <div className="space-y-2 py-1">
                         <p className="text-xs text-slate-600">
                           Histórico de custo. Cada venda usa o custo vigente na data dela. Ao alterar o custo acima, uma linha nova é criada com a data de hoje.
@@ -1274,6 +1366,44 @@ function CelulaCanal({ margem, preco, config, href }: { margem?: number | null; 
         <Link href={href} className="text-[11px] text-brand hover:underline">
           Editar
         </Link>
+      )}
+    </div>
+  );
+}
+
+// Peso real e as 3 medidas, editáveis na linha; mostra o peso cúbico e o faturável (o maior dos dois).
+function PesoMedidas({ p, onSalvar }: { p: Product; onSalvar: (p: Product, alteracao: Record<string, number | null>) => void }) {
+  const m = medidasDoProduto(p);
+  const campos: [string, keyof typeof m, string, string][] = [
+    ["peso_kg", "pesoKg", "kg", "Peso (kg)"],
+    ["comprimento_cm", "comprimentoCm", "C", "Comprimento (cm)"],
+    ["largura_cm", "larguraCm", "L", "Largura (cm)"],
+    ["altura_cm", "alturaCm", "A", "Altura (cm)"],
+  ];
+  const cubico = pesoCubicoKg(m);
+  return (
+    <div className="leading-tight">
+      <div className="flex gap-1">
+        {campos.map(([coluna, chave, ph, titulo]) => (
+          <input
+            key={`${p.id}${coluna}${m[chave]}`}
+            className="input w-14 px-1.5 py-1 text-center text-xs"
+            inputMode="decimal"
+            placeholder={ph}
+            title={titulo}
+            defaultValue={m[chave] > 0 ? campo(m[chave]) : ""}
+            onBlur={(e) => {
+              const txt = e.target.value.trim();
+              const v = txt === "" ? null : num(txt);
+              if (v !== (m[chave] > 0 ? m[chave] : null)) onSalvar(p, { [coluna]: v });
+            }}
+          />
+        ))}
+      </div>
+      {cubico > 0 && (
+        <div className="mt-1 text-[11px] text-slate-500">
+          cúbico {campo(Math.round(cubico * 1000) / 1000)} kg · fatura {campo(Math.round(pesoFaturavelKg(m) * 1000) / 1000)} kg
+        </div>
       )}
     </div>
   );

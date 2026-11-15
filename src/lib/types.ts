@@ -36,6 +36,10 @@ export type Product = {
   shopee_preco?: number | null;
   shopee_config?: Record<string, unknown> | null;
   ml_preco?: number | null;
+  peso_kg?: number | null;
+  comprimento_cm?: number | null;
+  largura_cm?: number | null;
+  altura_cm?: number | null;
   ml_config?: Record<string, unknown> | null;
   tipo?: "unico" | "multi" | "kit";
   grupo?: string | null;
