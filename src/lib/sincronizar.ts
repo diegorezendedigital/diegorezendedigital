@@ -4,8 +4,10 @@ import type { ContaML } from "@/lib/types";
 type SyncResp = { processed: number; imported: number; listings_created: number; total: number; next_offset: number; has_more: boolean };
 
 // Importa/reprocessa as vendas de todas as contas, página por página. Vendas que já têm custo gravado não mudam de custo.
-export async function sincronizarVendas(dias: number, onProgresso: (texto: string) => void): Promise<{ vendas: number; anuncios: number; contas: number }> {
-  const { accounts } = await apiFetch<{ accounts: ContaML[] }>("/api/ml/accounts");
+export async function sincronizarVendas(dias: number, onProgresso: (texto: string) => void, lojaId = ""): Promise<{ vendas: number; anuncios: number; contas: number }> {
+  const todas = await apiFetch<{ accounts: ContaML[] }>("/api/ml/accounts");
+  // lojaId vazio = todas as lojas; senão só a loja escolhida (Mercado Livre ou Shopee)
+  const accounts = lojaId ? todas.accounts.filter((c) => String(c.ml_user_id) === lojaId) : todas.accounts;
   let vendas = 0;
   let anuncios = 0;
   for (const c of accounts) {
@@ -27,7 +29,7 @@ export async function sincronizarVendas(dias: number, onProgresso: (texto: strin
   let lojasShopee = 0;
   try {
     const sh = await apiFetch<{ accounts: { shop_id: string; shop_name: string | null; store_name?: string | null }[] }>("/api/shopee/accounts");
-    for (const c of sh.accounts ?? []) {
+    for (const c of (sh.accounts ?? []).filter((x) => !lojaId || String(x.shop_id) === lojaId)) {
       lojasShopee++;
       const nome = c.store_name || c.shop_name || c.shop_id;
       let janela = 0;

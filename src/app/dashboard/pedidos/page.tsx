@@ -70,7 +70,7 @@ const MP_ESTILO: Record<string, { sigla: string; cls: string }> = {
 };
 
 // Caixa de seleção da loja, com as lojas agrupadas por marketplace
-function SeletorLoja({ lojas, valor, onChange }: { lojas: { id: string; nome: string; mp: string }[]; valor: string; onChange: (id: string) => void }) {
+function SeletorLoja({ lojas, valor, onChange, rotulo = "Loja", textoTodas = "Todas as lojas", direita = false }: { lojas: { id: string; nome: string; mp: string }[]; valor: string; onChange: (id: string) => void; rotulo?: string; textoTodas?: string; direita?: boolean }) {
   const [aberto, setAberto] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -94,18 +94,18 @@ function SeletorLoja({ lojas, valor, onChange }: { lojas: { id: string; nome: st
   const item = (ativo: boolean) => `flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${ativo ? "bg-brand-light font-semibold text-brand" : "text-slate-700 hover:bg-slate-50"}`;
   return (
     <div className="relative" ref={ref}>
-      <label className="label">Loja</label>
+      <label className="label">{rotulo}</label>
       <button type="button" onClick={() => setAberto(!aberto)} aria-haspopup="listbox" aria-expanded={aberto} className="input flex h-[38px] w-60 items-center justify-between gap-2 py-0 text-left">
         <span className="flex min-w-0 items-center gap-2">
           {atual && <span className={`inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${MP_ESTILO[atual.mp]?.cls ?? ""}`}>{MP_ESTILO[atual.mp]?.sigla}</span>}
-          <span className="truncate">{atual ? atual.nome : "Todas as lojas"}</span>
+          <span className="truncate">{atual ? atual.nome : textoTodas}</span>
         </span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-slate-400 transition-transform ${aberto ? "rotate-180" : ""}`}><path d="m6 9 6 6 6-6" /></svg>
       </button>
       {aberto && (
-        <div role="listbox" className="absolute left-0 top-full z-40 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+        <div role="listbox" className={`absolute ${direita ? "right-0" : "left-0"} top-full z-40 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl`}>
           <button type="button" role="option" aria-selected={!valor} className={item(!valor)} onClick={() => escolher("")}>
-            Todas as lojas
+            {textoTodas}
           </button>
           {["Mercado Livre", "Shopee", "TikTok Shop"].map((mp) => {
             const doMp = lojas.filter((x) => x.mp === mp);
@@ -204,6 +204,7 @@ export default function PedidosPage() {
     }
   }
   const [reprocessando, setReprocessando] = useState(false);
+  const [lojaReprocessar, setLojaReprocessar] = useState("");
   const [reprocessandoCustos, setReprocessandoCustos] = useState(false);
   const [progresso, setProgresso] = useState("");
   const [aviso, setAviso] = useState("");
@@ -218,7 +219,7 @@ export default function PedidosPage() {
     setReprocessando(true);
     try {
       const dias = Math.min(90, Math.max(1, Math.ceil((Date.now() - new Date(`${de}T00:00:00-03:00`).getTime()) / 86400000) + 1));
-      const r = await sincronizarVendas(dias, setProgresso);
+      const r = await sincronizarVendas(dias, setProgresso, lojaReprocessar);
       if (r.contas === 0) setErro("Nenhuma loja conectada (Mercado Livre ou Shopee). Conecte em Integrações.");
       else setAviso(`Pedidos reprocessados: ${r.vendas} vendas novas ou completadas. O custo de vendas que já tinham custo não foi alterado.`);
       await carregar();
@@ -466,7 +467,8 @@ export default function PedidosPage() {
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-end justify-end gap-2">
+            {lojas.length > 0 && <SeletorLoja lojas={lojas} valor={lojaReprocessar} onChange={setLojaReprocessar} rotulo="Reprocessar" textoTodas="Todas as lojas" direita />}
             <button className="btn-ghost" onClick={reprocessarCustos} disabled={reprocessando || reprocessandoCustos} title="Recalcula o custo das vendas do período com o custo cadastrado na data de cada venda">
               {reprocessandoCustos ? "Reprocessando custos…" : "Reprocessar custos"}
             </button>
