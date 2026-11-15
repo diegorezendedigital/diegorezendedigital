@@ -94,9 +94,11 @@ export async function shopeeGet<T = Record<string, unknown>>(token: string, shop
   return chamar<RespostaShopee>(u.toString()) as unknown as T;
 }
 
-const DIAS_REFRESH = 30; // o acesso de renovação vale cerca de 30 dias
+// A autorização da loja na Shopee vale 365 dias, contados da hora em que o vendedor autoriza.
+// Renovar o token (a cada ~4 horas) não muda essa data; só uma nova autorização muda.
+const DIAS_AUTORIZACAO = 365;
 
-export async function guardarConexao(storeId: string, shopId: string, t: TokensShopee, extra: { shop_name?: string | null; region?: string | null } = {}) {
+export async function guardarConexao(storeId: string, shopId: string, t: TokensShopee, extra: { shop_name?: string | null; region?: string | null; novaAutorizacao?: boolean } = {}) {
   const admin = supabaseAdmin();
   await admin.from("stores").upsert({ id: storeId, name: "Minha Loja" }, { onConflict: "id", ignoreDuplicates: true });
   const { error } = await admin.from("shopee_connections").upsert(
@@ -109,8 +111,12 @@ export async function guardarConexao(storeId: string, shopId: string, t: TokensS
       access_token: t.access_token,
       refresh_token: t.refresh_token,
       expires_at: new Date(Date.now() + t.expire_in * 1000).toISOString(),
-      refresh_expires_at: new Date(Date.now() + DIAS_REFRESH * 86_400_000).toISOString(),
-      connected_at: new Date().toISOString(),
+      ...(extra.novaAutorizacao
+        ? {
+            refresh_expires_at: new Date(Date.now() + DIAS_AUTORIZACAO * 86_400_000).toISOString(),
+            connected_at: new Date().toISOString(),
+          }
+        : {}),
     },
     { onConflict: "store_id,shop_id" }
   );

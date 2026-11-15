@@ -171,7 +171,7 @@ notify pgrst, 'reload schema';`;
               <th className="p-3">Ambiente</th>
               <th className="p-3">Status</th>
               <th className="p-3">Conectada em</th>
-              <th className="p-3">Acesso expira em</th>
+              <th className="p-3">Autorização expira em</th>
               <th className="p-3">Ações</th>
             </tr>
           </thead>

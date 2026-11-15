@@ -25,7 +25,7 @@ export async function GET(req: Request) {
     } catch {
       /* o nome é só para exibir */
     }
-    await guardarConexao(storeId, shopId, t, { shop_name: nome, region: regiao });
+    await guardarConexao(storeId, shopId, t, { shop_name: nome, region: regiao, novaAutorizacao: true });
     return voltar("conectado=1");
   } catch (e) {
     console.error(e);
