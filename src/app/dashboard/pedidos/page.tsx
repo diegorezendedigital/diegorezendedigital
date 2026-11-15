@@ -131,6 +131,73 @@ function SeletorLoja({ lojas, valor, onChange, rotulo = "Loja", textoTodas = "To
   );
 }
 
+// Janela para escolher quais lojas entram: marcar o marketplace marca todas as lojas dele
+function ModalLojas({ titulo, lojas, onClose, onConfirmar }: { titulo: string; lojas: { id: string; nome: string; mp: string }[]; onClose: () => void; onConfirmar: (ids: string[]) => void }) {
+  const [marcadas, setMarcadas] = useState<Set<string>>(new Set(lojas.map((l) => l.id)));
+  const grupos = ["Mercado Livre", "Shopee", "TikTok Shop"].map((mp) => ({ mp, itens: lojas.filter((l) => l.mp === mp) })).filter((g) => g.itens.length > 0);
+  const todas = lojas.length > 0 && marcadas.size === lojas.length;
+  const alternar = (ids: string[], ligar: boolean) =>
+    setMarcadas((atual) => {
+      const novo = new Set(atual);
+      ids.forEach((id) => (ligar ? novo.add(id) : novo.delete(id)));
+      return novo;
+    });
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onClose]);
+  const caixa = "h-4 w-4 cursor-pointer rounded border-slate-300 accent-[#4F46E5]";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div role="dialog" aria-modal="true" className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
+          <h2 className="text-[15px] font-semibold text-slate-900">{titulo}</h2>
+          <button type="button" onClick={onClose} aria-label="Fechar" className="text-xl leading-none text-slate-400 hover:text-slate-700">×</button>
+        </div>
+        <div className="px-5 py-4">
+          <label className="flex cursor-pointer items-center gap-3 text-sm text-slate-800">
+            <input type="checkbox" className={caixa} checked={todas} onChange={(e) => alternar(lojas.map((l) => l.id), e.target.checked)} />
+            Selecionar todas as lojas
+          </label>
+          {grupos.map((g) => {
+            const ids = g.itens.map((l) => l.id);
+            const qtd = ids.filter((id) => marcadas.has(id)).length;
+            return (
+              <div key={g.mp} className="mt-4 flex flex-wrap items-start gap-x-8 gap-y-2 border-t border-slate-100 pt-4">
+                <label className="flex w-40 cursor-pointer items-center gap-3 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    className={caixa}
+                    checked={qtd === ids.length}
+                    ref={(el) => {
+                      if (el) el.indeterminate = qtd > 0 && qtd < ids.length;
+                    }}
+                    onChange={(e) => alternar(ids, e.target.checked)}
+                  />
+                  {g.mp}
+                </label>
+                <div className="flex flex-1 flex-wrap gap-x-6 gap-y-2">
+                  {g.itens.map((l) => (
+                    <label key={l.id} className="flex min-w-[150px] cursor-pointer items-center gap-2.5 text-sm text-slate-800">
+                      <input type="checkbox" className={caixa} checked={marcadas.has(l.id)} onChange={(e) => alternar([l.id], e.target.checked)} />
+                      <span className="max-w-[200px] truncate" title={l.nome}>{l.nome}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3.5">
+          <button type="button" className="btn-ghost" onClick={onClose}>Cancelar</button>
+          <button type="button" className="btn" disabled={marcadas.size === 0} onClick={() => onConfirmar(todas ? [] : Array.from(marcadas))}>Sincronizar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PedidosPage() {
   const [linhas, setLinhas] = useState<Linha[] | null>(null);
   const [lojas, setLojas] = useState<{ id: string; nome: string; mp: string }[]>([]);
@@ -204,7 +271,7 @@ export default function PedidosPage() {
     }
   }
   const [reprocessando, setReprocessando] = useState(false);
-  const [lojaReprocessar, setLojaReprocessar] = useState("");
+  const [modalLojas, setModalLojas] = useState<null | "pedidos" | "custos">(null);
   const [reprocessandoCustos, setReprocessandoCustos] = useState(false);
   const [progresso, setProgresso] = useState("");
   const [aviso, setAviso] = useState("");
@@ -213,13 +280,13 @@ export default function PedidosPage() {
   const [senha, setSenha] = useState("");
   const [salvando, setSalvando] = useState(false);
 
-  async function reprocessar() {
+  async function reprocessar(lojaIds: string[]) {
     setErro("");
     setAviso("");
     setReprocessando(true);
     try {
       const dias = Math.min(90, Math.max(1, Math.ceil((Date.now() - new Date(`${de}T00:00:00-03:00`).getTime()) / 86400000) + 1));
-      const r = await sincronizarVendas(dias, setProgresso, lojaReprocessar);
+      const r = await sincronizarVendas(dias, setProgresso, lojaIds);
       if (r.contas === 0) setErro("Nenhuma loja conectada (Mercado Livre ou Shopee). Conecte em Integrações.");
       else setAviso(`Pedidos reprocessados: ${r.vendas} vendas novas ou completadas. O custo de vendas que já tinham custo não foi alterado.`);
       await carregar();
@@ -231,14 +298,14 @@ export default function PedidosPage() {
     }
   }
 
-  async function reprocessarCustos() {
+  async function reprocessarCustos(lojaIds: string[]) {
     setErro("");
     setAviso("");
     setReprocessandoCustos(true);
     try {
       const r = await apiFetch<{ analisadas: number; reprocessadas: number; mantidas: number; manuais: number; semCusto: number; parcial: boolean }>("/api/vendas/reprocessar-custos", {
         method: "POST",
-        body: JSON.stringify({ de, ate, loja: lojaReprocessar }),
+        body: JSON.stringify({ de, ate, lojas: lojaIds }),
       });
       setAviso(
         `Custos reprocessados no período: ${r.reprocessadas} de ${r.analisadas} vendas atualizadas com o custo da data da venda. ` +
@@ -468,17 +535,29 @@ export default function PedidosPage() {
         </div>
         <div className="flex flex-col items-end gap-1">
           <div className="flex flex-wrap items-end justify-end gap-2">
-            {lojas.length > 0 && <SeletorLoja lojas={lojas} valor={lojaReprocessar} onChange={setLojaReprocessar} rotulo="Reprocessar" textoTodas="Todas as lojas" direita />}
-            <button className="btn-ghost" onClick={reprocessarCustos} disabled={reprocessando || reprocessandoCustos} title="Recalcula o custo das vendas do período com o custo cadastrado na data de cada venda">
+            <button className="btn-ghost" onClick={() => setModalLojas("custos")} disabled={reprocessando || reprocessandoCustos} title="Recalcula o custo das vendas do período com o custo cadastrado na data de cada venda">
               {reprocessandoCustos ? "Reprocessando custos…" : "Reprocessar custos"}
             </button>
-            <button className="btn" onClick={reprocessar} disabled={reprocessando || reprocessandoCustos}>
+            <button className="btn" onClick={() => setModalLojas("pedidos")} disabled={reprocessando || reprocessandoCustos}>
               {reprocessando ? "Reprocessando…" : "Reprocessar pedidos"}
             </button>
           </div>
           {progresso && <span className="font-mono text-[11px] text-slate-500">{progresso}</span>}
         </div>
       </div>
+      {modalLojas && (
+        <ModalLojas
+          titulo={modalLojas === "pedidos" ? "Reprocessar pedidos" : "Reprocessar custos"}
+          lojas={lojas}
+          onClose={() => setModalLojas(null)}
+          onConfirmar={(ids) => {
+            const qual = modalLojas;
+            setModalLojas(null);
+            if (qual === "pedidos") reprocessar(ids);
+            else reprocessarCustos(ids);
+          }}
+        />
+      )}
 
       {erro && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erro}</p>}
       {aviso && <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">{aviso}</p>}

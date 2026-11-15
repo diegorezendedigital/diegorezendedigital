@@ -34,7 +34,7 @@ export async function POST(req: Request) {
         .eq("store_id", storeId)
         .gte("sold_at", de.toISOString())
         .lte("sold_at", ate.toISOString());
-      if (b.loja) q = q.eq("ml_user_id", String(b.loja)); // só uma loja (Mercado Livre ou Shopee)
+      if (Array.isArray(b.lojas) && b.lojas.length) q = q.in("ml_user_id", b.lojas.map(String)); // só as lojas escolhidas (Mercado Livre ou Shopee)
       const { data, error } = await q.order("sold_at").range(i, i + 999);
       if (error) throw new Error(error.message);
       vendas.push(...((data ?? []) as typeof vendas));
