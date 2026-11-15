@@ -23,5 +23,31 @@ export async function sincronizarVendas(dias: number, onProgresso: (texto: strin
       if (!r.has_more) break;
     }
   }
-  return { vendas, anuncios, contas: accounts.length };
+  // Lojas da Shopee: pedidos em janelas de 15 dias (limite da Shopee)
+  let lojasShopee = 0;
+  try {
+    const sh = await apiFetch<{ accounts: { shop_id: string; shop_name: string | null; store_name?: string | null }[] }>("/api/shopee/accounts");
+    for (const c of sh.accounts ?? []) {
+      lojasShopee++;
+      const nome = c.store_name || c.shop_name || c.shop_id;
+      let janela = 0;
+      let cursor = "";
+      for (;;) {
+        const r = await apiFetch<{ imported: number; listings_created: number; janela: number; cursor: string; total_janelas: number; has_more: boolean }>("/api/shopee/sync", {
+          method: "POST",
+          body: JSON.stringify({ days: dias, shop_id: c.shop_id, janela, cursor }),
+        });
+        vendas += r.imported;
+        anuncios += r.listings_created;
+        janela = r.janela;
+        cursor = r.cursor;
+        onProgresso(`${nome} (Shopee): período ${Math.min(r.janela + 1, r.total_janelas)} de ${r.total_janelas}…`);
+        if (!r.has_more) break;
+      }
+    }
+  } catch (e) {
+    if (lojasShopee > 0) throw e;
+    /* sem lojas da Shopee conectadas */
+  }
+  return { vendas, anuncios, contas: accounts.length + lojasShopee };
 }

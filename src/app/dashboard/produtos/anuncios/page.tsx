@@ -81,6 +81,7 @@ export default function AnunciosPage() {
   const [empresas, setEmpresas] = useState<Company[]>([]);
   const [mps, setMps] = useState<Marketplace[]>([]);
   const [contas, setContas] = useState<ContaML[]>([]);
+  const [lojasShopee, setLojasShopee] = useState<{ shop_id: string; shop_name: string | null; store_name?: string | null }[]>([]);
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [mpAtivo, setMpAtivo] = useState("mercado_livre");
   const [mapa, setMapa] = useState<"todos" | "nao" | "sim">("todos");
@@ -122,6 +123,11 @@ export default function AnunciosPage() {
       setContas((await apiFetch<{ accounts: ContaML[] }>("/api/ml/accounts")).accounts);
     } catch {
       /* sem contas conectadas ou ainda sem a atualização do banco: a tela continua funcionando */
+    }
+    try {
+      setLojasShopee((await apiFetch<{ accounts: { shop_id: string; shop_name: string | null; store_name?: string | null }[] }>("/api/shopee/accounts")).accounts ?? []);
+    } catch {
+      /* sem lojas da Shopee */
     }
   }, []);
 
@@ -249,6 +255,49 @@ export default function AnunciosPage() {
     }
   }
 
+  async function importarShopee() {
+    setErro("");
+    setAviso("");
+    if (lojasShopee.length === 0) {
+      setErro("Conecte uma loja da Shopee em Integrações primeiro.");
+      return;
+    }
+    setImportando(true);
+    let criados = 0;
+    let atualizados = 0;
+    try {
+      for (const loja of lojasShopee) {
+        const nome = loja.store_name || loja.shop_name || loja.shop_id;
+        let lidos = 0;
+        for (const status of ["NORMAL", "UNLIST"]) {
+          let offset = 0;
+          for (;;) {
+            let r: { created: number; updated: number; processed: number; total: number; next_offset: number; has_more: boolean };
+            try {
+              r = await apiFetch("/api/shopee/anuncios", { method: "POST", body: JSON.stringify({ shop_id: loja.shop_id, status, offset }) });
+            } catch (e) {
+              if (status === "NORMAL") throw e;
+              break; // desativados são extras: se falhar, segue com o resto
+            }
+            criados += r.created;
+            atualizados += r.updated;
+            lidos += r.processed;
+            offset = r.next_offset;
+            setProgresso(`${nome} (Shopee): ${lidos} anúncios lidos…`);
+            if (!r.has_more) break;
+          }
+        }
+      }
+      setAviso(`${criados} anúncios novos e ${atualizados} atualizados da Shopee. Anúncios com SKU igual ao de um produto do armazém já vieram ligados a ele.`);
+      await carregar();
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setImportando(false);
+      setProgresso("");
+    }
+  }
+
   async function importar() {
     setErro("");
     setAviso("");
@@ -363,14 +412,16 @@ export default function AnunciosPage() {
           <button className="btn-ghost" onClick={vincularPorSku} disabled={trabalhando || importando} title="Liga cada anúncio sem produto ao produto do armazém que tem exatamente o mesmo SKU">
             Vincular por SKU
           </button>
-          <button className="btn-ghost" onClick={puxarFrete} disabled={trabalhando || importando}>
-            Puxar frete do Mercado Livre
-          </button>
+          {mpAtivo === "mercado_livre" && (
+            <button className="btn-ghost" onClick={puxarFrete} disabled={trabalhando || importando}>
+              Puxar frete do Mercado Livre
+            </button>
+          )}
           <button className="btn-ghost" onClick={rodarAutomaticos} disabled={trabalhando || importando}>
             Rodar preço automático ({totalAuto})
           </button>
-          <button className="btn" onClick={importar} disabled={importando}>
-            {importando ? "Importando…" : "Importar do Mercado Livre"}
+          <button className="btn" onClick={mpAtivo === "shopee" ? importarShopee : importar} disabled={importando}>
+            {importando ? "Importando…" : mpAtivo === "shopee" ? "Importar da Shopee" : "Importar do Mercado Livre"}
           </button>
         </div>
       </div>
