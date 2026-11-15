@@ -238,7 +238,7 @@ export default function PedidosPage() {
     try {
       const r = await apiFetch<{ analisadas: number; reprocessadas: number; mantidas: number; manuais: number; semCusto: number; parcial: boolean }>("/api/vendas/reprocessar-custos", {
         method: "POST",
-        body: JSON.stringify({ de, ate }),
+        body: JSON.stringify({ de, ate, loja: lojaReprocessar }),
       });
       setAviso(
         `Custos reprocessados no período: ${r.reprocessadas} de ${r.analisadas} vendas atualizadas com o custo da data da venda. ` +

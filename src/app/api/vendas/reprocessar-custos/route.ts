@@ -28,14 +28,14 @@ export async function POST(req: Request) {
 
     const vendas: { id: string; product_id: string | null; listing_id: string | null; quantity: number; sale_price: number; fees_total: number; shipping_cost: number; cost_price: number; cost_manual: boolean; sold_at: string }[] = [];
     for (let i = 0; i < 20000; i += 1000) {
-      const { data, error } = await admin
+      let q = admin
         .from("sales")
         .select("id, product_id, listing_id, quantity, sale_price, fees_total, shipping_cost, cost_price, cost_manual, sold_at")
         .eq("store_id", storeId)
         .gte("sold_at", de.toISOString())
-        .lte("sold_at", ate.toISOString())
-        .order("sold_at")
-        .range(i, i + 999);
+        .lte("sold_at", ate.toISOString());
+      if (b.loja) q = q.eq("ml_user_id", String(b.loja)); // só uma loja (Mercado Livre ou Shopee)
+      const { data, error } = await q.order("sold_at").range(i, i + 999);
       if (error) throw new Error(error.message);
       vendas.push(...((data ?? []) as typeof vendas));
       if ((data ?? []).length < 1000) break;
