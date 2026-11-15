@@ -723,7 +723,7 @@ export default function PedidosPage() {
                                   titulo={`Comissão · ${NOME_MP[l.mp] ?? "Marketplace"}`}
                                   linhas={
                                     l.taxaFixa > 0
-                                      ? [["Comissão (percentual)", brl(l.comissao - l.taxaFixa)], ["Taxa fixa", brl(l.taxaFixa)], ["Total cobrado", brl(l.comissao)], ["% da venda", f(l.comissao) ?? "—"]]
+                                      ? [["Comissão (percentual)", `${brl(l.comissao - l.taxaFixa)} · ${f(l.comissao - l.taxaFixa) ?? "—"}`], ["Taxa fixa", `${brl(l.taxaFixa)} · ${f(l.taxaFixa) ?? "—"}`], ["Total cobrado", `${brl(l.comissao)} · ${f(l.comissao) ?? "—"}`]]
                                       : [[`Cobrado ${l.mp === "shopee" ? "pela" : "pelo"} ${NOME_MP[l.mp] ?? "marketplace"}`, brl(l.comissao)], ["% da venda", f(l.comissao) ?? "—"]]
                                   }
                                   nota={l.mp === "shopee" ? "Tarifa da Shopee: comissão percentual mais uma taxa fixa por item vendido." : "Tarifa de venda do Mercado Livre (percentual + valor fixo por unidade, quando houver)."}
