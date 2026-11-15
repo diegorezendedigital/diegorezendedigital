@@ -9,11 +9,11 @@ import { CANAIS, type CanalId } from "@/lib/taxas-publicas";
 // O que muda de um canal para outro: onde a margem/preço são salvos no produto e quais campos aparecem.
 const CFG: Record<CanalId, {
   margemKey: string; precoKey: string; configKey: string;
-  freteGratis: boolean; fretePago: boolean; comissaoEditavel: boolean; cpf: boolean; rotuloTarifa: string;
+  freteGratis: boolean; fretePago: boolean; comissaoEditavel: boolean; cpf: boolean; rotuloTarifa: string; afiliadoSeparado: boolean;
 }> = {
-  tiktok_shop: { margemKey: "tiktok_margem", precoKey: "tiktok_preco", configKey: "tiktok_config", freteGratis: true, fretePago: false, comissaoEditavel: false, cpf: false, rotuloTarifa: "Tarifa por item" },
-  shopee: { margemKey: "shopee_margem", precoKey: "shopee_preco", configKey: "shopee_config", freteGratis: false, fretePago: false, comissaoEditavel: false, cpf: true, rotuloTarifa: "Taxa fixa por item" },
-  mercado_livre: { margemKey: "promo_min_margin", precoKey: "ml_preco", configKey: "ml_config", freteGratis: false, fretePago: true, comissaoEditavel: true, cpf: false, rotuloTarifa: "Taxa fixa por item" },
+  tiktok_shop: { margemKey: "tiktok_margem", precoKey: "tiktok_preco", configKey: "tiktok_config", freteGratis: true, fretePago: false, comissaoEditavel: false, cpf: false, rotuloTarifa: "Tarifa por item", afiliadoSeparado: false },
+  shopee: { margemKey: "shopee_margem", precoKey: "shopee_preco", configKey: "shopee_config", freteGratis: false, fretePago: false, comissaoEditavel: false, cpf: true, rotuloTarifa: "Taxa fixa por item", afiliadoSeparado: true },
+  mercado_livre: { margemKey: "promo_min_margin", precoKey: "ml_preco", configKey: "ml_config", freteGratis: false, fretePago: true, comissaoEditavel: true, cpf: false, rotuloTarifa: "Taxa fixa por item", afiliadoSeparado: false },
 };
 
 const semAcento = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -46,7 +46,7 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
   const [usarAds, setUsarAds] = useState(false);
   const [roas, setRoas] = useState("10");
   const [acos, setAcos] = useState("10");
-  const [afiliado, setAfiliado] = useState("2");
+  const [afiliado, setAfiliado] = useState(CFG[canal].afiliadoSeparado ? "0" : "2");
 
   const [margemAlvo, setMargemAlvo] = useState("15");
   const [sobraAlvo, setSobraAlvo] = useState("");
@@ -125,7 +125,7 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
         setUsarAds(cfg.usarAds === true);
         setRoas(String(cfg.roas ?? "10"));
         setAcos(String(cfg.acos ?? "10"));
-        setAfiliado(String(cfg.afiliado ?? "2"));
+        setAfiliado(String(cfg.afiliado ?? (cfgCanal.afiliadoSeparado ? "0" : "2")));
       }
       setMargemAlvo(campo(Number(margemSalva)));
       setBase("pct");
@@ -206,7 +206,8 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
   const custoN = num(custo);
   const margemN = num(margemAlvo);
   const adsPct = usarAds ? num(acos) : 0;
-  const afiliadoPct = usarAds ? num(afiliado) : 0;
+  // Na Shopee o afiliado vale com ou sem publicidade; nos outros canais ele faz parte do bloco de ads.
+  const afiliadoPct = cfgCanal.afiliadoSeparado || usarAds ? num(afiliado) : 0;
 
   // Comissão e tarifa da faixa do preço (a tabela de cada canal está em taxas-publicas).
   // "metade" (Mercado Livre abaixo de R$ 12,50): a taxa fixa é metade do preço, tratada como +50% de comissão.
@@ -439,6 +440,13 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
                 <p className="mt-1 text-[11px] text-slate-500">Nas 2 faixas de preço</p>
               </div>
             )}
+            {cfgCanal.afiliadoSeparado && (
+              <div>
+                <label className="label">Comissão do afiliado (%)</label>
+                <input className="input" inputMode="decimal" value={afiliado} onChange={(e) => setAfiliado(e.target.value)} />
+                <p className="mt-1 text-[11px] text-slate-500">Vale com ou sem publicidade</p>
+              </div>
+            )}
             {cfgCanal.fretePago && (
               <div>
                 <label className="label">Frete pago por você (R$)</label>
@@ -480,7 +488,7 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
                 // Ao ligar o ads: ROAS 10 (ACOS 10%) e afiliado em 2%; dá para editar depois.
                 if (!usarAds) {
                   mudarRoas("10");
-                  setAfiliado("2");
+                  if (!cfgCanal.afiliadoSeparado) setAfiliado("2");
                 }
                 setUsarAds((v) => !v);
               }}
@@ -505,10 +513,12 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
                 <p className="col-span-2 -mt-1 text-[11px] text-slate-600">
                   ROAS e ACOS andam juntos: ROAS {num(roas) > 0 ? campo(num(roas)) : "—"} = {pct(adsPct)} do preço de venda.
                 </p>
-                <div className="col-span-2">
-                  <label className="label">Comissão do afiliado (%)</label>
-                  <input className="input" inputMode="decimal" value={afiliado} onChange={(e) => setAfiliado(e.target.value)} />
-                </div>
+                {!cfgCanal.afiliadoSeparado && (
+                  <div className="col-span-2">
+                    <label className="label">Comissão do afiliado (%)</label>
+                    <input className="input" inputMode="decimal" value={afiliado} onChange={(e) => setAfiliado(e.target.value)} />
+                  </div>
+                )}
               </div>
             )}
           </div>
