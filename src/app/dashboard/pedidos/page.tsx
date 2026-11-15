@@ -65,7 +65,7 @@ const primeiroDoMes = () => `${hojeBR().slice(0, 8)}01`;
 
 export default function PedidosPage() {
   const [linhas, setLinhas] = useState<Linha[] | null>(null);
-  const [lojas, setLojas] = useState<{ id: string; nome: string }[]>([]);
+  const [lojas, setLojas] = useState<{ id: string; nome: string; mp: string }[]>([]);
   const [erro, setErro] = useState("");
   const [de, setDe] = useState(hojeBR());
   const [ate, setAte] = useState(hojeBR());
@@ -80,11 +80,18 @@ export default function PedidosPage() {
       .then((r) =>
         setLojas(
           r.accounts
-            .map((c) => ({ id: c.ml_user_id, nome: c.store_name || c.nickname || c.ml_user_id }))
+            .map((c) => ({ id: c.ml_user_id, nome: c.store_name || c.nickname || c.ml_user_id, mp: "Mercado Livre" }))
             .sort((x, y) => x.nome.localeCompare(y.nome, "pt-BR"))
         )
       )
       .catch(() => setLojas([]));
+    // Lojas da Shopee conectadas (se houver) entram na mesma lista
+    apiFetch<{ accounts: { shop_id: string; shop_name: string | null; store_name?: string | null }[] }>("/api/shopee/accounts")
+      .then((r) => {
+        const sh = (r.accounts ?? []).map((c) => ({ id: String(c.shop_id), nome: c.store_name || c.shop_name || String(c.shop_id), mp: "Shopee" }));
+        if (sh.length) setLojas((atual) => [...atual.filter((x) => x.mp !== "Shopee"), ...sh]);
+      })
+      .catch(() => undefined);
   }, []);
   const nomeLoja = (id: string) => lojas.find((x) => x.id === id)?.nome ?? "";
   useEffect(() => {
@@ -436,16 +443,22 @@ export default function PedidosPage() {
             </button>
           ))}
         </div>
-        {lojas.length > 1 && (
+        {lojas.length > 0 && (
           <div>
             <label className="label">Loja</label>
-            <div className="flex flex-wrap gap-1.5">
-              {[{ id: "", nome: "Todas" }, ...lojas].map((l) => (
-                <button key={l.id || "todas"} className={`rounded-md border px-3 py-2 text-sm ${lojaSel === l.id ? "border-brand bg-brand-light text-brand" : "border-slate-200 text-slate-700 hover:bg-slate-100"}`} onClick={() => escolherLoja(l.id)}>
-                  {l.nome}
-                </button>
-              ))}
-            </div>
+            <select className="input h-[38px] w-56 py-0" value={lojaSel} onChange={(e) => escolherLoja(e.target.value)} aria-label="Loja">
+              <option value="">Todas as lojas</option>
+              {["Mercado Livre", "Shopee", "TikTok Shop"].map((mp) => {
+                const doMp = lojas.filter((x) => x.mp === mp);
+                return doMp.length > 0 ? (
+                  <optgroup key={mp} label={mp}>
+                    {doMp.map((l) => (
+                      <option key={l.id} value={l.id}>{l.nome}</option>
+                    ))}
+                  </optgroup>
+                ) : null;
+              })}
+            </select>
           </div>
         )}
         <div className="min-w-[240px] flex-1">
