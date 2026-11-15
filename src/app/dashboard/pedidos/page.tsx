@@ -4,6 +4,7 @@ import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useS
 import Link from "next/link";
 import { apiFetch, supabase } from "@/lib/supabase/client";
 import { sincronizarVendas } from "@/lib/sincronizar";
+import { CANAIS, faixaDoPreco } from "@/lib/taxas-publicas";
 import { Sale, brl, mensagemErro, pct } from "@/lib/types";
 
 type Linha = {
@@ -17,6 +18,7 @@ type Linha = {
   contaId: string;
   preco: number;
   comissao: number;
+  comissaoPadrao: number; // comissão percentual padrão da faixa de preço (Shopee)
   taxaFixa: number; // parte fixa (R$) da tarifa, quando o marketplace informa (Shopee)
   mp: string;
   frete: number;
@@ -35,6 +37,9 @@ type Chave = "preco" | "comissao" | "frete" | "freteComprador" | "impostos" | "c
 type ColOrdem = "data" | "produto" | "sku" | "uf" | "preco" | "repasse" | "comissao" | "frete" | "freteComprador" | "impostos" | "custo" | "sobra" | "margem" | "roi";
 type Ordem = { col: ColOrdem; dir: "asc" | "desc" };
 const ORDEM_PADRAO: Ordem = { col: "data", dir: "desc" };
+const CANAL_SHOPEE = CANAIS.find((c) => c.id === "shopee")!;
+// Comissão percentual padrão da Shopee para o preço do item (a tabela por faixa de preço)
+const comissaoPadraoShopee = (preco: number, qtd: number) => (preco * faixaDoPreco(CANAL_SHOPEE, preco / Math.max(qtd, 1)).comissao) / 100;
 const NOME_MP: Record<string, string> = { mercado_livre: "Mercado Livre", shopee: "Shopee", tiktok_shop: "TikTok Shop" };
 const COLUNAS_TEXTO = new Set<ColOrdem>(["produto", "sku", "uf"]);
 const NOME_COLUNA: Record<ColOrdem, string> = {
@@ -399,6 +404,7 @@ export default function PedidosPage() {
             preco,
             comissao: Number(s.fees_total) || 0,
             taxaFixa: Number(s.fees_fixed) || 0,
+            comissaoPadrao: s.marketplace_id === "shopee" ? comissaoPadraoShopee(preco, Number(s.quantity) || 1) : 0,
             mp: s.marketplace_id || "mercado_livre",
             frete: Number(s.shipping_cost) || 0,
             freteComprador: Number(s.buyer_shipping) || 0,
@@ -448,6 +454,7 @@ export default function PedidosPage() {
         sobra,
         comissao: soma(itens, "comissao"),
         taxaFixa: itens.reduce((t, i) => t + i.taxaFixa, 0),
+        comissaoPadrao: itens.reduce((t, i) => t + i.comissaoPadrao, 0),
         frete: soma(itens, "frete"),
         freteComprador: soma(itens, "freteComprador"),
         impostos: soma(itens, "impostos"),
@@ -723,14 +730,19 @@ export default function PedidosPage() {
                                   titulo={`Comissão · ${NOME_MP[l.mp] ?? "Marketplace"}`}
                                   linhas={
                                     l.taxaFixa > 0
-                                      ? [["Comissão (percentual)", `${brl(l.comissao - l.taxaFixa)} · ${f(l.comissao - l.taxaFixa) ?? "—"}`], ["Taxa fixa", `${brl(l.taxaFixa)} · ${f(l.taxaFixa) ?? "—"}`], ["Total cobrado", `${brl(l.comissao)} · ${f(l.comissao) ?? "—"}`]]
+                                      ? [
+                                          ["Comissão padrão", `${brl(l.comissaoPadrao)} · ${f(l.comissaoPadrao) ?? "—"}`],
+                                          ["Taxa fixa", `${brl(l.taxaFixa)} · ${f(l.taxaFixa) ?? "—"}`],
+                                          ["Demais taxas", `${brl(Math.max(0, l.comissao - l.comissaoPadrao - l.taxaFixa))} · ${f(Math.max(0, l.comissao - l.comissaoPadrao - l.taxaFixa)) ?? "—"}`],
+                                          ["Total cobrado", `${brl(l.comissao)} · ${f(l.comissao) ?? "—"}`],
+                                        ]
                                       : [[`Cobrado ${l.mp === "shopee" ? "pela" : "pelo"} ${NOME_MP[l.mp] ?? "marketplace"}`, brl(l.comissao)], ["% da venda", f(l.comissao) ?? "—"]]
                                   }
-                                  nota={l.mp === "shopee" ? "Tarifa da Shopee: comissão percentual mais uma taxa fixa por item vendido." : "Tarifa de venda do Mercado Livre (percentual + valor fixo por unidade, quando houver)."}
+                                  nota={l.mp === "shopee" ? "Tarifa da Shopee: comissão padrão (por faixa de preço) + taxa fixa por item + demais taxas do extrato (serviço adicional, transação…)." : "Tarifa de venda do Mercado Livre (percentual + valor fixo por unidade, quando houver)."}
                                 >
                                   {brl(l.comissao)}
                                   <Pc v={f(l.comissao)} />
-                                  {l.taxaFixa > 0 && <div className="text-[11px] text-slate-500">inclui fixa {brl(l.taxaFixa)}</div>}
+                                  {l.taxaFixa > 0 && <div className="text-[11px] text-slate-500">fixa {brl(l.taxaFixa)} · demais {brl(Math.max(0, l.comissao - l.comissaoPadrao - l.taxaFixa))}</div>}
                                 </Tip>
                               </td>
                               <td className="px-4 py-5 text-right">
