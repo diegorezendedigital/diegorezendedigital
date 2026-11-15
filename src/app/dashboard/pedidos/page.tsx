@@ -194,7 +194,14 @@ export default function PedidosPage() {
     }
     setSalvando(true);
     try {
-      await apiFetch("/api/vendas/custo", { method: "POST", body: JSON.stringify({ sale_id: l.id, custo: v, senha }) });
+      const r = await apiFetch<{ produto?: string; sku?: string | null }>("/api/vendas/custo", { method: "POST", body: JSON.stringify({ sale_id: l.id, custo: v, senha }) });
+      setAviso(
+        r.produto === "sim"
+          ? `Custo salvo na venda e também no produto ${r.sku ?? ""} do armazém.`
+          : r.produto === "ja_tinha_custo"
+          ? `Custo salvo na venda. O produto ${r.sku ?? ""} já tinha custo no armazém, então ele não foi alterado.`
+          : "Custo salvo na venda. Não achei produto do armazém ligado a ela (ligue em Anúncios Marketplace para atualizar o custo do produto)."
+      );
       setEditId(null);
       setCustoManual("");
       setSenha("");
