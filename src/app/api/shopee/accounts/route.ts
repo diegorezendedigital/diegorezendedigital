@@ -25,6 +25,7 @@ export async function GET(req: Request) {
       region: c.region,
       company_id: c.company_id,
       connected_at: c.connected_at,
+      refresh_expires_at: c.refresh_expires_at,
       last_synced_at: c.last_synced_at,
       teste: shopeeEhTeste((c.host as string | null) ?? undefined),
       status: !c.refresh_expires_at || new Date(c.refresh_expires_at).getTime() > Date.now() ? "ativo" : "reconectar",

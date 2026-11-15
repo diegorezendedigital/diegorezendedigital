@@ -11,10 +11,18 @@ type LojaShopee = {
   region: string | null;
   company_id: string | null;
   connected_at: string;
+  refresh_expires_at: string | null;
   last_synced_at: string | null;
   teste: boolean;
   status: "ativo" | "reconectar";
 };
+
+const AVISO_DIAS = 15;
+// Dias que faltam para o acesso da loja vencer (negativo = já venceu; null = sem data)
+function diasParaVencer(iso: string | null): number | null {
+  if (!iso) return null;
+  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+}
 
 export default function PainelShopee({ empresas, aoContar }: { empresas: Company[]; aoContar?: (n: number) => void }) {
   const [lojas, setLojas] = useState<LojaShopee[]>([]);
@@ -137,8 +145,24 @@ notify pgrst, 'reload schema';`;
         </div>
       )}
 
+      {lojas.filter((c) => { const d = diasParaVencer(c.refresh_expires_at); return d !== null && d <= AVISO_DIAS; }).map((c) => {
+        const d = diasParaVencer(c.refresh_expires_at)!;
+        return (
+          <div key={c.shop_id} className={`flex flex-wrap items-center justify-between gap-3 rounded-md p-3 text-sm ${d <= 0 ? "bg-red-50 text-red-800" : "bg-amber-50 text-amber-800"}`}>
+            <p>
+              {d <= 0 ? (
+                <>O acesso da loja <b>{c.store_name || c.shop_name || c.shop_id}</b> na Shopee venceu. Reconecte para voltar a receber os dados.</>
+              ) : (
+                <>O acesso da loja <b>{c.store_name || c.shop_name || c.shop_id}</b> na Shopee vence em <b>{d} {d === 1 ? "dia" : "dias"}</b> ({new Date(c.refresh_expires_at!).toLocaleDateString("pt-BR")}). Reconecte antes para não perder a ligação.</>
+              )}
+            </p>
+            <button className="btn" onClick={conectar}>Reconectar agora</button>
+          </div>
+        );
+      })}
+
       <div className="card overflow-x-auto p-0">
-        <table className="w-full min-w-[820px] text-sm">
+        <table className="w-full min-w-[900px] text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-left text-[13px] font-medium text-slate-500">
               <th className="p-3">Nome da sua loja</th>
@@ -147,6 +171,7 @@ notify pgrst, 'reload schema';`;
               <th className="p-3">Ambiente</th>
               <th className="p-3">Status</th>
               <th className="p-3">Conectada em</th>
+              <th className="p-3">Acesso expira em</th>
               <th className="p-3">Ações</th>
             </tr>
           </thead>
@@ -187,6 +212,19 @@ notify pgrst, 'reload schema';`;
                   </span>
                 </td>
                 <td className="p-3 font-mono text-xs">{new Date(c.connected_at).toLocaleString("pt-BR")}</td>
+                <td className="p-3">
+                  {(() => {
+                    const d = diasParaVencer(c.refresh_expires_at);
+                    if (d === null || !c.refresh_expires_at) return <span className="text-slate-400">—</span>;
+                    const cor = d <= 0 ? "text-red-700" : d <= AVISO_DIAS ? "text-amber-700" : "text-slate-600";
+                    return (
+                      <div className={cor}>
+                        <div className="font-mono text-xs">{new Date(c.refresh_expires_at).toLocaleDateString("pt-BR")}</div>
+                        <div className="text-[11px] font-semibold">{d <= 0 ? "vencido" : d === 1 ? "falta 1 dia" : `faltam ${d} dias`}</div>
+                      </div>
+                    );
+                  })()}
+                </td>
                 <td className="whitespace-nowrap p-3">
                   <button className="mr-4 text-brand hover:underline" onClick={conectar}>Reconectar</button>
                   {confirmando === c.shop_id ? (
