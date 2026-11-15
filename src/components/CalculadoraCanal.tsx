@@ -13,7 +13,7 @@ const CFG: Record<CanalId, {
 }> = {
   tiktok_shop: { margemKey: "tiktok_margem", precoKey: "tiktok_preco", configKey: "tiktok_config", freteGratis: true, fretePago: false, comissaoEditavel: false, cpf: false, rotuloTarifa: "Tarifa por item", afiliadoSeparado: false },
   shopee: { margemKey: "shopee_margem", precoKey: "shopee_preco", configKey: "shopee_config", freteGratis: false, fretePago: false, comissaoEditavel: false, cpf: true, rotuloTarifa: "Taxa fixa por item", afiliadoSeparado: true },
-  mercado_livre: { margemKey: "promo_min_margin", precoKey: "ml_preco", configKey: "ml_config", freteGratis: false, fretePago: true, comissaoEditavel: true, cpf: false, rotuloTarifa: "Taxa fixa por item", afiliadoSeparado: false },
+  mercado_livre: { margemKey: "promo_min_margin", precoKey: "ml_preco", configKey: "ml_config", freteGratis: false, fretePago: true, comissaoEditavel: true, cpf: false, rotuloTarifa: "Taxa fixa por item", afiliadoSeparado: true },
 };
 
 const semAcento = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
