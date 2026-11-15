@@ -1,12 +1,6 @@
 import Link from "next/link";
 import RodapeLegal from "@/components/RodapeLegal";
 
-const marketplaces = [
-  { nome: "Mercado Livre", taxa: "10% a 14% + taxa fixa abaixo de R$ 79" },
-  { nome: "Shopee", taxa: "14% a 20% + R$ 4,50 a R$ 26 por item" },
-  { nome: "TikTok Shop", taxa: "6% a 10% + 6% de frete grátis + R$ 4 a R$ 6 por item" },
-];
-
 export default function LandingPage() {
   return (
     <main className="min-h-screen bg-paper font-body text-ink antialiased">
@@ -22,9 +16,6 @@ export default function LandingPage() {
             </Link>
             <Link href="#videos" className="hidden sm:inline hover:text-gold transition-colors">
               Vídeos
-            </Link>
-            <Link href="#como-funciona" className="hidden md:inline hover:text-gold transition-colors">
-              Como trabalho
             </Link>
             <Link href="/calculadora-gratis" className="hover:text-gold transition-colors">
               Calculadora grátis
@@ -135,10 +126,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl px-6 py-20">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-clay mb-4">Canal no YouTube</p>
           <h2 className="font-display text-3xl md:text-4xl font-semibold mb-3">Videoaulas gratuitas</h2>
-          <p className="text-ink/60 mb-10 max-w-2xl">
-            Conteúdo direto sobre vender melhor em marketplace. Esse é o primeiro vídeo, e novos vão aparecer aqui à
-            medida que eu publicar.
-          </p>
+          <p className="text-ink/60 mb-10 max-w-2xl">Conteúdo direto sobre vender melhor em marketplace.</p>
           <div className="grid lg:grid-cols-3 gap-8 items-start">
             <div className="lg:col-span-2 overflow-hidden rounded-2xl bg-inkdeep shadow-xl">
               <div className="aspect-video">
@@ -168,64 +156,7 @@ export default function LandingPage() {
                   Abrir a calculadora
                 </Link>
               </div>
-              <div className="rounded-2xl border border-dashed border-line p-6 text-ink/60">
-                <p className="font-medium text-ink/80 mb-1">Em breve</p>
-                <p className="leading-relaxed">Mais videoaulas gratuitas e cursos pagos mais aprofundados.</p>
-              </div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Como trabalho */}
-      <section id="como-funciona" className="border-t border-line bg-white/40">
-        <div className="mx-auto max-w-6xl px-6 py-20">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-clay mb-4">Para quem quer resultado</p>
-          <h2 className="font-display text-3xl md:text-4xl font-semibold mb-3">Gestão de marketplace com sistema próprio</h2>
-          <p className="text-ink/60 mb-12 max-w-2xl">
-            Além do conteúdo, eu cuido da operação de lojas como uma agência. Os clientes ficam conectados ao meu
-            sistema, e isso me deixa acompanhar de perto e mostrar o resultado com número.
-          </p>
-          <div className="grid md:grid-cols-3 gap-10">
-            <div>
-              <p className="font-mono text-clay text-sm mb-3">01 · Operação</p>
-              <h3 className="font-display text-xl font-medium mb-2">Processos e gestão</h3>
-              <p className="text-ink/70 leading-relaxed">
-                Estruturo a venda online da empresa: anúncios, preços, estoque e rotina, do início ou de uma operação
-                que já existe.
-              </p>
-            </div>
-            <div>
-              <p className="font-mono text-clay text-sm mb-3">02 · Sistema</p>
-              <h3 className="font-display text-xl font-medium mb-2">Lucro real por venda</h3>
-              <p className="text-ink/70 leading-relaxed">
-                Pedidos, taxas, frete, impostos e custo do produto no mesmo painel, para cada decisão de preço sair do
-                número e não do palpite.
-              </p>
-            </div>
-            <div>
-              <p className="font-mono text-clay text-sm mb-3">03 · Resultado</p>
-              <h3 className="font-display text-xl font-medium mb-2">Acompanhamento e DRE</h3>
-              <p className="text-ink/70 leading-relaxed">
-                Você enxerga onde a loja ganha e onde perde dinheiro, com relatórios claros para decidir o próximo passo.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Marketplaces */}
-      <section id="marketplaces" className="border-t border-line">
-        <div className="mx-auto max-w-6xl px-6 py-20">
-          <h2 className="font-display text-3xl font-semibold mb-2">Marketplaces que acompanho</h2>
-          <p className="text-ink/60 mb-10">Taxas de referência prontas — ajuste conforme sua categoria.</p>
-          <div className="divide-y divide-line border-y border-line">
-            {marketplaces.map((m) => (
-              <div key={m.nome} className="flex items-center justify-between py-4 font-mono text-sm">
-                <span className="font-body text-base">{m.nome}</span>
-                <span className="text-clay">{m.taxa}</span>
-              </div>
-            ))}
           </div>
         </div>
       </section>
@@ -235,7 +166,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl px-6 py-20 text-center">
           <h2 className="font-display text-3xl md:text-4xl font-semibold mb-3">Pare de vender no escuro.</h2>
           <p className="text-paper/70 mb-8 max-w-xl mx-auto">
-            Comece pela calculadora grátis ou fale comigo para ter a gestão da sua loja acompanhada de perto.
+            Comece pela calculadora grátis ou fale comigo sobre a gestão da sua loja.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
             <Link
