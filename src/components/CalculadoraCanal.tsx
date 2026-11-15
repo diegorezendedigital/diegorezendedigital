@@ -649,8 +649,14 @@ export default function CalculadoraCanal({ canal, publico = false }: { canal: Ca
                   href={linkContato("Olá, Diego! Vim pela calculadora grátis e quero falar com você.")}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-xl border border-emerald-600 px-5 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-500 bg-white px-5 py-2.5 text-sm font-semibold text-emerald-700 shadow-[0_0_14px_rgba(16,185,129,0.45)] transition hover:bg-emerald-50 hover:shadow-[0_0_22px_rgba(16,185,129,0.8)]"
                 >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5 drop-shadow-[0_0_4px_rgba(16,185,129,0.9)]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.5L3 20.5l1.6-5.4A8.5 8.5 0 1 1 21 11.5z" />
+                    <circle cx="8.5" cy="11.5" r="0.6" fill="currentColor" />
+                    <circle cx="12" cy="11.5" r="0.6" fill="currentColor" />
+                    <circle cx="15.5" cy="11.5" r="0.6" fill="currentColor" />
+                  </svg>
                   Falar no WhatsApp
                 </a>
               </div>
