@@ -17,11 +17,14 @@ export default function LandingPage() {
             Diego Rezende <span className="text-gold">Digital</span>
           </span>
           <nav className="flex items-center gap-6 text-sm">
-            <Link href="#como-funciona" className="hover:text-gold transition-colors">
-              Como funciona
+            <Link href="#quem-sou" className="hidden sm:inline hover:text-gold transition-colors">
+              Quem sou
             </Link>
-            <Link href="#marketplaces" className="hover:text-gold transition-colors">
-              Marketplaces
+            <Link href="#videos" className="hidden sm:inline hover:text-gold transition-colors">
+              Vídeos
+            </Link>
+            <Link href="#como-funciona" className="hidden md:inline hover:text-gold transition-colors">
+              Como trabalho
             </Link>
             <Link href="/calculadora-gratis" className="hover:text-gold transition-colors">
               Calculadora grátis
@@ -41,7 +44,7 @@ export default function LandingPage() {
         <div className="grid md:grid-cols-2 gap-16 items-center">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.2em] text-clay mb-6">
-              Gestão de lucro para quem vende em marketplace
+              Gestão de marketplace · Aulas · Ferramentas
             </p>
             <h1 className="font-display text-5xl md:text-6xl font-semibold leading-[1.05] tracking-tight">
               Cada venda tem um preço.
@@ -49,21 +52,21 @@ export default function LandingPage() {
               Poucas têm <span className="text-gold">margem real.</span>
             </h1>
             <p className="mt-6 text-lg text-ink/70 max-w-md leading-relaxed">
-              Conecte suas lojas, cadastre seus produtos e descubra, taxa por taxa, quanto sobra de verdade em cada
-              marketplace.
+              Sou o Diego. Trabalho com marketplace desde os 16 anos e ensino, no YouTube e aqui, como vender
+              online olhando para o número que importa: quanto sobra de verdade em cada venda.
             </p>
             <div className="mt-10 flex items-center gap-4">
               <Link
-                href="/calculadora-gratis"
+                href="#videos"
                 className="rounded-full bg-ink text-paper px-7 py-3.5 font-medium hover:bg-inkdeep transition-colors"
               >
-                Usar a calculadora grátis
+                Assistir ao vídeo
               </Link>
               <Link
-                href="/login"
+                href="/calculadora-gratis"
                 className="text-ink/70 hover:text-ink underline underline-offset-4 decoration-line"
               >
-                Já tenho conta
+                Usar a calculadora grátis
               </Link>
             </div>
           </div>
@@ -98,30 +101,113 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Como funciona */}
+      {/* Quem sou */}
+      <section id="quem-sou" className="border-t border-line bg-white/40">
+        <div className="mx-auto max-w-6xl px-6 py-20 grid md:grid-cols-5 gap-12">
+          <div className="md:col-span-2">
+            <p className="font-mono text-xs uppercase tracking-[0.2em] text-clay mb-4">Quem sou</p>
+            <h2 className="font-display text-3xl md:text-4xl font-semibold leading-tight">
+              Marketplace é o meu trabalho desde os 16 anos.
+            </h2>
+          </div>
+          <div className="md:col-span-3 space-y-5 text-ink/75 text-lg leading-relaxed">
+            <p>
+              Fui gestor de várias empresas, criei processos e levei para o marketplace negócios que ainda não vendiam
+              online. Passei por sistemas, ERPs e integradores do dia a dia do vendedor, como Bling, Olist e Upseller.
+            </p>
+            <p>
+              O Diego Rezende Digital nasceu para juntar isso em um lugar só: conteúdo para quem quer aprender e uma
+              gestão próxima para quem quer resultado.
+            </p>
+            <div className="flex flex-wrap gap-2 pt-2">
+              {["Gestão de marketplace", "Processos", "ERP e integradores", "Bling", "Olist", "Upseller"].map((t) => (
+                <span key={t} className="rounded-full border border-line bg-paper px-4 py-1.5 text-sm text-ink/80">
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Vídeos */}
+      <section id="videos" className="border-t border-line">
+        <div className="mx-auto max-w-6xl px-6 py-20">
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-clay mb-4">Canal no YouTube</p>
+          <h2 className="font-display text-3xl md:text-4xl font-semibold mb-3">Videoaulas gratuitas</h2>
+          <p className="text-ink/60 mb-10 max-w-2xl">
+            Conteúdo direto sobre vender melhor em marketplace. Esse é o primeiro vídeo, e novos vão aparecer aqui à
+            medida que eu publicar.
+          </p>
+          <div className="grid lg:grid-cols-3 gap-8 items-start">
+            <div className="lg:col-span-2 overflow-hidden rounded-2xl bg-inkdeep shadow-xl">
+              <div className="aspect-video">
+                <iframe
+                  className="h-full w-full"
+                  src="https://www.youtube-nocookie.com/embed/pkPr5KZJ5UA"
+                  title="Vídeo do canal Diego Rezende Digital"
+                  loading="lazy"
+                  allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
+              </div>
+            </div>
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-line bg-white/60 p-6">
+                <p className="font-mono text-xs uppercase tracking-widest text-clay mb-2">Material gratuito</p>
+                <h3 className="font-display text-xl font-medium mb-2">Calculadora de lucro</h3>
+                <p className="text-ink/70 leading-relaxed mb-4">
+                  Para acompanhar as aulas: simule uma venda e veja quanto cada marketplace desconta antes de definir o
+                  preço.
+                </p>
+                <Link
+                  href="/calculadora-gratis"
+                  className="inline-block rounded-full bg-ink text-paper px-6 py-3 font-medium hover:bg-inkdeep transition-colors"
+                >
+                  Abrir a calculadora
+                </Link>
+              </div>
+              <div className="rounded-2xl border border-dashed border-line p-6 text-ink/60">
+                <p className="font-medium text-ink/80 mb-1">Em breve</p>
+                <p className="leading-relaxed">Mais videoaulas gratuitas e cursos pagos mais aprofundados.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Como trabalho */}
       <section id="como-funciona" className="border-t border-line bg-white/40">
         <div className="mx-auto max-w-6xl px-6 py-20">
-          <h2 className="font-display text-3xl font-semibold mb-12">Três telas. Uma resposta.</h2>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-clay mb-4">Para quem quer resultado</p>
+          <h2 className="font-display text-3xl md:text-4xl font-semibold mb-3">Gestão de marketplace com sistema próprio</h2>
+          <p className="text-ink/60 mb-12 max-w-2xl">
+            Além do conteúdo, eu cuido da operação de lojas como uma agência. Os clientes ficam conectados ao meu
+            sistema, e isso me deixa acompanhar de perto e mostrar o resultado com número.
+          </p>
           <div className="grid md:grid-cols-3 gap-10">
             <div>
-              <p className="font-mono text-clay text-sm mb-3">Produtos</p>
-              <h3 className="font-display text-xl font-medium mb-2">Custo e preço lado a lado</h3>
+              <p className="font-mono text-clay text-sm mb-3">01 · Operação</p>
+              <h3 className="font-display text-xl font-medium mb-2">Processos e gestão</h3>
               <p className="text-ink/70 leading-relaxed">
-                Cadastre cada item com seu custo real e o preço praticado em cada marketplace.
+                Estruturo a venda online da empresa: anúncios, preços, estoque e rotina, do início ou de uma operação
+                que já existe.
               </p>
             </div>
             <div>
-              <p className="font-mono text-clay text-sm mb-3">Calculadora</p>
-              <h3 className="font-display text-xl font-medium mb-2">Taxas por marketplace</h3>
+              <p className="font-mono text-clay text-sm mb-3">02 · Sistema</p>
+              <h3 className="font-display text-xl font-medium mb-2">Lucro real por venda</h3>
               <p className="text-ink/70 leading-relaxed">
-                Simule qualquer venda e veja exatamente quanto cada canal desconta antes de você decidir o preço.
+                Pedidos, taxas, frete, impostos e custo do produto no mesmo painel, para cada decisão de preço sair do
+                número e não do palpite.
               </p>
             </div>
             <div>
-              <p className="font-mono text-clay text-sm mb-3">Relatórios</p>
-              <h3 className="font-display text-xl font-medium mb-2">Lucro consolidado</h3>
+              <p className="font-mono text-clay text-sm mb-3">03 · Resultado</p>
+              <h3 className="font-display text-xl font-medium mb-2">Acompanhamento e DRE</h3>
               <p className="text-ink/70 leading-relaxed">
-                Acompanhe o lucro real de todas as suas vendas, por produto e por canal.
+                Você enxerga onde a loja ganha e onde perde dinheiro, com relatórios claros para decidir o próximo passo.
               </p>
             </div>
           </div>
@@ -131,7 +217,7 @@ export default function LandingPage() {
       {/* Marketplaces */}
       <section id="marketplaces" className="border-t border-line">
         <div className="mx-auto max-w-6xl px-6 py-20">
-          <h2 className="font-display text-3xl font-semibold mb-2">Os 3 marketplaces que atendemos</h2>
+          <h2 className="font-display text-3xl font-semibold mb-2">Marketplaces que acompanho</h2>
           <p className="text-ink/60 mb-10">Taxas de referência prontas — ajuste conforme sua categoria.</p>
           <div className="divide-y divide-line border-y border-line">
             {marketplaces.map((m) => (
@@ -147,7 +233,10 @@ export default function LandingPage() {
       {/* CTA final */}
       <section className="border-t border-line bg-inkdeep text-paper">
         <div className="mx-auto max-w-6xl px-6 py-20 text-center">
-          <h2 className="font-display text-3xl md:text-4xl font-semibold mb-6">Pare de vender no escuro.</h2>
+          <h2 className="font-display text-3xl md:text-4xl font-semibold mb-3">Pare de vender no escuro.</h2>
+          <p className="text-paper/70 mb-8 max-w-xl mx-auto">
+            Comece pela calculadora grátis ou fale comigo para ter a gestão da sua loja acompanhada de perto.
+          </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
             <Link
               href="/calculadora-gratis"
@@ -155,11 +244,14 @@ export default function LandingPage() {
             >
               Usar a calculadora grátis
             </Link>
-            <Link
-              href="/login"
+            <a
+              href="mailto:contato@diegorezendedigital.com.br?subject=Quero%20conversar%20sobre%20gest%C3%A3o%20de%20marketplace"
               className="inline-block rounded-full border border-paper/40 px-8 py-4 font-medium hover:bg-paper hover:text-inkdeep transition-colors"
             >
-              Entrar
+              Falar com o Diego
+            </a>
+            <Link href="/login" className="text-paper/60 hover:text-paper underline underline-offset-4">
+              Já sou cliente
             </Link>
           </div>
         </div>
