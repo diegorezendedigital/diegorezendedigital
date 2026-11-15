@@ -17,6 +17,8 @@ const formVazio = { sku: "", nome: "", custo: "", ean: "", ncm: "", peso: "", co
 export default function ArmazemPage() {
   const [produtos, setProdutos] = useState<Product[]>([]);
   const [empresas, setEmpresas] = useState<Company[]>([]);
+  // Créditos de imposto só fazem sentido para empresa no Lucro Real; com todas no Simples a coluna some.
+  const mostraCreditos = empresas.some((e) => e.regime === "lucro_real");
   const [anuncios, setAnuncios] = useState<Record<string, number>>({});
   const [anunciosDoProduto, setAnunciosDoProduto] = useState<Record<string, Listing[]>>({});
   const [busca, setBusca] = useState("");
@@ -1047,7 +1049,7 @@ export default function ArmazemPage() {
               <th className="th">Tipo</th>
               <th className="th">CNPJ de compra</th>
               <th className="th">Custo un.</th>
-              <th className="th">Créditos un.</th>
+              {mostraCreditos && <th className="th">Créditos un.</th>}
               <th className="th">Estoque</th>
               <th className="th">Anúncios</th>
               <th className="th" title="Peso real (kg) e medidas (cm). O peso cúbico é calculado sozinho.">Peso e medidas</th>
@@ -1061,7 +1063,7 @@ export default function ArmazemPage() {
           <tbody className="divide-y divide-slate-100">
             {visiveis.length === 0 && (
               <tr>
-                <td className="td text-slate-500" colSpan={15}>
+                <td className="td text-slate-500" colSpan={mostraCreditos ? 15 : 14}>
                   {produtos.length === 0 ? "Nenhum produto ainda. Use “Novo produto”, a planilha ou o XML da nota." : "Nada encontrado para essa busca."}
                 </td>
               </tr>
@@ -1124,9 +1126,11 @@ export default function ArmazemPage() {
                       />
                     )}
                   </td>
-                  <td className="td text-slate-600" title="ICMS + PIS + COFINS por unidade, vindos do XML (valem no Lucro Real)">
-                    {cred > 0 ? brl(cred) : "—"}
-                  </td>
+                  {mostraCreditos && (
+                    <td className="td text-slate-600" title="ICMS + PIS + COFINS por unidade, vindos do XML (valem no Lucro Real)">
+                      {cred > 0 ? brl(cred) : "—"}
+                    </td>
+                  )}
                   <td className="td">
                     <input
                       key={`e${p.id}${p.stock_qty}`}
@@ -1232,7 +1236,7 @@ export default function ArmazemPage() {
                 </tr>
                 {kitAberto === p.id && (
                   <tr className="bg-brand-light/30">
-                    <td className="td" colSpan={15}>
+                    <td className="td" colSpan={mostraCreditos ? 15 : 14}>
                       <div className="space-y-3 py-2">
                         <p className="text-sm font-semibold">Composição do kit {p.sku}</p>
                         <p className="text-xs text-slate-600">Escolha os produtos e a quantidade de cada um que entram neste kit. O custo do kit é a soma e se atualiza sozinho sempre que o custo de uma peça mudar (cada mudança fica no Histórico).</p>
@@ -1296,7 +1300,7 @@ export default function ArmazemPage() {
                 )}
                 {aberto && (
                   <tr className="bg-slate-50">
-                    <td className="td" colSpan={15}>
+                    <td className="td" colSpan={mostraCreditos ? 15 : 14}>
                       <div className="space-y-2 py-1">
                         <p className="text-xs text-slate-600">
                           Histórico de custo. Cada venda usa o custo vigente na data dela. Ao alterar o custo acima, uma linha nova é criada com a data de hoje.
