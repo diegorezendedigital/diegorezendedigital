@@ -99,7 +99,7 @@ export default function ArmazemPage() {
     }
     const ligacoes: Listing[] = [];
     for (let i = 0; i < 50000; i += 1000) {
-      const r = await supabase.from("listings").select("id, product_id, marketplace_id, external_id, title, price, units, shipping_cost, fee_percent, fee_fixed, company_id, target_margin").order("id").range(i, i + 999);
+      const r = await supabase.from("listings").select("id, product_id, marketplace_id, external_id, title, price, units, shipping_cost, fee_percent, fee_fixed, company_id, target_margin, thumbnail").order("id").range(i, i + 999);
       if (r.error) break;
       ligacoes.push(...((r.data ?? []) as unknown as Listing[]));
       if ((r.data ?? []).length < 1000) break;
@@ -545,6 +545,42 @@ export default function ArmazemPage() {
     carregar();
   }
 
+  // Imagem do produto = capa do primeiro anúncio relacionado que tiver foto
+  function capaDoAnuncio(p: Product): string | null {
+    const l = (anunciosDoProduto[p.id] ?? []).find((x) => x.thumbnail);
+    return l?.thumbnail ? l.thumbnail.replace(/^http:\/\//, "https://") : null;
+  }
+  async function usarImagem(p: Product) {
+    const url = capaDoAnuncio(p);
+    if (!url) return setErro("Esse produto ainda não tem anúncio com foto.");
+    const { error } = await supabase.from("products").update({ imagem_url: url }).eq("id", p.id);
+    if (error) return setErro(/column|schema cache/i.test(error.message) ? "Faltou criar a coluna de imagem no Supabase (rode o SQL que o assistente mandou)." : error.message);
+    setProdutos((ps) => ps.map((x) => (x.id === p.id ? { ...x, imagem_url: url } : x)));
+  }
+  async function usarImagensEmMassa(alvo: Product[]) {
+    setErro("");
+    setAviso("");
+    const itens = alvo.map((p) => ({ id: p.id, url: capaDoAnuncio(p) })).filter((x): x is { id: string; url: string } => !!x.url);
+    if (itens.length === 0) return setAviso("Nenhum desses produtos tem anúncio com foto.");
+    setMassaBusy(true);
+    let ok = 0;
+    try {
+      for (let i = 0; i < itens.length; i += 15) {
+        const lote = await Promise.all(itens.slice(i, i + 15).map((x) => supabase.from("products").update({ imagem_url: x.url }).eq("id", x.id)));
+        const falha = lote.find((r) => r.error);
+        if (falha?.error) {
+          setErro(/column|schema cache/i.test(falha.error.message) ? "Faltou criar a coluna de imagem no Supabase (rode o SQL que o assistente mandou)." : falha.error.message);
+          break;
+        }
+        ok += lote.length;
+      }
+    } finally {
+      setMassaBusy(false);
+    }
+    if (ok > 0) setAviso(`${ok} produto(s) com a imagem do anúncio.`);
+    carregar();
+  }
+
   // Peso e medidas em massa: só muda o que estiver preenchido
   async function aplicarPesoMassa() {
     setErro("");
@@ -723,6 +759,9 @@ export default function ArmazemPage() {
         <div className="flex flex-wrap gap-2">
           <button className={painel === "excel" ? "btn" : "btn-ghost"} onClick={() => setPainel(painel === "excel" ? null : "excel")}>
             Importar planilha
+          </button>
+          <button className="btn-ghost" disabled={massaBusy} title="Puxa a capa do primeiro anúncio relacionado para os produtos filtrados que ainda não têm imagem" onClick={() => usarImagensEmMassa(visiveis.filter((p) => !p.imagem_url))}>
+            {massaBusy ? "Puxando…" : "Puxar imagens dos anúncios"}
           </button>
           <Link href="/dashboard/produtos/nfe" className="btn-ghost">
             Importar XML da nota
@@ -970,6 +1009,7 @@ export default function ArmazemPage() {
           {!pesoAberto && (
             <button className="btn" onClick={() => { setPesoAberto(true); setPromoAberta(false); setMassaAberta(false); }}>Peso e medidas</button>
           )}
+          <button className="btn" disabled={massaBusy} onClick={() => usarImagensEmMassa(produtos.filter((p) => sel.has(p.id)))}>Usar imagem do anúncio</button>
           <button className="text-sm text-slate-600 hover:underline" onClick={() => { setSel(new Set()); setMassaAberta(false); setPromoAberta(false); }}>Limpar seleção</button>
           {pesoAberto && (
             <div className="flex w-full flex-wrap items-end gap-3">
@@ -1076,14 +1116,36 @@ export default function ArmazemPage() {
                 <Fragment key={p.id}>
                 <tr className={`transition-colors hover:bg-slate-50/70 ${sel.has(p.id) ? "bg-brand-light/30" : ""}`}>
                   <td className="td w-8"><input type="checkbox" checked={sel.has(p.id)} onChange={() => alternar(p.id)} aria-label={`Selecionar ${p.sku}`} /></td>
-                  <td className="td max-w-[340px] whitespace-normal">
+                  <td className="td max-w-[380px] whitespace-normal">
+                  <div className="flex items-center gap-3">
+                    <div className="group/img relative h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                      {p.imagem_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.imagem_url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-slate-300">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="9" cy="9" r="1.6" /><path d="m21 15-5-5L5 21" /></svg>
+                        </div>
+                      )}
+                      {p.imagem_url && capaDoAnuncio(p) && capaDoAnuncio(p) !== p.imagem_url && (
+                        <button type="button" onClick={() => usarImagem(p)} title="Atualizar com a capa do anúncio" className="absolute inset-0 hidden items-center justify-center bg-black/50 text-[10px] font-semibold text-white group-hover/img:flex">atualizar</button>
+                      )}
+                    </div>
+                    <div className="min-w-0">
                     <div className="truncate font-medium text-slate-900" title={p.name}>{p.name}</div>
-                    <div className="font-mono text-[11px] text-slate-400">{p.sku}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[11px] text-slate-400">{p.sku}</span>
+                      {!p.imagem_url && capaDoAnuncio(p) && (
+                        <button type="button" onClick={() => usarImagem(p)} className="rounded-md bg-brand-light px-1.5 py-0.5 text-[10px] font-semibold text-brand hover:underline">usar imagem do anúncio</button>
+                      )}
+                    </div>
                     {p.grupo && (
                       <button type="button" className="ml-2 rounded bg-brand-light px-1.5 py-0.5 text-[10px] font-semibold text-brand hover:underline" title={`Grupo: ${p.grupo}. Clique para ver só este grupo`} onClick={() => setGrupoFiltro(grupoFiltro === p.grupo ? null : p.grupo ?? null)}>
                         grupo · {p.grupo.length > 28 ? p.grupo.slice(0, 28) + "…" : p.grupo}
                       </button>
                     )}
+                  </div>
+                  </div>
                   </td>
                   <td className="td">
                     <select
