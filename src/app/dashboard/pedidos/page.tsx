@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch, supabase } from "@/lib/supabase/client";
 import { sincronizarVendas } from "@/lib/sincronizar";
@@ -62,6 +62,74 @@ const somarDias = (iso: string, n: number) => {
   return d.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
 };
 const primeiroDoMes = () => `${hojeBR().slice(0, 8)}01`;
+
+const MP_ESTILO: Record<string, { sigla: string; cls: string }> = {
+  "Mercado Livre": { sigla: "ML", cls: "bg-[#FFE600] text-[#333]" },
+  Shopee: { sigla: "SH", cls: "bg-[#EE4D2D] text-white" },
+  "TikTok Shop": { sigla: "TT", cls: "bg-[#111] text-white" },
+};
+
+// Caixa de seleção da loja, com as lojas agrupadas por marketplace
+function SeletorLoja({ lojas, valor, onChange }: { lojas: { id: string; nome: string; mp: string }[]; valor: string; onChange: (id: string) => void }) {
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!aberto) return;
+    const fora = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setAberto(false);
+    document.addEventListener("mousedown", fora);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", fora);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [aberto]);
+  const atual = lojas.find((l) => l.id === valor);
+  const escolher = (id: string) => {
+    onChange(id);
+    setAberto(false);
+  };
+  const item = (ativo: boolean) => `flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${ativo ? "bg-brand-light font-semibold text-brand" : "text-slate-700 hover:bg-slate-50"}`;
+  return (
+    <div className="relative" ref={ref}>
+      <label className="label">Loja</label>
+      <button type="button" onClick={() => setAberto(!aberto)} aria-haspopup="listbox" aria-expanded={aberto} className="input flex h-[38px] w-60 items-center justify-between gap-2 py-0 text-left">
+        <span className="flex min-w-0 items-center gap-2">
+          {atual && <span className={`inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${MP_ESTILO[atual.mp]?.cls ?? ""}`}>{MP_ESTILO[atual.mp]?.sigla}</span>}
+          <span className="truncate">{atual ? atual.nome : "Todas as lojas"}</span>
+        </span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-slate-400 transition-transform ${aberto ? "rotate-180" : ""}`}><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      {aberto && (
+        <div role="listbox" className="absolute left-0 top-full z-40 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+          <button type="button" role="option" aria-selected={!valor} className={item(!valor)} onClick={() => escolher("")}>
+            Todas as lojas
+          </button>
+          {["Mercado Livre", "Shopee", "TikTok Shop"].map((mp) => {
+            const doMp = lojas.filter((x) => x.mp === mp);
+            if (doMp.length === 0) return null;
+            return (
+              <div key={mp} className="mt-1.5 border-t border-slate-100 pt-1.5">
+                <div className="flex items-center gap-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  <span className={`inline-flex h-4 min-w-[20px] items-center justify-center rounded-full px-1 text-[9px] font-bold normal-case tracking-normal ${MP_ESTILO[mp].cls}`}>{MP_ESTILO[mp].sigla}</span>
+                  {mp}
+                </div>
+                {doMp.map((l) => (
+                  <button key={l.id} type="button" role="option" aria-selected={valor === l.id} className={item(valor === l.id)} onClick={() => escolher(l.id)}>
+                    <span className="truncate">{l.nome}</span>
+                    {valor === l.id && <span className="ml-auto text-brand">✓</span>}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function PedidosPage() {
   const [linhas, setLinhas] = useState<Linha[] | null>(null);
@@ -443,24 +511,7 @@ export default function PedidosPage() {
             </button>
           ))}
         </div>
-        {lojas.length > 0 && (
-          <div>
-            <label className="label">Loja</label>
-            <select className="input h-[38px] w-56 py-0" value={lojaSel} onChange={(e) => escolherLoja(e.target.value)} aria-label="Loja">
-              <option value="">Todas as lojas</option>
-              {["Mercado Livre", "Shopee", "TikTok Shop"].map((mp) => {
-                const doMp = lojas.filter((x) => x.mp === mp);
-                return doMp.length > 0 ? (
-                  <optgroup key={mp} label={mp}>
-                    {doMp.map((l) => (
-                      <option key={l.id} value={l.id}>{l.nome}</option>
-                    ))}
-                  </optgroup>
-                ) : null;
-              })}
-            </select>
-          </div>
-        )}
+        {lojas.length > 0 && <SeletorLoja lojas={lojas} valor={lojaSel} onChange={escolherLoja} />}
         <div className="min-w-[240px] flex-1">
           <label className="label">Buscar (nº do pedido, produto, SKU ou UF)</label>
           <input className="input" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="ex.: 2000012345, jaqueta, SP" />
