@@ -10,11 +10,11 @@ import { medidasDoProduto, pesoCubicoKg, pesoFaturavelKg } from "@/lib/frete-ml"
 // O que muda de um canal para outro: onde a margem/preço são salvos no produto e quais campos aparecem.
 const CFG: Record<CanalId, {
   margemKey: string; precoKey: string; configKey: string;
-  freteGratis: boolean; fretePago: boolean; comissaoEditavel: boolean; cpf: boolean; rotuloTarifa: string; afiliadoSeparado: boolean;
+  freteGratis: boolean; fretePago: boolean; comissaoEditavel: boolean; cpf: boolean; rotuloTarifa: string; afiliadoSeparado: boolean; adsSempreAberto: boolean;
 }> = {
-  tiktok_shop: { margemKey: "tiktok_margem", precoKey: "tiktok_preco", configKey: "tiktok_config", freteGratis: true, fretePago: false, comissaoEditavel: false, cpf: false, rotuloTarifa: "Tarifa por item", afiliadoSeparado: false },
-  shopee: { margemKey: "shopee_margem", precoKey: "shopee_preco", configKey: "shopee_config", freteGratis: false, fretePago: false, comissaoEditavel: false, cpf: true, rotuloTarifa: "Taxa fixa por item", afiliadoSeparado: true },
-  mercado_livre: { margemKey: "promo_min_margin", precoKey: "ml_preco", configKey: "ml_config", freteGratis: false, fretePago: true, comissaoEditavel: true, cpf: false, rotuloTarifa: "Taxa fixa por item", afiliadoSeparado: true },
+  tiktok_shop: { margemKey: "tiktok_margem", precoKey: "tiktok_preco", configKey: "tiktok_config", freteGratis: true, fretePago: false, comissaoEditavel: false, cpf: false, rotuloTarifa: "Tarifa por item", afiliadoSeparado: false, adsSempreAberto: false },
+  shopee: { margemKey: "shopee_margem", precoKey: "shopee_preco", configKey: "shopee_config", freteGratis: false, fretePago: false, comissaoEditavel: false, cpf: true, rotuloTarifa: "Taxa fixa por item", afiliadoSeparado: true, adsSempreAberto: true },
+  mercado_livre: { margemKey: "promo_min_margin", precoKey: "ml_preco", configKey: "ml_config", freteGratis: false, fretePago: true, comissaoEditavel: true, cpf: false, rotuloTarifa: "Taxa fixa por item", afiliadoSeparado: true, adsSempreAberto: false },
 };
 
 const semAcento = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -49,7 +49,8 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
   const [freteGratis, setFreteGratis] = useState("6");
 
   // Anúncios: ao ligar, ROAS e ACOS andam juntos (ACOS = 100 / ROAS) e entra a comissão do afiliado.
-  const [usarAds, setUsarAds] = useState(false);
+  // Na Shopee a janela de ads fica sempre aberta e já ligada; o botão liga e desliga.
+  const [usarAds, setUsarAds] = useState(CFG[canal].adsSempreAberto);
   const [roas, setRoas] = useState("10");
   const [acos, setAcos] = useState("10");
   const [afiliado, setAfiliado] = useState(CFG[canal].afiliadoSeparado ? "0" : "2");
@@ -133,7 +134,7 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
         setFrete(String(cfg.frete ?? "0"));
         setComissao(String(cfg.comissao ?? ""));
         setCpf(cfg.cpf === true);
-        setUsarAds(cfg.usarAds === true);
+        setUsarAds(cfg.usarAds === true || (cfg.usarAds === undefined && cfgCanal.adsSempreAberto));
         setRoas(String(cfg.roas ?? "10"));
         setAcos(String(cfg.acos ?? "10"));
         setAfiliado(String(cfg.afiliado ?? (cfgCanal.afiliadoSeparado ? "0" : "2")));
@@ -540,18 +541,18 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
                 usarAds ? "bg-cyan-600 text-white" : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
               }`}
             >
-              <span>{usarAds ? "Usando ads" : "Usar ads"}</span>
-              <span className="text-xs font-normal opacity-80">{usarAds ? "clique para desligar" : "ROAS, ACOS e afiliado"}</span>
+              <span>{usarAds ? "Usando ads" : cfgCanal.adsSempreAberto ? "Ads desligado" : "Usar ads"}</span>
+              <span className="text-xs font-normal opacity-80">{usarAds ? "clique para desligar" : cfgCanal.adsSempreAberto ? "clique para ligar" : "ROAS e ACOS"}</span>
             </button>
-            {usarAds && (
-              <div className="mt-3 grid grid-cols-2 gap-3">
+            {(usarAds || cfgCanal.adsSempreAberto) && (
+              <div className={`mt-3 grid grid-cols-2 gap-3 ${usarAds ? "" : "opacity-50"}`}>
                 <div>
                   <label className="label">ROAS</label>
-                  <input className="input" inputMode="decimal" value={roas} onChange={(e) => mudarRoas(e.target.value)} />
+                  <input className="input" inputMode="decimal" disabled={!usarAds} value={roas} onChange={(e) => mudarRoas(e.target.value)} />
                 </div>
                 <div>
                   <label className="label">ACOS (%)</label>
-                  <input className="input" inputMode="decimal" value={acos} onChange={(e) => mudarAcos(e.target.value)} />
+                  <input className="input" inputMode="decimal" disabled={!usarAds} value={acos} onChange={(e) => mudarAcos(e.target.value)} />
                 </div>
                 <p className="col-span-2 -mt-1 text-[11px] text-slate-600">
                   ROAS e ACOS andam juntos: ROAS {num(roas) > 0 ? campo(num(roas)) : "—"} = {pct(adsPct)} do preço de venda.
