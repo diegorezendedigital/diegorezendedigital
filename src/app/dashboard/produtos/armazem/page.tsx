@@ -2,12 +2,12 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase/client";
+import { apiFetch, supabase } from "@/lib/supabase/client";
 import { Company, CustoProduto, Product, brl, campo, formatarCnpj, mensagemErro, num } from "@/lib/types";
 import { LinhaProduto, baixarModelo, lerPlanilha } from "@/lib/planilha";
 import { analisarAnuncio } from "@/lib/anuncio";
 import { pesoCubicoKg, pesoFaturavelKg, medidasDoProduto } from "@/lib/frete-ml";
-import type { Listing } from "@/lib/types";
+import type { ContaML, Listing } from "@/lib/types";
 
 type Painel = null | "manual" | "excel";
 type Componente = { id: string; kit_id: string; component_id: string; quantity: number };
@@ -22,6 +22,7 @@ export default function ArmazemPage() {
   const [anuncios, setAnuncios] = useState<Record<string, number>>({});
   const [anunciosDoProduto, setAnunciosDoProduto] = useState<Record<string, Listing[]>>({});
   const [busca, setBusca] = useState("");
+  const [nomesContas, setNomesContas] = useState<Record<string, string>>({});
   const [mapaMp, setMapaMp] = useState<Record<string, Record<string, number>>>({});
   const [statusMap, setStatusMap] = useState<"todos" | "sim" | "nao">("todos");
   const [mpFiltro, setMpFiltro] = useState<string>("todos");
@@ -99,7 +100,7 @@ export default function ArmazemPage() {
     }
     const ligacoes: Listing[] = [];
     for (let i = 0; i < 50000; i += 1000) {
-      const r = await supabase.from("listings").select("id, product_id, marketplace_id, external_id, title, price, units, shipping_cost, fee_percent, fee_fixed, company_id, target_margin, thumbnail").order("id").range(i, i + 999);
+      const r = await supabase.from("listings").select("id, product_id, marketplace_id, external_id, title, price, units, shipping_cost, fee_percent, fee_fixed, company_id, target_margin, thumbnail, ml_user_id").order("id").range(i, i + 999);
       if (r.error) break;
       ligacoes.push(...((r.data ?? []) as unknown as Listing[]));
       if ((r.data ?? []).length < 1000) break;
@@ -127,6 +128,12 @@ export default function ArmazemPage() {
     setAnuncios(cont);
     setAnunciosDoProduto(listas);
     setMapaMp(porMp);
+    try {
+      const r = await apiFetch<{ accounts: ContaML[] }>("/api/ml/accounts");
+      setNomesContas(Object.fromEntries(r.accounts.map((a) => [String(a.ml_user_id), a.store_name || a.nickname || String(a.ml_user_id)])));
+    } catch {
+      /* sem contas conectadas: o balão aparece sem o nome da loja */
+    }
   }, []);
 
   useEffect(() => {
@@ -1212,6 +1219,9 @@ export default function ArmazemPage() {
                                 const roi = a && a.custo > 0 ? (a.lucro / a.custo) * 100 : null;
                                 return (
                                   <span key={l.id} className="mb-2 block border-b border-slate-100 pb-2 last:mb-0 last:border-0 last:pb-0">
+                                    {(l.ml_user_id && nomesContas[String(l.ml_user_id)]) && (
+                                      <span className="mb-0.5 block truncate text-[11px] font-semibold text-slate-800">{nomesContas[String(l.ml_user_id)]}</span>
+                                    )}
                                     <span className="block truncate font-mono text-[10px] text-slate-500">{l.external_id}</span>
                                     <span className="block">Preço do anúncio: <b>{brl(Number(l.price))}</b></span>
                                     {a ? (
