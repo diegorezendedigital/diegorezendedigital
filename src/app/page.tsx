@@ -43,7 +43,7 @@ export default function LandingPage() {
               Poucas têm <span className="text-gold">margem real.</span>
             </h1>
             <p className="mt-6 text-lg text-ink/70 max-w-md leading-relaxed">
-              Sou o Diego. Trabalho com marketplace desde os 16 anos e ensino, no YouTube e aqui, como vender
+              Sou o Diego. Trabalho com marketplace e ensino, no YouTube e aqui, como vender
               online olhando para o número que importa: quanto sobra de verdade em cada venda.
             </p>
             <div className="mt-10 flex items-center gap-4">
@@ -98,7 +98,7 @@ export default function LandingPage() {
           <div className="md:col-span-2">
             <p className="font-mono text-xs uppercase tracking-[0.2em] text-clay mb-4">Quem sou</p>
             <h2 className="font-display text-3xl md:text-4xl font-semibold leading-tight">
-              Marketplace é o meu trabalho desde os 16 anos.
+              Marketplace é o meu trabalho.
             </h2>
           </div>
           <div className="md:col-span-3 space-y-5 text-ink/75 text-lg leading-relaxed">
