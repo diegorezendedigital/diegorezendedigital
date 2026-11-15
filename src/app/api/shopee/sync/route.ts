@@ -182,6 +182,8 @@ export async function POST(req: Request) {
     };
 
     const canal = CANAIS.find((c) => c.id === "shopee")!;
+    // A parte fixa da taxa só é gravada se a coluna já existir no banco (migração 20261203)
+    const temColunaFixa = !(await admin.from("sales").select("fees_fixed").limit(1)).error;
     const vendas = pedidos.flatMap((p) => {
       const itensP = p.item_list!;
       const soldAt = new Date(n(p.create_time) * 1000).toISOString();
@@ -203,12 +205,12 @@ export async function POST(req: Request) {
         const credito = hist.credito * unidades;
         const empresa = (an?.company_id && empresas.get(an.company_id)) || (empresaPadrao as Company | null);
         let taxa: number;
+        const unit = preco / q;
+        const faixa = faixaDoPreco(canal, unit);
+        const fixaTabela = (faixa.fixa === "metade" ? unit / 2 : faixa.fixa) * q;
         if (taxasExtrato !== null) taxa = (taxasExtrato * preco) / totalPedido;
-        else {
-          const unit = preco / q;
-          const f = faixaDoPreco(canal, unit);
-          taxa = (unit * f.comissao) / 100 * q + (f.fixa === "metade" ? unit / 2 : f.fixa) * q;
-        }
+        else taxa = (unit * faixa.comissao) / 100 * q + fixaTabela;
+        const taxaFixa = Math.min(taxa, fixaTabela); // parte fixa (R$ por item) dentro da tarifa total
         const freteVenda = idx === 0 ? freteLiquido : 0;
         const imposto = empresa ? Math.max(0, calcularLucro(preco, { custo, credito, feePct: 0, feeFixo: taxa, frete: freteVenda, empresa }).impostos) : 0;
         return {
@@ -220,6 +222,7 @@ export async function POST(req: Request) {
           sale_price: preco,
           cost_price: custo,
           fees_total: Math.round(taxa * 100) / 100,
+          ...(temColunaFixa ? { fees_fixed: Math.round(taxaFixa * 100) / 100 } : {}),
           shipping_cost: freteVenda,
           tax_amount: Math.round(imposto * 100) / 100,
           sold_at: soldAt,
@@ -265,6 +268,7 @@ export async function POST(req: Request) {
               ml_user_id: v.ml_user_id,
               listing_id: v.listing_id,
               fees_total: v.fees_total,
+              ...(temColunaFixa ? { fees_fixed: (v as { fees_fixed?: number }).fees_fixed ?? 0 } : {}),
               shipping_cost: v.shipping_cost,
               ...(jaMap.get(v.external_id)?.cost_manual ? {} : { tax_amount: v.tax_amount }),
             })

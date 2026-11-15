@@ -98,6 +98,7 @@ export type Sale = {
   store_id: string;
   product_id: string | null;
   marketplace_id: string | null;
+  fees_fixed?: number | null;
   quantity: number;
   sale_price: number;
   cost_price: number;

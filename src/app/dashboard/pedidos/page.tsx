@@ -17,6 +17,8 @@ type Linha = {
   contaId: string;
   preco: number;
   comissao: number;
+  taxaFixa: number; // parte fixa (R$) da tarifa, quando o marketplace informa (Shopee)
+  mp: string;
   frete: number;
   freteComprador: number;
   impostos: number;
@@ -33,6 +35,7 @@ type Chave = "preco" | "comissao" | "frete" | "freteComprador" | "impostos" | "c
 type ColOrdem = "data" | "produto" | "sku" | "uf" | "preco" | "repasse" | "comissao" | "frete" | "freteComprador" | "impostos" | "custo" | "sobra" | "margem" | "roi";
 type Ordem = { col: ColOrdem; dir: "asc" | "desc" };
 const ORDEM_PADRAO: Ordem = { col: "data", dir: "desc" };
+const NOME_MP: Record<string, string> = { mercado_livre: "Mercado Livre", shopee: "Shopee", tiktok_shop: "TikTok Shop" };
 const COLUNAS_TEXTO = new Set<ColOrdem>(["produto", "sku", "uf"]);
 const NOME_COLUNA: Record<ColOrdem, string> = {
   data: "data do pedido",
@@ -395,6 +398,8 @@ export default function PedidosPage() {
             contaId: s.ml_user_id || (s.listing_id && contaDoAnuncio.get(s.listing_id)) || "",
             preco,
             comissao: Number(s.fees_total) || 0,
+            taxaFixa: Number(s.fees_fixed) || 0,
+            mp: s.marketplace_id || "mercado_livre",
             frete: Number(s.shipping_cost) || 0,
             freteComprador: Number(s.buyer_shipping) || 0,
             impostos: Number(s.tax_amount) || 0,
@@ -442,6 +447,7 @@ export default function PedidosPage() {
         custo,
         sobra,
         comissao: soma(itens, "comissao"),
+        taxaFixa: itens.reduce((t, i) => t + i.taxaFixa, 0),
         frete: soma(itens, "frete"),
         freteComprador: soma(itens, "freteComprador"),
         impostos: soma(itens, "impostos"),
@@ -707,15 +713,24 @@ export default function PedidosPage() {
                                 </Tip>
                               </td>
                               <td className="px-4 py-5 text-right font-medium">
-                                <Tip titulo="Repasse: o que o marketplace libera" linhas={[["Venda", brl(l.preco)], ["− Comissão", brl(l.comissao)], ["− Frete (por sua conta)", brl(l.frete)], ["= Repasse", brl(rep)]]} nota="Ainda não desconta imposto nem custo do produto. Confere com o “Total” do Detalhe do recebimento do Mercado Livre.">
+                                <Tip titulo={`Repasse · ${NOME_MP[l.mp] ?? "Marketplace"}`} linhas={[["Venda", brl(l.preco)], ["− Comissão" + (l.taxaFixa > 0 ? " + taxa fixa" : ""), brl(l.comissao)], ["− Frete (por sua conta)", brl(l.frete)], ["= Repasse", brl(rep)]]} nota={`Ainda não desconta imposto nem custo do produto. ${l.mp === "shopee" ? "Confere com o extrato do pedido na Shopee." : "Confere com o “Total” do Detalhe do recebimento do Mercado Livre."}`}>
                                   {brl(rep)}
                                   <Pc v={f(rep)} />
                                 </Tip>
                               </td>
                               <td className="px-4 py-5 text-right">
-                                <Tip titulo="Comissão (tarifa de venda)" linhas={[["Cobrado pelo ML", brl(l.comissao)], ["% da venda", f(l.comissao) ?? "—"]]} nota="Tarifa de venda do Mercado Livre (percentual + valor fixo por unidade, quando houver).">
+                                <Tip
+                                  titulo={`Comissão · ${NOME_MP[l.mp] ?? "Marketplace"}`}
+                                  linhas={
+                                    l.taxaFixa > 0
+                                      ? [["Comissão (percentual)", brl(l.comissao - l.taxaFixa)], ["Taxa fixa", brl(l.taxaFixa)], ["Total cobrado", brl(l.comissao)], ["% da venda", f(l.comissao) ?? "—"]]
+                                      : [[`Cobrado ${l.mp === "shopee" ? "pela" : "pelo"} ${NOME_MP[l.mp] ?? "marketplace"}`, brl(l.comissao)], ["% da venda", f(l.comissao) ?? "—"]]
+                                  }
+                                  nota={l.mp === "shopee" ? "Tarifa da Shopee: comissão percentual mais uma taxa fixa por item vendido." : "Tarifa de venda do Mercado Livre (percentual + valor fixo por unidade, quando houver)."}
+                                >
                                   {brl(l.comissao)}
                                   <Pc v={f(l.comissao)} />
+                                  {l.taxaFixa > 0 && <div className="text-[11px] text-slate-500">inclui fixa {brl(l.taxaFixa)}</div>}
                                 </Tip>
                               </td>
                               <td className="px-4 py-5 text-right">
