@@ -6,6 +6,7 @@ import { Product, brl, campo, num, pct } from "@/lib/types";
 import { calcularLucro, precoParaMargem, type EntradaPreco } from "@/lib/pricing";
 import { CANAIS, type CanalId } from "@/lib/taxas-publicas";
 import { medidasDoProduto, pesoCubicoKg, pesoFaturavelKg } from "@/lib/frete-ml";
+import { linkContato } from "@/lib/contato";
 
 // O que muda de um canal para outro: onde a margem/preço são salvos no produto e quais campos aparecem.
 const CFG: Record<CanalId, {
@@ -22,13 +23,14 @@ const arred2 = (v: number) => Math.round(v * 100) / 100;
 
 type Comp = { kit_id: string; component_id: string; quantity: number };
 
-export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
+// publico = versão da calculadora grátis: sem buscar produto do armazém e sem salvar.
+export default function CalculadoraCanal({ canal, publico = false }: { canal: CanalId; publico?: boolean }) {
   const CAN = CANAIS.find((c) => c.id === canal)!;
   const cfgCanal = CFG[canal];
 
   const [produtos, setProdutos] = useState<Product[]>([]);
   const [componentes, setComponentes] = useState<Comp[]>([]);
-  const [carregando, setCarregando] = useState(true);
+  const [carregando, setCarregando] = useState(!publico);
 
   const [busca, setBusca] = useState("");
   const [aberta, setAberta] = useState(false);
@@ -68,6 +70,7 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
   const abriuDoLink = useRef(false);
 
   useEffect(() => {
+    if (publico) return;
     (async () => {
       const todos: Product[] = [];
       for (let i = 0; ; i += 1000) {
@@ -329,6 +332,7 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
   return (
     <div className="space-y-5">
       {/* Busca */}
+      {!publico && (
       <div className="card">
         <div className="relative">
           <label className="label">Buscar produto pelo nome, SKU ou EAN</label>
@@ -383,6 +387,7 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
           )}
         </div>
       </div>
+      )}
 
       {/* Meta */}
       <div className="rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 p-5 text-white shadow-lg">
@@ -520,7 +525,7 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
                   ? `Peso cúbico ${campo(Math.round(cubico * 1000) / 1000)} kg · peso que o frete considera ${campo(Math.round(faturavel * 1000) / 1000)} kg`
                   : "Informe o peso e as 3 medidas para calcular o peso cúbico."}
               </p>
-              <p className="mt-1 text-[11px] text-slate-500">Vem do armazém e é salvo junto. A regra de frete por faixa de valor e peso entra aqui em seguida.</p>
+              {!publico && <p className="mt-1 text-[11px] text-slate-500">Vem do armazém e é salvo junto. A regra de frete por faixa de valor e peso entra aqui em seguida.</p>}
             </div>
           )}
 
@@ -613,19 +618,44 @@ export default function CalculadoraCanal({ canal }: { canal: CanalId }) {
             </div>
           </div>
 
+          {publico ? (
+            <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-5">
+              <p className="text-base font-semibold text-slate-900">Deseja salvar o histórico e saber mais?</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Na versão completa você puxa seus produtos e custos, guarda o histórico de cada cálculo e acompanha o lucro real das suas vendas.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <a
+                  href={linkContato("Olá, Diego! Usei a calculadora e quero saber mais sobre a assinatura.")}
+                  className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:opacity-90"
+                >
+                  Quero conhecer a assinatura
+                </a>
+                <a
+                  href={linkContato("Olá, Diego! Vim pela calculadora grátis e quero falar com você.")}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-xl border border-emerald-600 px-5 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                >
+                  Falar no WhatsApp
+                </a>
+              </div>
+            </div>
+          ) : (
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={salvar}
-              disabled={!produto || precoN <= 0 || salvando}
-              className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {salvando ? "Salvando…" : "Salvar no armazém"}
-            </button>
-            {!produto && <span className="text-xs text-slate-500">Escolha um produto na busca para poder salvar.</span>}
-            {salvo && <span className="text-sm font-medium text-emerald-700">{salvo}</span>}
-            {erroSalvar && <span className="text-sm text-red-700">{erroSalvar}</span>}
-          </div>
+              <button
+                type="button"
+                onClick={salvar}
+                disabled={!produto || precoN <= 0 || salvando}
+                className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {salvando ? "Salvando…" : "Salvar no armazém"}
+              </button>
+              {!produto && <span className="text-xs text-slate-500">Escolha um produto na busca para poder salvar.</span>}
+              {salvo && <span className="text-sm font-medium text-emerald-700">{salvo}</span>}
+              {erroSalvar && <span className="text-sm text-red-700">{erroSalvar}</span>}
+            </div>
+          )}
         </div>
       </div>
     </div>
