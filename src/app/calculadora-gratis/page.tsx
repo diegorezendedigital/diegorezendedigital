@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import RodapeLegal from "@/components/RodapeLegal";
 import { brl, num, pct } from "@/lib/types";
 import { CANAIS, Canal, CanalId, faixaDoPreco, precoParaMargem, taxasDoPreco } from "@/lib/taxas-publicas";
 
@@ -211,6 +212,7 @@ export default function CalculadoraGratisPage() {
 
       <footer className="mx-auto max-w-6xl px-6 py-10 text-sm text-ink/50">
         © {new Date().getFullYear()} Diego Rezende Digital · Assessoria Marketplace. Valores de referência, sujeitos a mudança pelos marketplaces.
+        <RodapeLegal />
       </footer>
     </main>
   );

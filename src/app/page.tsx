@@ -1,4 +1,5 @@
 import Link from "next/link";
+import RodapeLegal from "@/components/RodapeLegal";
 
 const marketplaces = [
   { nome: "Mercado Livre", taxa: "10% a 14% + taxa fixa abaixo de R$ 79" },
@@ -166,6 +167,7 @@ export default function LandingPage() {
 
       <footer className="mx-auto max-w-6xl px-6 py-10 text-sm text-ink/50">
         © {new Date().getFullYear()} Diego Rezende Digital · Assessoria Marketplace.
+        <RodapeLegal />
       </footer>
     </main>
   );

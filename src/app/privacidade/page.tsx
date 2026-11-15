@@ -47,7 +47,10 @@ export default function Privacidade() {
         Nos termos da LGPD, você pode pedir confirmação do tratamento, acesso, correção, portabilidade, anonimização ou exclusão dos seus dados, e revogar consentimentos.
       </p>
 
-      <h2>7. Contato</h2>
+      <h2>7. Atualização desta política</h2>
+      <p>Revisamos esta política pelo menos uma vez por ano e sempre que o serviço mudar de forma relevante. A data da última atualização aparece no topo da página.</p>
+
+      <h2>8. Contato</h2>
       <p>Para dúvidas ou pedidos sobre seus dados: contato@diegorezendedigital.com.br.</p>
     </PaginaLegal>
   );
