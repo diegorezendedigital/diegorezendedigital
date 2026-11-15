@@ -37,6 +37,19 @@
   .td {
     @apply whitespace-nowrap px-3 py-2.5 text-sm;
   }
+  /* Tabelas densas e minimalistas (Armazém) */
+  .tabela-pro .th {
+    @apply px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500;
+  }
+  .tabela-pro .td {
+    @apply px-2.5 py-1.5 text-[13px] align-middle;
+  }
+  .tabela-pro .input {
+    @apply rounded-lg px-2 text-[13px];
+  }
+  .tabela-pro thead {
+    @apply sticky top-0 z-10;
+  }
   .page-title {
     @apply font-display text-3xl font-semibold tracking-tight text-slate-900;
   }

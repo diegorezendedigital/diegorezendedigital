@@ -717,7 +717,7 @@ export default function ArmazemPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="page-title">Produtos armazém</h1>
+          <h1 className="page-title !text-2xl">Produtos armazém</h1>
           <p className="mt-1 text-sm text-slate-600">O cadastro dos produtos que você tem em estoque, com o custo de cada um.</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1039,31 +1039,29 @@ export default function ArmazemPage() {
       )}
 
       {visiveis.length > 0 && controlesPagina}
-      <div className="card overflow-x-auto p-0">
+      <div className="tabela-pro overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full">
-          <thead className="border-b border-slate-200 bg-slate-50">
+          <thead className="border-b border-slate-200 bg-slate-50/80">
             <tr>
               <th className="th w-8"><input type="checkbox" checked={todosMarcados} onChange={marcarTodos} aria-label="Selecionar todos os filtrados" title="Selecionar todos os filtrados" /></th>
-              <th className="th">SKU</th>
               <th className="th">Produto</th>
               <th className="th">Tipo</th>
-              <th className="th">CNPJ de compra</th>
+              <th className="th">CNPJ compra</th>
               <th className="th">Custo un.</th>
               {mostraCreditos && <th className="th">Créditos un.</th>}
               <th className="th">Estoque</th>
               <th className="th">Anúncios</th>
               <th className="th" title="Peso real (kg) e medidas (cm). O peso cúbico é calculado sozinho.">Peso e medidas</th>
-              <th className="th" title="Entrar sozinho nas promoções do Mercado Livre que dão a margem mínima deste SKU">Promo auto</th>
-              <th className="th" title="Margem líquida do Mercado Livre: também é a mínima para aceitar uma promoção. Pode ser negativa (ex.: -5) para aceitar prejuízo.">Margem Mercado Livre %</th>
-              <th className="th" title="Margem e preço de venda salvos na calculadora do TikTok Shop">Margem TikTok</th>
-              <th className="th" title="Margem e preço de venda da Shopee">Margem Shopee</th>
+              <th className="th" title="Margem líquida do Mercado Livre: também é a mínima para aceitar uma promoção. Pode ser negativa (ex.: -5) para aceitar prejuízo.">Margem ML %</th>
+              <th className="th" title="Margem e preço de venda salvos na calculadora do TikTok Shop">Margem TikTok %</th>
+              <th className="th" title="Margem e preço de venda da Shopee">Margem Shopee %</th>
               <th className="th"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {visiveis.length === 0 && (
               <tr>
-                <td className="td text-slate-500" colSpan={mostraCreditos ? 15 : 14}>
+                <td className="td text-slate-500" colSpan={mostraCreditos ? 13 : 12}>
                   {produtos.length === 0 ? "Nenhum produto ainda. Use “Novo produto”, a planilha ou o XML da nota." : "Nada encontrado para essa busca."}
                 </td>
               </tr>
@@ -1076,11 +1074,11 @@ export default function ArmazemPage() {
               const cred = Number(p.icms_credit) + Number(p.pis_credit) + Number(p.cofins_credit);
               return (
                 <Fragment key={p.id}>
-                <tr className={sel.has(p.id) ? "bg-brand-light/30" : ""}>
+                <tr className={`transition-colors hover:bg-slate-50/70 ${sel.has(p.id) ? "bg-brand-light/30" : ""}`}>
                   <td className="td w-8"><input type="checkbox" checked={sel.has(p.id)} onChange={() => alternar(p.id)} aria-label={`Selecionar ${p.sku}`} /></td>
-                  <td className="td font-mono text-xs">{p.sku}</td>
-                  <td className="td">
-                    {p.name}
+                  <td className="td max-w-[340px] whitespace-normal">
+                    <div className="truncate font-medium text-slate-900" title={p.name}>{p.name}</div>
+                    <div className="font-mono text-[11px] text-slate-400">{p.sku}</div>
                     {p.grupo && (
                       <button type="button" className="ml-2 rounded bg-brand-light px-1.5 py-0.5 text-[10px] font-semibold text-brand hover:underline" title={`Grupo: ${p.grupo}. Clique para ver só este grupo`} onClick={() => setGrupoFiltro(grupoFiltro === p.grupo ? null : p.grupo ?? null)}>
                         grupo · {p.grupo.length > 28 ? p.grupo.slice(0, 28) + "…" : p.grupo}
@@ -1089,7 +1087,7 @@ export default function ArmazemPage() {
                   </td>
                   <td className="td">
                     <select
-                      className="input py-1"
+                      className="input w-[112px] py-1"
                       value={p.tipo ?? "unico"}
                       onChange={async (e) => {
                         const { error } = await supabase.from("products").update({ tipo: e.target.value }).eq("id", p.id);
@@ -1103,7 +1101,7 @@ export default function ArmazemPage() {
                     </select>
                   </td>
                   <td className="td">
-                    <select className="input py-1" value={p.company_id ?? ""} onChange={(e) => trocarEmpresa(p, e.target.value)}>
+                    <select className="input w-[150px] py-1" value={p.company_id ?? ""} onChange={(e) => trocarEmpresa(p, e.target.value)}>
                       <option value="">—</option>
                       {empresas.map((c) => (
                         <option key={c.id} value={c.id}>{c.name}{c.cnpj ? ` · ${formatarCnpj(c.cnpj)}` : ""}</option>
@@ -1119,7 +1117,7 @@ export default function ArmazemPage() {
                     ) : (
                       <input
                         key={`c${p.id}${p.cost_price}`}
-                        className="input w-24 py-1"
+                        className="input w-[84px] py-1"
                         inputMode="decimal"
                         defaultValue={campo(Number(p.cost_price))}
                         onBlur={(e) => salvarCampo(p, "cost_price", e.target.value)}
@@ -1134,7 +1132,7 @@ export default function ArmazemPage() {
                   <td className="td">
                     <input
                       key={`e${p.id}${p.stock_qty}`}
-                      className="input w-20 py-1"
+                      className="input w-[64px] py-1"
                       inputMode="decimal"
                       defaultValue={campo(Number(p.stock_qty))}
                       onBlur={(e) => salvarCampo(p, "stock_qty", e.target.value)}
@@ -1188,17 +1186,10 @@ export default function ArmazemPage() {
                     <PesoMedidas p={p} onSalvar={salvarCampos} />
                   </td>
                   <td className="td">
-                    <input
-                      type="checkbox"
-                      checked={!!p.promo_auto}
-                      title="Entrar sozinho nas promoções que dão a margem mínima deste SKU"
-                      onChange={(e) => salvarPromo(p, { promo_auto: e.target.checked })}
-                    />
-                  </td>
-                  <td className="td">
+                    <div className="flex items-center gap-1.5">
                     <input
                       key={`pm${p.id}${p.promo_min_margin ?? ""}`}
-                      className="input w-20 py-1"
+                      className="input w-[64px] py-1"
                       inputMode="decimal"
                       placeholder="10"
                       defaultValue={p.promo_min_margin != null ? campo(Number(p.promo_min_margin)) : ""}
@@ -1208,6 +1199,11 @@ export default function ArmazemPage() {
                         if (v !== (p.promo_min_margin == null ? null : Number(p.promo_min_margin))) salvarPromo(p, { promo_min_margin: v });
                       }}
                     />
+                    <label className="flex cursor-pointer items-center gap-1 text-[11px] text-slate-500" title="Entrar sozinho nas promoções do Mercado Livre que dão a margem mínima deste SKU">
+                      <input type="checkbox" checked={!!p.promo_auto} onChange={(e) => salvarPromo(p, { promo_auto: e.target.checked })} />
+                      auto
+                    </label>
+                    </div>
                     {p.promo_min_margin != null && p.ml_preco != null && (
                       <div className="mt-1 text-xs leading-tight">
                         <div className="text-slate-500">vende a {brl(Number(p.ml_preco))}</div>
@@ -1224,19 +1220,19 @@ export default function ArmazemPage() {
                   <td className="td whitespace-nowrap">
                     <CelulaCanal margem={p.shopee_margem} preco={p.shopee_preco} config={p.shopee_config} href={`/dashboard/calculadora?canal=shopee&produto=${p.id}`} />
                   </td>
-                  <td className="td whitespace-nowrap">
+                  <td className="td whitespace-nowrap text-right">
                     {ehKit && (
-                      <button onClick={() => { setKitAberto(kitAberto === p.id ? null : p.id); setKitBusca(""); }} className="mr-3 text-xs font-semibold text-brand hover:underline">
+                      <button onClick={() => { setKitAberto(kitAberto === p.id ? null : p.id); setKitBusca(""); }} className="mr-2 text-xs font-semibold text-brand hover:underline">
                         Composição{pecas.length ? ` (${pecas.length})` : ""}
                       </button>
                     )}
-                    <button onClick={() => abrirHistorico(p)} className="mr-3 text-xs text-brand hover:underline">Histórico</button>
-                    <button onClick={() => remover(p)} className="text-xs text-red-700 hover:underline">Excluir</button>
+                    <button onClick={() => abrirHistorico(p)} className="mr-2 text-xs text-slate-500 hover:text-brand hover:underline">Histórico</button>
+                    <button onClick={() => remover(p)} className="text-xs text-slate-400 hover:text-red-700 hover:underline">Excluir</button>
                   </td>
                 </tr>
                 {kitAberto === p.id && (
                   <tr className="bg-brand-light/30">
-                    <td className="td" colSpan={mostraCreditos ? 15 : 14}>
+                    <td className="td" colSpan={mostraCreditos ? 13 : 12}>
                       <div className="space-y-3 py-2">
                         <p className="text-sm font-semibold">Composição do kit {p.sku}</p>
                         <p className="text-xs text-slate-600">Escolha os produtos e a quantidade de cada um que entram neste kit. O custo do kit é a soma e se atualiza sozinho sempre que o custo de uma peça mudar (cada mudança fica no Histórico).</p>
@@ -1300,7 +1296,7 @@ export default function ArmazemPage() {
                 )}
                 {aberto && (
                   <tr className="bg-slate-50">
-                    <td className="td" colSpan={mostraCreditos ? 15 : 14}>
+                    <td className="td" colSpan={mostraCreditos ? 13 : 12}>
                       <div className="space-y-2 py-1">
                         <p className="text-xs text-slate-600">
                           Histórico de custo. Cada venda usa o custo vigente na data dela. Ao alterar o custo acima, uma linha nova é criada com a data de hoje.
@@ -1349,7 +1345,7 @@ export default function ArmazemPage() {
 function CelulaCanal({ margem, preco, config, href }: { margem?: number | null; preco?: number | null; config?: Record<string, unknown> | null; href?: string }) {
   if (margem == null) {
     return href ? (
-      <Link href={href} className="text-xs text-brand hover:underline">
+      <Link href={href} className="text-[11px] text-brand hover:underline">
         Calcular
       </Link>
     ) : (
@@ -1358,13 +1354,13 @@ function CelulaCanal({ margem, preco, config, href }: { margem?: number | null; 
   }
   return (
     <div className="leading-tight">
-      <div className="font-semibold">{campo(Number(margem))}%</div>
-      {preco != null && <div className="text-xs text-slate-500">vende a {brl(Number(preco))}</div>}
-      {preco != null && <div className="text-xs font-medium text-emerald-700">sobra {brl((Number(preco) * Number(margem)) / 100)}</div>}
+      <div className="text-[13px] font-semibold">{campo(Number(margem))}%</div>
+      {preco != null && <div className="text-[11px] text-slate-500">vende a {brl(Number(preco))}</div>}
+      {preco != null && <div className="text-[11px] font-medium text-emerald-700">sobra {brl((Number(preco) * Number(margem)) / 100)}</div>}
       {config?.usarAds === true ? (
-        <div className="text-xs text-cyan-700">com ads: ROAS {String(config.roas ?? "")} · afiliado {String(config.afiliado ?? "")}%</div>
+        <div className="text-[11px] text-cyan-700">com ads: ROAS {String(config.roas ?? "")} · afiliado {String(config.afiliado ?? "")}%</div>
       ) : config ? (
-        <div className="text-xs text-slate-400">sem ads</div>
+        <div className="text-[11px] text-slate-400">sem ads</div>
       ) : null}
       {href && (
         <Link href={href} className="text-[11px] text-brand hover:underline">
