@@ -73,6 +73,7 @@ export default function PedidosPage() {
   const [buscaAtiva, setBuscaAtiva] = useState("");
   // Loja (conta do Mercado Livre) escolhida: "" = todas juntas. A escolha fica lembrada neste navegador.
   const [lojaSel, setLojaSel] = useState("");
+  const [soSemCusto, setSoSemCusto] = useState(false);
   // Lojas = contas do Mercado Livre conectadas (a tabela de conexões é protegida: vem pela API)
   useEffect(() => {
     apiFetch<{ accounts: { ml_user_id: string; nickname: string | null; store_name?: string | null }[] }>("/api/ml/accounts")
@@ -280,10 +281,13 @@ export default function PedidosPage() {
     carregar();
   }, [carregar]);
 
-  const visiveis = useMemo(() => {
+  const baseFiltrada = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return (linhas ?? []).filter((l) => (!lojaSel || l.contaId === lojaSel) && (!q || l.pedido.toLowerCase().includes(q) || l.pack.includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q));
   }, [linhas, busca, lojaSel]);
+  // Pedidos (um pedido pode ter vários itens) que ainda têm alguma venda sem custo
+  const pedidosSemCusto = useMemo(() => new Set(baseFiltrada.filter((l) => l.custo === 0).map((l) => l.pack || l.pedido)).size, [baseFiltrada]);
+  const visiveis = useMemo(() => (soSemCusto ? baseFiltrada.filter((l) => l.custo === 0) : baseFiltrada), [baseFiltrada, soSemCusto]);
 
   // Um pedido com vários produtos vira uma linha só (valores somados, produtos listados dentro dela).
   const grupos = useMemo(() => {
@@ -374,7 +378,6 @@ export default function PedidosPage() {
   const totalFrete = soma(visiveis, "frete");
   const totalFreteComprador = soma(visiveis, "freteComprador");
   const totalImpostos = soma(visiveis, "impostos");
-  const semCusto = visiveis.filter((l) => l.custo === 0).length;
   const cor = (v: number) => (v < 0 ? "text-red-700" : "text-emerald-700");
   const margemTotal = totalPreco > 0 ? (totalSobra / totalPreco) * 100 : null;
   const roiTotal = totalCusto > 0 ? (totalSobra / totalCusto) * 100 : null;
@@ -478,11 +481,22 @@ export default function PedidosPage() {
 
       {(
         <>
-          {semCusto > 0 && (
-            <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
-              {semCusto} {semCusto === 1 ? "venda está" : "vendas estão"} sem custo (anúncio sem produto do armazém ligado), então o lucro dela aparece maior que o real. Ligue o anúncio
-              a um produto em Produtos &gt; Anúncios Marketplace e reprocesse os pedidos.
-            </p>
+          {(pedidosSemCusto > 0 || soSemCusto) && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+              <p>
+                {pedidosSemCusto > 0 ? (
+                  <>
+                    Você tem <b>{pedidosSemCusto} {pedidosSemCusto === 1 ? "pedido" : "pedidos"}</b> sem ter informado o custo, então o lucro {pedidosSemCusto === 1 ? "dele aparece" : "deles aparece"} maior que o real.
+                    Informe o custo na linha ou ligue o anúncio a um produto em Produtos &gt; Anúncios Marketplace e reprocesse os pedidos.
+                  </>
+                ) : (
+                  <>Nenhum pedido sem custo neste período.</>
+                )}
+              </p>
+              <button className={soSemCusto ? "btn" : "btn-ghost"} onClick={() => setSoSemCusto(!soSemCusto)}>
+                {soSemCusto ? "Mostrar todos os pedidos" : "Ver só pedidos sem custo"}
+              </button>
+            </div>
           )}
 
           {(ordem.col !== ORDEM_PADRAO.col || ordem.dir !== ORDEM_PADRAO.dir) && (
