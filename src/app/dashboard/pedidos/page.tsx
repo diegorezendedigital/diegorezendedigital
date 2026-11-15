@@ -144,22 +144,14 @@ export default function PedidosPage() {
   const [soSemCusto, setSoSemCusto] = useState(false);
   // Lojas = contas do Mercado Livre conectadas (a tabela de conexões é protegida: vem pela API)
   useEffect(() => {
-    apiFetch<{ accounts: { ml_user_id: string; nickname: string | null; store_name?: string | null }[] }>("/api/ml/accounts")
-      .then((r) =>
-        setLojas(
-          r.accounts
-            .map((c) => ({ id: c.ml_user_id, nome: c.store_name || c.nickname || c.ml_user_id, mp: "Mercado Livre" }))
-            .sort((x, y) => x.nome.localeCompare(y.nome, "pt-BR"))
-        )
-      )
-      .catch(() => setLojas([]));
-    // Lojas da Shopee conectadas (se houver) entram na mesma lista
-    apiFetch<{ accounts: { shop_id: string; shop_name: string | null; store_name?: string | null }[] }>("/api/shopee/accounts")
-      .then((r) => {
-        const sh = (r.accounts ?? []).map((c) => ({ id: String(c.shop_id), nome: c.store_name || c.shop_name || String(c.shop_id), mp: "Shopee" }));
-        if (sh.length) setLojas((atual) => [...atual.filter((x) => x.mp !== "Shopee"), ...sh]);
-      })
-      .catch(() => undefined);
+    // Mercado Livre e Shopee carregam juntas, para uma não apagar a outra
+    const ml = apiFetch<{ accounts: { ml_user_id: string; nickname: string | null; store_name?: string | null }[] }>("/api/ml/accounts")
+      .then((r) => r.accounts.map((c) => ({ id: String(c.ml_user_id), nome: c.store_name || c.nickname || String(c.ml_user_id), mp: "Mercado Livre" })))
+      .catch(() => [] as { id: string; nome: string; mp: string }[]);
+    const sh = apiFetch<{ accounts: { shop_id: string; shop_name: string | null; store_name?: string | null }[] }>("/api/shopee/accounts")
+      .then((r) => (r.accounts ?? []).map((c) => ({ id: String(c.shop_id), nome: c.store_name || c.shop_name || String(c.shop_id), mp: "Shopee" })))
+      .catch(() => [] as { id: string; nome: string; mp: string }[]);
+    Promise.all([ml, sh]).then(([a, b]) => setLojas([...a.sort((x, y) => x.nome.localeCompare(y.nome, "pt-BR")), ...b.sort((x, y) => x.nome.localeCompare(y.nome, "pt-BR"))]));
   }, []);
   const nomeLoja = (id: string) => lojas.find((x) => x.id === id)?.nome ?? "";
   useEffect(() => {
@@ -227,7 +219,7 @@ export default function PedidosPage() {
     try {
       const dias = Math.min(90, Math.max(1, Math.ceil((Date.now() - new Date(`${de}T00:00:00-03:00`).getTime()) / 86400000) + 1));
       const r = await sincronizarVendas(dias, setProgresso);
-      if (r.contas === 0) setErro("Nenhuma conta do Mercado Livre conectada. Conecte em Integrações.");
+      if (r.contas === 0) setErro("Nenhuma loja conectada (Mercado Livre ou Shopee). Conecte em Integrações.");
       else setAviso(`Pedidos reprocessados: ${r.vendas} vendas novas ou completadas. O custo de vendas que já tinham custo não foi alterado.`);
       await carregar();
     } catch (e) {
