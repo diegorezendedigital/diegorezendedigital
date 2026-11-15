@@ -1050,8 +1050,8 @@ export default function ArmazemPage() {
               <th className="th">Créditos un.</th>
               <th className="th">Estoque</th>
               <th className="th">Anúncios</th>
-              <th className="th" title="Entrar sozinho nas promoções do Mercado Livre que dão a margem mínima deste SKU">Promo auto</th>
               <th className="th" title="Peso real (kg) e medidas (cm). O peso cúbico é calculado sozinho.">Peso e medidas</th>
+              <th className="th" title="Entrar sozinho nas promoções do Mercado Livre que dão a margem mínima deste SKU">Promo auto</th>
               <th className="th" title="Margem líquida do Mercado Livre: também é a mínima para aceitar uma promoção. Pode ser negativa (ex.: -5) para aceitar prejuízo.">Margem Mercado Livre %</th>
               <th className="th" title="Margem e preço de venda salvos na calculadora do TikTok Shop">Margem TikTok</th>
               <th className="th" title="Margem e preço de venda da Shopee">Margem Shopee</th>
