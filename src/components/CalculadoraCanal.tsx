@@ -393,7 +393,19 @@ export default function CalculadoraCanal({ canal, publico = false }: { canal: Ca
       <div className="rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 p-5 text-white shadow-lg">
         <h2 className="text-lg font-semibold">Quanto quero ganhar</h2>
         <p className="mb-4 text-sm text-white/75">Digite a margem ou o valor que quer que sobre. O outro campo, o preço e o resto são preenchidos sozinhos.</p>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className={`grid gap-3 ${publico ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
+          {publico && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-white/80">Custo do produto (R$)</label>
+              <input
+                className="input !bg-white/95 !text-slate-900"
+                inputMode="decimal"
+                value={custo}
+                onChange={(e) => setCusto(e.target.value)}
+                placeholder="ex.: 40,00"
+              />
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-xs font-medium text-white/80">Margem desejada (%)</label>
             <input
@@ -453,11 +465,13 @@ export default function CalculadoraCanal({ canal, publico = false }: { canal: Ca
               />
               <p className="mt-1 text-[11px] text-slate-500">Depois do desconto do vendedor</p>
             </div>
-            <div>
-              <label className="label">Custo do produto (R$)</label>
-              <input className="input" inputMode="decimal" value={custo} onChange={(e) => setCusto(e.target.value)} />
-              {produto && <p className="mt-1 text-[11px] text-slate-500">Puxado do armazém</p>}
-            </div>
+            {!publico && (
+              <div>
+                <label className="label">Custo do produto (R$)</label>
+                <input className="input" inputMode="decimal" value={custo} onChange={(e) => setCusto(e.target.value)} />
+                {produto && <p className="mt-1 text-[11px] text-slate-500">Puxado do armazém</p>}
+              </div>
+            )}
             <div>
               <label className="label">Imposto (%)</label>
               <input className="input" inputMode="decimal" value={imposto} onChange={(e) => setImposto(e.target.value)} />
