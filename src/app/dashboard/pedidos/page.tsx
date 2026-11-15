@@ -606,7 +606,17 @@ export default function PedidosPage() {
                                     {l.manual && <div className="text-[11px] text-slate-500">manual</div>}
                                   </Tip>
                                 )}
-                                {l.pendente && (
+                                {l.pendente && editId === l.pendente.id && (
+                                  <div className="ml-auto flex w-40 flex-col gap-1.5 text-left" onKeyDown={(e) => { if (e.key === "Enter") salvarCusto(l.pendente!); if (e.key === "Escape") setEditId(null); }}>
+                                    <input autoFocus className="input py-1 text-right text-[13px]" inputMode="decimal" placeholder="Custo total (R$)" title="Custo total desta venda (custo × quantidade)" value={custoManual} onChange={(e) => setCustoManual(e.target.value)} />
+                                    <input type="password" className="input py-1 text-[13px]" placeholder="Senha master" autoComplete="off" value={senha} onChange={(e) => setSenha(e.target.value)} />
+                                    <div className="flex gap-1.5">
+                                      <button className="btn flex-1 !px-2 !py-1 text-xs" onClick={() => salvarCusto(l.pendente!)} disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
+                                      <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setEditId(null)}>Cancelar</button>
+                                    </div>
+                                  </div>
+                                )}
+                                {l.pendente && editId !== l.pendente.id && (
                                   <button className="block w-full text-right text-amber-700 underline" onClick={() => { const id = l.pendente!.id; setEditId(editId === id ? null : id); setCustoManual(""); setSenha(""); }}>
                                     {l.itens.length > 1 ? "item sem custo · informar" : "sem custo · informar"}
                                   </button>
@@ -631,25 +641,6 @@ export default function PedidosPage() {
                           );
                         })()}
                       </tr>
-                      {l.pendente && editId === l.pendente.id && (
-                        <tr className="border-b border-slate-100 bg-amber-50">
-                          <td className="px-5 py-4" colSpan={14}>
-                            <div className="flex flex-wrap items-end gap-2">
-                              <div>
-                                <label className="label">Custo total desta venda (R$)</label>
-                                <input className="input w-36 py-1" inputMode="decimal" value={custoManual} onChange={(e) => setCustoManual(e.target.value)} />
-                              </div>
-                              <div>
-                                <label className="label">Senha master</label>
-                                <input type="password" className="input w-40 py-1" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="off" />
-                              </div>
-                              <button className="btn" onClick={() => salvarCusto(l.pendente!)} disabled={salvando}>{salvando ? "Salvando…" : "Salvar custo"}</button>
-                              <button className="btn-ghost" onClick={() => setEditId(null)}>Cancelar</button>
-                              <span className="text-xs text-slate-600">Vale só para esta venda (custo × quantidade já somados). A senha é criada em Configurações.</span>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                     </Fragment>
                   ))}
                 </tbody>
