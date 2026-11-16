@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { shopeePost, tokenShopee } from "@/lib/server/shopee";
-import { criarOfertaComItens, horariosDisponiveis, horariosOcupados, itensDaOferta, margensDosItens, type ItemRelampago } from "@/lib/server/shopee-relampago";
+import { criarOfertaComItens, editarItensOferta, horariosDisponiveis, horariosOcupados, itensDaOferta, margensDosItens, type ItemRelampago, type MudancaRelampago } from "@/lib/server/shopee-relampago";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -53,6 +53,11 @@ export async function POST(req: Request) {
     if (b.acao === "status") {
       await shopeePost(token, shopId, "/api/v2/shop_flash_sale/update_shop_flash_sale", { flash_sale_id: Number(b.flash_sale_id), status: b.ativar ? 1 : 2 });
       return NextResponse.json({ ok: true });
+    }
+    if (b.acao === "itens") {
+      const mud = (b.mudancas ?? []) as MudancaRelampago[];
+      if (!mud.length) return erro("Nada para salvar");
+      return NextResponse.json(await editarItensOferta(token, shopId, Number(b.flash_sale_id), mud));
     }
     if (b.acao === "criar") {
       const itens = (b.itens ?? []) as ItemRelampago[];

@@ -207,3 +207,32 @@ export async function executarRegra(regra: Regra, limiteMs = 45_000) {
     .eq("id", regra.id);
   return resultado;
 }
+
+// Mudança de uma variação dentro de uma oferta relâmpago já criada.
+export type MudancaRelampago = { item_id: number; model_id: number | null; era_ativo: boolean; ativo: boolean; preco: number; estoque: number; limite_compra: number };
+
+// Edita produtos de uma oferta. A Shopee só deixa mudar preço e estoque de variação desativada:
+// por isso as que estavam ativas são desativadas com os novos valores e, se continuarem na oferta, ativadas de novo.
+export async function editarItensOferta(token: string, shopId: string, flashSaleId: number, mudancas: MudancaRelampago[]) {
+  const recusados: { item_id: number; model_id?: number; motivo: string }[] = [];
+  async function enviar(lista: MudancaRelampago[], status: 0 | 1) {
+    if (!lista.length) return;
+    const porItem = new Map<number, MudancaRelampago[]>();
+    for (const m of lista) porItem.set(m.item_id, [...(porItem.get(m.item_id) ?? []), m]);
+    const items = Array.from(porItem.values()).map((g) =>
+      g[0].model_id == null
+        ? { item_id: g[0].item_id, purchase_limit: g[0].limite_compra, item_status: status, item_input_promo_price: g[0].preco, item_stock: g[0].estoque }
+        : { item_id: g[0].item_id, purchase_limit: g[0].limite_compra, models: g.map((m) => ({ model_id: m.model_id, status, input_promo_price: m.preco, stock: m.estoque })) }
+    );
+    for (let i = 0; i < items.length; i += 50) {
+      const r = await shopeePost<{ response?: { failed_items?: { item_id: number; model_id?: number; err_msg?: string; unqualified_reason?: string }[] } }>(
+        token, shopId, "/api/v2/shop_flash_sale/update_shop_flash_sale_items", { flash_sale_id: flashSaleId, items: items.slice(i, i + 50) }
+      );
+      for (const f of r.response?.failed_items ?? []) recusados.push({ item_id: f.item_id, model_id: f.model_id, motivo: f.err_msg || f.unqualified_reason || "recusado" });
+    }
+  }
+  await enviar(mudancas.filter((m) => m.era_ativo), 0);
+  await enviar(mudancas.filter((m) => m.ativo), 1);
+  return { recusados };
+}
+

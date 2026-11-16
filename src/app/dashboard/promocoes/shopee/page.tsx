@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/supabase/client";
 import { brl, campo, num, pct } from "@/lib/types";
+import { CANAIS, faixaDoPreco } from "@/lib/taxas-publicas";
 
 type Loja = { shop_id: string; shop_name: string | null; store_name?: string | null };
 type Relampago = { flash_sale_id: number; status?: number; start_time: number; end_time: number; enabled_item_count?: number; item_count?: number; type?: number; remindme_count?: number; click_count?: number };
@@ -187,7 +188,7 @@ export default function PromocoesShopeePage() {
                       <td className="td text-right">{f.remindme_count ?? 0}</td>
                       <td className="td text-right">{f.click_count ?? 0}</td>
                       <td className="td whitespace-nowrap text-right">
-                        <button className="btn-ghost" onClick={() => setAbertaRel(abertaRel === f.flash_sale_id ? null : f.flash_sale_id)}>{abertaRel === f.flash_sale_id ? "Fechar" : "Produtos"}</button>
+                        <button className="btn-ghost" onClick={() => setAbertaRel(abertaRel === f.flash_sale_id ? null : f.flash_sale_id)}>{abertaRel === f.flash_sale_id ? "Fechar" : "Ver e editar"}</button>
                         <button className="btn-ghost" onClick={() => setDuplicando(f.flash_sale_id)}>Duplicar</button>
                         <button className="btn-ghost" onClick={() => { setParaRobo(f.flash_sale_id); setAba("robo"); }}>Usar no robô</button>
                         {f.type !== 3 && (f.status === 1
@@ -196,7 +197,7 @@ export default function PromocoesShopeePage() {
                       </td>
                     </tr>
                     {abertaRel === f.flash_sale_id && (
-                      <tr><td colSpan={8} className="bg-slate-50 p-3"><ProdutosRelampago loja={loja} id={f.flash_sale_id} /></td></tr>
+                      <tr><td colSpan={8} className="bg-slate-50 p-3"><ProdutosRelampago loja={loja} id={f.flash_sale_id} encerrada={f.type === 3 || f.end_time * 1000 < Date.now()} /></td></tr>
                     )}
                     </Fragment>
                   )) : <tr><td className="td text-slate-500" colSpan={8}>Nenhuma oferta relâmpago {periodo === "ativas" ? "acontecendo ou programada" : "encerrada"}.</td></tr>}
@@ -254,32 +255,164 @@ export default function PromocoesShopeePage() {
   );
 }
 
-// ---------- Produtos de uma oferta relâmpago ----------
-function ProdutosRelampago({ loja, id }: { loja: string; id: number }) {
+// ---------- Produtos de uma oferta relâmpago (editável, agrupado por anúncio) ----------
+const CANAL_SHOPEE = CANAIS.find((c) => c.id === "shopee")!;
+function margemShopee(preco: number, custo: number) {
+  if (!custo || preco <= 0) return null;
+  const f = faixaDoPreco(CANAL_SHOPEE, preco);
+  const fixa = f.fixa === "metade" ? preco / 2 : Number(f.fixa);
+  return ((preco - custo - fixa - (preco * (f.comissao + 5 + 10)) / 100) / preco) * 100;
+}
+
+function ProdutosRelampago({ loja, id, encerrada }: { loja: string; id: number; encerrada: boolean }) {
   const [itens, setItens] = useState<ItemOferta[] | null>(null);
+  const [ed, setEd] = useState<Record<string, { preco: string; estoque: string; ativo: boolean }>>({});
+  const [limites, setLimites] = useState<Record<number, string>>({});
   const [erro, setErro] = useState("");
-  useEffect(() => {
-    apiFetch<{ itens: ItemOferta[] }>(`/api/shopee/relampago?shop_id=${loja}&flash_sale_id=${id}`).then((r) => setItens(r.itens)).catch((e) => setErro(msgErro(e)));
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState("");
+  const k = (i: ItemOferta) => `${i.item_id}:${i.model_id ?? 0}`;
+
+  const carregar = useCallback(() => {
+    apiFetch<{ itens: ItemOferta[] }>(`/api/shopee/relampago?shop_id=${loja}&flash_sale_id=${id}`)
+      .then((r) => {
+        setItens(r.itens);
+        setEd(Object.fromEntries(r.itens.map((i) => [k(i), { preco: campo(i.preco_promo), estoque: String(i.estoque), ativo: i.ativo !== false }])));
+        setLimites(Object.fromEntries(r.itens.map((i) => [i.item_id, String(i.limite_compra || "")])));
+      })
+      .catch((e) => setErro(msgErro(e)));
   }, [loja, id]);
+  useEffect(carregar, [carregar]);
+
   if (erro) return <p className="text-sm text-red-700">{erro}</p>;
   if (!itens) return <p className="text-sm text-slate-500">Carregando produtos…</p>;
   if (!itens.length) return <p className="text-sm text-slate-500">Oferta sem produtos.</p>;
+
+  const grupos = new Map<number, ItemOferta[]>();
+  for (const i of itens) grupos.set(i.item_id, [...(grupos.get(i.item_id) ?? []), i]);
+  const mudou = (i: ItemOferta) => {
+    const e = ed[k(i)];
+    if (!e) return false;
+    return e.ativo !== (i.ativo !== false) || num(e.preco) !== i.preco_promo || Math.round(num(e.estoque)) !== i.estoque || num(limites[i.item_id] ?? "") !== i.limite_compra;
+  };
+  const alterados = itens.filter(mudou);
+  const ativos = itens.filter((i) => ed[k(i)]?.ativo).length;
+
+  function setVar(i: ItemOferta, v: Partial<{ preco: string; estoque: string; ativo: boolean }>) {
+    setEd((x) => ({ ...x, [k(i)]: { ...x[k(i)], ...v } }));
+  }
+
+  async function salvar() {
+    const invalidos = alterados.filter((i) => ed[k(i)].ativo && (num(ed[k(i)].preco) <= 0 || num(ed[k(i)].preco) >= i.preco_original || num(ed[k(i)].estoque) <= 0));
+    if (invalidos.length) { setMsg(`Confira ${invalidos.length} ${invalidos.length === 1 ? "variação ativa" : "variações ativas"}: o preço precisa ser menor que o normal e o estoque maior que zero.`); return; }
+    setSalvando(true); setMsg("");
+    try {
+      const r = await apiFetch<{ recusados: { motivo: string }[] }>("/api/shopee/relampago", {
+        method: "POST",
+        body: JSON.stringify({
+          acao: "itens", shop_id: loja, flash_sale_id: id,
+          mudancas: alterados.map((i) => ({
+            item_id: i.item_id, model_id: i.model_id, era_ativo: i.ativo !== false, ativo: ed[k(i)].ativo,
+            preco: num(ed[k(i)].preco), estoque: Math.round(num(ed[k(i)].estoque)), limite_compra: Math.round(num(limites[i.item_id] ?? "")),
+          })),
+        }),
+      });
+      setMsg(r.recusados?.length ? `Salvo, mas a Shopee recusou ${r.recusados.length}: ${r.recusados.map((x) => x.motivo).join("; ")}` : "Oferta atualizada na Shopee.");
+      carregar();
+    } catch (e) { setMsg(msgErro(e)); } finally { setSalvando(false); }
+  }
+
   return (
-    <table className="w-full text-sm">
-      <thead><tr><th className="th">Produto</th><th className="th text-right">Preço normal</th><th className="th text-right">Preço relâmpago</th><th className="th text-right">Desconto</th><th className="th text-right">Estoque</th><th className="th text-right">Margem</th></tr></thead>
-      <tbody>
-        {itens.map((i) => (
-          <tr key={`${i.item_id}:${i.model_id}`} className="border-t border-slate-200">
-            <td className="td">{i.nome}{i.variacao && <span className="text-slate-500"> · {i.variacao}</span>}{i.ativo === false && <span className="ml-1 text-xs text-slate-400">(inativo)</span>}</td>
-            <td className="td text-right">{brl(i.preco_original)}</td>
-            <td className="td text-right font-medium">{brl(i.preco_promo)}</td>
-            <td className="td text-right">{pct(off(i.preco_original, i.preco_promo))}</td>
-            <td className="td text-right">{i.estoque}</td>
-            <td className={`td text-right ${i.margem != null && i.margem < 0 ? "text-red-700" : ""}`}>{i.margem == null ? <span className="text-xs text-slate-400">sem custo</span> : pct(i.margem)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="space-y-3 rounded-2xl bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+        <span><b>{ativos}</b> de {itens.length} variações ativas na oferta</span>
+        {encerrada && <span className="text-xs text-slate-500">Oferta encerrada: só leitura.</span>}
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="th">Produto</th><th className="th text-right">Preço normal</th><th className="th">Preço relâmpago</th><th className="th">Desconto</th>
+              <th className="th">Estoque da oferta</th><th className="th text-right">Margem</th><th className="th text-center">Ativar</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from(grupos.entries()).map(([itemId, vars]) => {
+              const todosAtivos = vars.every((v) => ed[k(v)]?.ativo);
+              const algum = vars.some((v) => ed[k(v)]?.ativo);
+              return (
+                <Fragment key={itemId}>
+                  <tr className="border-t border-slate-200 bg-slate-50/70">
+                    <td className="td" colSpan={4}>
+                      <div className="font-medium">{vars[0].nome}</div>
+                      <div className="text-xs text-slate-500">ID do anúncio: <span className="font-mono">{itemId}</span> · {vars.length} {vars.length === 1 ? "variação" : "variações"}</div>
+                    </td>
+                    <td className="td" colSpan={2}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500">Limite por comprador</span>
+                        <input className="input w-20" inputMode="numeric" disabled={encerrada} placeholder="Sem" value={limites[itemId] ?? ""} onChange={(e) => setLimites({ ...limites, [itemId]: e.target.value.replace(/\D/g, "") })} />
+                      </div>
+                    </td>
+                    <td className="td text-center">
+                      {vars.length > 1 && (
+                        <button type="button" disabled={encerrada} title={todosAtivos ? "Desativar todas as variações" : "Ativar todas as variações"}
+                          onClick={() => setEd((x) => { const n = { ...x }; vars.forEach((v) => (n[k(v)] = { ...n[k(v)], ativo: !todosAtivos })); return n; })}
+                          className="text-xs text-brand underline disabled:opacity-40">{todosAtivos ? "desativar todas" : algum ? "ativar todas" : "ativar todas"}</button>
+                      )}
+                    </td>
+                  </tr>
+                  {vars.map((v) => {
+                    const e = ed[k(v)] ?? { preco: "", estoque: "", ativo: false };
+                    const p = num(e.preco);
+                    const mg = margemShopee(p, v.custo ?? 0);
+                    const pctOff = v.preco_original > 0 && p > 0 ? ((v.preco_original - p) / v.preco_original) * 100 : 0;
+                    return (
+                      <tr key={k(v)} className={`border-t border-slate-100 ${e.ativo ? "" : "text-slate-400"} ${mudou(v) ? "bg-amber-50/40" : ""}`}>
+                        <td className="td pl-8">
+                          {v.variacao ?? "Sem variação"}
+                          {v.model_id != null && <span className="ml-2 font-mono text-xs text-slate-500">ID {v.model_id}</span>}
+                        </td>
+                        <td className="td text-right">{brl(v.preco_original)}</td>
+                        <td className="td">
+                          <div className="flex items-center gap-1"><span className="text-xs text-slate-500">R$</span>
+                            <input className="input w-24" inputMode="decimal" disabled={encerrada} value={e.preco} onChange={(ev) => setVar(v, { preco: ev.target.value })} />
+                          </div>
+                        </td>
+                        <td className="td">
+                          <div className="flex items-center gap-1">
+                            <input className="input w-16" inputMode="decimal" disabled={encerrada} value={p > 0 ? campo(Math.round(pctOff * 10) / 10) : ""}
+                              onChange={(ev) => { const pc = num(ev.target.value); setVar(v, { preco: pc > 0 && pc < 100 ? campo(Math.round(v.preco_original * (1 - pc / 100) * 100) / 100) : "" }); }} />
+                            <span className="text-xs text-slate-500">%OFF</span>
+                          </div>
+                        </td>
+                        <td className="td"><input className="input w-20" inputMode="numeric" disabled={encerrada} value={e.estoque} onChange={(ev) => setVar(v, { estoque: ev.target.value.replace(/\D/g, "") })} /></td>
+                        <td className={`td text-right ${mg != null && mg < 0 ? "text-red-700" : ""}`}>{mg == null ? <span className="text-xs text-slate-400">sem custo</span> : pct(mg)}</td>
+                        <td className="td text-center">
+                          <button type="button" role="switch" aria-checked={e.ativo} disabled={encerrada} onClick={() => setVar(v, { ativo: !e.ativo })}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${e.ativo ? "bg-emerald-500" : "bg-slate-300"}`}>
+                            <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${e.ativo ? "translate-x-5" : "translate-x-0.5"}`} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!encerrada && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn" disabled={!alterados.length || salvando} onClick={salvar}>
+            {salvando ? "Salvando…" : alterados.length ? `Salvar alterações (${alterados.length} ${alterados.length === 1 ? "variação" : "variações"})` : "Salvar alterações"}
+          </button>
+          <button className="btn-ghost" disabled={!alterados.length || salvando} onClick={carregar}>Desfazer</button>
+          <span className="text-xs text-slate-500">Margem estimada com imposto de 10% e 5% de outras taxas da Shopee.</span>
+        </div>
+      )}
+      {msg && <p className="text-sm text-slate-700">{msg}</p>}
+    </div>
   );
 }
 
