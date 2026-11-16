@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/supabase/client";
-import { brl } from "@/lib/types";
+import { brl, campo, num, pct } from "@/lib/types";
 
 type Loja = { shop_id: string; shop_name: string | null; store_name?: string | null };
 type Relampago = { flash_sale_id: number; status?: number; start_time: number; end_time: number; enabled_item_count?: number; item_count?: number; type?: number; remindme_count?: number; click_count?: number };
@@ -14,7 +14,18 @@ type Cupom = {
   discount_amount?: number; percentage?: number; max_price?: number; min_basket_price?: number;
 };
 type Dados = { relampago: Relampago[]; descontos: Desconto[]; cupons: Cupom[]; erros: Record<string, string> };
-type Aba = "relampago" | "descontos" | "cupons";
+type Aba = "relampago" | "descontos" | "cupons" | "robo";
+type ItemOferta = { item_id: number; model_id: number | null; nome: string; variacao: string | null; preco_original: number; preco_promo: number; estoque: number; limite_compra: number; ativo?: boolean; custo?: number; margem?: number | null };
+type Horario = { timeslot_id: number; start_time: number; end_time: number; ocupado?: boolean };
+type Regra = {
+  id: string; shop_id: string; nome: string; modelo_flash_sale_id: number | null; modelo_itens: ItemOferta[]; modo: "todos" | "diario" | "agenda";
+  dias_semana: number[]; hora_inicio: number; hora_fim: number; dias_a_frente: number; margem_minima: number; imposto_pct: number; taxa_extra_pct: number;
+  ativo: boolean; ultima_execucao: string | null; total_criadas: number;
+  ultimo_resultado: { em: string; criadas: { inicio: number; itens: number; recusados: number }[]; pulados: { nome: string; motivo: string }[]; erros: string[]; aviso: string } | null;
+};
+const msgErro = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const off = (orig: number, promo: number) => (orig > 0 ? ((orig - promo) / orig) * 100 : 0);
+const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 const dataHora = (s: number) =>
   new Date(s * 1000).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -77,7 +88,23 @@ export default function PromocoesShopeePage() {
   }, [carregar]);
 
   const contagem = { relampago: dados?.relampago.length ?? 0, descontos: dados?.descontos.length ?? 0, cupons: dados?.cupons.length ?? 0 };
-  const ABAS: [Aba, string][] = [["relampago", "Oferta relâmpago"], ["descontos", "Promoções de desconto"], ["cupons", "Cupons"]];
+  const ABAS: [Aba, string][] = [["relampago", "Oferta relâmpago"], ["descontos", "Promoções de desconto"], ["cupons", "Cupons"], ["robo", "Robô de relâmpago"]];
+  const [abertaRel, setAbertaRel] = useState<number | null>(null);
+  const [abertoDesc, setAbertoDesc] = useState<number | null>(null);
+  const [duplicando, setDuplicando] = useState<number | null>(null);
+  const [criando, setCriando] = useState(false);
+  const [aviso, setAviso] = useState("");
+  const [paraRobo, setParaRobo] = useState<number | null>(null);
+
+  async function mudarStatus(id: number, ativar: boolean) {
+    try {
+      await apiFetch("/api/shopee/relampago", { method: "POST", body: JSON.stringify({ acao: "status", shop_id: loja, flash_sale_id: id, ativar }) });
+      setAviso(ativar ? "Oferta ativada." : "Oferta desativada.");
+      carregar();
+    } catch (e) {
+      setAviso(msgErro(e));
+    }
+  }
   const erroAba = dados?.erros?.[aba];
 
   return (
@@ -122,26 +149,36 @@ export default function PromocoesShopeePage() {
             {ABAS.map(([id, nome]) => (
               <button key={id} role="tab" aria-selected={aba === id} onClick={() => setAba(id)}
                 className={`rounded-full px-4 py-2 text-sm font-medium ${aba === id ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}>
-                {nome} <span className="ml-1 opacity-70">{contagem[id]}</span>
+                {nome} {id !== "robo" && <span className="ml-1 opacity-70">{contagem[id]}</span>}
               </button>
             ))}
           </div>
 
+          {aviso && <div className="card flex items-center justify-between text-sm"><span>{aviso}</span><button className="btn-ghost" onClick={() => setAviso("")}>Fechar</button></div>}
+          {aba === "relampago" && (
+            <div className="flex justify-end">
+              <button className="btn" onClick={() => setCriando(true)}>Criar oferta relâmpago</button>
+            </div>
+          )}
           {erroAba && (
             <div className="card border-amber-200 bg-amber-50 text-sm text-amber-800">
               A Shopee não liberou esta consulta: {erroAba}. Pode faltar permissão de promoções no app da Shopee.
             </div>
           )}
 
+          {aba === "robo" ? (
+            <Robo loja={loja} ofertas={dados?.relampago ?? []} preModelo={paraRobo} limparPre={() => setParaRobo(null)} />
+          ) : (
           <div className="card overflow-x-auto p-0 tabela-pro">
             {carregando ? (
               <p className="p-5 text-sm text-slate-500">Carregando…</p>
             ) : aba === "relampago" ? (
               <table className="w-full text-sm">
-                <thead><tr><th className="th">Início</th><th className="th">Fim</th><th className="th">Situação</th><th className="th">Status</th><th className="th text-right">Produtos ativos</th><th className="th text-right">Lembretes</th><th className="th text-right">Cliques</th></tr></thead>
+                <thead><tr><th className="th">Início</th><th className="th">Fim</th><th className="th">Situação</th><th className="th">Status</th><th className="th text-right">Produtos ativos</th><th className="th text-right">Lembretes</th><th className="th text-right">Cliques</th><th className="th"></th></tr></thead>
                 <tbody>
                   {dados?.relampago.length ? dados.relampago.sort((a, b) => a.start_time - b.start_time).map((f) => (
-                    <tr key={f.flash_sale_id} className="border-t border-slate-100">
+                    <Fragment key={f.flash_sale_id}>
+                    <tr className="border-t border-slate-100">
                       <td className="td">{dataHora(f.start_time)}</td>
                       <td className="td">{dataHora(f.end_time)}</td>
                       <td className="td"><Selo inicio={f.start_time} fim={f.end_time} /></td>
@@ -149,22 +186,42 @@ export default function PromocoesShopeePage() {
                       <td className="td text-right">{f.enabled_item_count ?? 0} de {f.item_count ?? 0}</td>
                       <td className="td text-right">{f.remindme_count ?? 0}</td>
                       <td className="td text-right">{f.click_count ?? 0}</td>
+                      <td className="td whitespace-nowrap text-right">
+                        <button className="btn-ghost" onClick={() => setAbertaRel(abertaRel === f.flash_sale_id ? null : f.flash_sale_id)}>{abertaRel === f.flash_sale_id ? "Fechar" : "Produtos"}</button>
+                        <button className="btn-ghost" onClick={() => setDuplicando(f.flash_sale_id)}>Duplicar</button>
+                        <button className="btn-ghost" onClick={() => { setParaRobo(f.flash_sale_id); setAba("robo"); }}>Usar no robô</button>
+                        {f.type !== 3 && (f.status === 1
+                          ? <button className="btn-ghost" onClick={() => mudarStatus(f.flash_sale_id, false)}>Desativar</button>
+                          : f.status === 2 ? <button className="btn-ghost" onClick={() => mudarStatus(f.flash_sale_id, true)}>Ativar</button> : null)}
+                      </td>
                     </tr>
-                  )) : <tr><td className="td text-slate-500" colSpan={7}>Nenhuma oferta relâmpago {periodo === "ativas" ? "acontecendo ou programada" : "encerrada"}.</td></tr>}
+                    {abertaRel === f.flash_sale_id && (
+                      <tr><td colSpan={8} className="bg-slate-50 p-3"><ProdutosRelampago loja={loja} id={f.flash_sale_id} /></td></tr>
+                    )}
+                    </Fragment>
+                  )) : <tr><td className="td text-slate-500" colSpan={8}>Nenhuma oferta relâmpago {periodo === "ativas" ? "acontecendo ou programada" : "encerrada"}.</td></tr>}
                 </tbody>
               </table>
             ) : aba === "descontos" ? (
               <table className="w-full text-sm">
-                <thead><tr><th className="th">Promoção</th><th className="th">Início</th><th className="th">Fim</th><th className="th">Situação</th></tr></thead>
+                <thead><tr><th className="th">Promoção</th><th className="th">Início</th><th className="th">Fim</th><th className="th">Situação</th><th className="th"></th></tr></thead>
                 <tbody>
                   {dados?.descontos.length ? dados.descontos.sort((a, b) => a.start_time - b.start_time).map((d) => (
-                    <tr key={d.discount_id} className="border-t border-slate-100">
+                    <Fragment key={d.discount_id}>
+                    <tr className="border-t border-slate-100">
                       <td className="td font-medium">{d.discount_name}</td>
                       <td className="td">{dataHora(d.start_time)}</td>
                       <td className="td">{dataHora(d.end_time)}</td>
                       <td className="td"><Selo inicio={d.start_time} fim={d.end_time} /></td>
+                      <td className="td text-right">
+                        <button className="btn-ghost" onClick={() => setAbertoDesc(abertoDesc === d.discount_id ? null : d.discount_id)}>{abertoDesc === d.discount_id ? "Fechar" : "Ver e editar"}</button>
+                      </td>
                     </tr>
-                  )) : <tr><td className="td text-slate-500" colSpan={4}>Nenhuma promoção de desconto {periodo === "ativas" ? "acontecendo ou programada" : "encerrada"}.</td></tr>}
+                    {abertoDesc === d.discount_id && (
+                      <tr><td colSpan={5} className="bg-slate-50 p-3"><ProdutosDesconto loja={loja} id={d.discount_id} encerrada={d.end_time * 1000 < Date.now()} /></td></tr>
+                    )}
+                    </Fragment>
+                  )) : <tr><td className="td text-slate-500" colSpan={5}>Nenhuma promoção de desconto {periodo === "ativas" ? "acontecendo ou programada" : "encerrada"}.</td></tr>}
                 </tbody>
               </table>
             ) : (
@@ -188,8 +245,370 @@ export default function PromocoesShopeePage() {
               </table>
             )}
           </div>
+          )}
         </>
       )}
+      {duplicando != null && <ModalDuplicar loja={loja} id={duplicando} fechar={() => setDuplicando(null)} pronto={(m) => { setDuplicando(null); setAviso(m); carregar(); }} />}
+      {criando && <ModalCriar loja={loja} fechar={() => setCriando(false)} pronto={(m) => { setCriando(false); setAviso(m); carregar(); }} />}
+    </div>
+  );
+}
+
+// ---------- Produtos de uma oferta relâmpago ----------
+function ProdutosRelampago({ loja, id }: { loja: string; id: number }) {
+  const [itens, setItens] = useState<ItemOferta[] | null>(null);
+  const [erro, setErro] = useState("");
+  useEffect(() => {
+    apiFetch<{ itens: ItemOferta[] }>(`/api/shopee/relampago?shop_id=${loja}&flash_sale_id=${id}`).then((r) => setItens(r.itens)).catch((e) => setErro(msgErro(e)));
+  }, [loja, id]);
+  if (erro) return <p className="text-sm text-red-700">{erro}</p>;
+  if (!itens) return <p className="text-sm text-slate-500">Carregando produtos…</p>;
+  if (!itens.length) return <p className="text-sm text-slate-500">Oferta sem produtos.</p>;
+  return (
+    <table className="w-full text-sm">
+      <thead><tr><th className="th">Produto</th><th className="th text-right">Preço normal</th><th className="th text-right">Preço relâmpago</th><th className="th text-right">Desconto</th><th className="th text-right">Estoque</th><th className="th text-right">Margem</th></tr></thead>
+      <tbody>
+        {itens.map((i) => (
+          <tr key={`${i.item_id}:${i.model_id}`} className="border-t border-slate-200">
+            <td className="td">{i.nome}{i.variacao && <span className="text-slate-500"> · {i.variacao}</span>}{i.ativo === false && <span className="ml-1 text-xs text-slate-400">(inativo)</span>}</td>
+            <td className="td text-right">{brl(i.preco_original)}</td>
+            <td className="td text-right font-medium">{brl(i.preco_promo)}</td>
+            <td className="td text-right">{pct(off(i.preco_original, i.preco_promo))}</td>
+            <td className="td text-right">{i.estoque}</td>
+            <td className={`td text-right ${i.margem != null && i.margem < 0 ? "text-red-700" : ""}`}>{i.margem == null ? <span className="text-xs text-slate-400">sem custo</span> : pct(i.margem)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ---------- Produtos de uma promoção de desconto (editável) ----------
+function ProdutosDesconto({ loja, id, encerrada }: { loja: string; id: number; encerrada: boolean }) {
+  const [itens, setItens] = useState<ItemOferta[] | null>(null);
+  const [precos, setPrecos] = useState<Record<string, string>>({});
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState("");
+  const chave = (i: ItemOferta) => `${i.item_id}:${i.model_id ?? ""}`;
+  const carregar = useCallback(() => {
+    apiFetch<{ itens: ItemOferta[] }>(`/api/shopee/descontos?shop_id=${loja}&discount_id=${id}`)
+      .then((r) => { setItens(r.itens); setPrecos(Object.fromEntries(r.itens.map((i) => [chave(i), campo(i.preco_promo)]))); })
+      .catch((e) => setErro(msgErro(e)));
+  }, [loja, id]);
+  useEffect(carregar, [carregar]);
+  if (erro) return <p className="text-sm text-red-700">{erro}</p>;
+  if (!itens) return <p className="text-sm text-slate-500">Carregando produtos…</p>;
+  const mudados = itens.filter((i) => num(precos[chave(i)] ?? "") !== i.preco_promo && num(precos[chave(i)] ?? "") > 0);
+  async function salvar() {
+    setSalvando(true); setMsg("");
+    try {
+      const r = await apiFetch<{ falhas: { item_id: number; motivo: string }[] }>("/api/shopee/descontos", {
+        method: "POST",
+        body: JSON.stringify({ shop_id: loja, discount_id: id, itens: mudados.map((i) => ({ item_id: i.item_id, model_id: i.model_id, preco_promo: num(precos[chave(i)]), limite_compra: i.limite_compra })) }),
+      });
+      setMsg(r.falhas?.length ? `Salvo, mas a Shopee recusou ${r.falhas.length}: ${r.falhas.map((f) => f.motivo).join("; ")}` : "Preços salvos na Shopee.");
+      carregar();
+    } catch (e) { setMsg(msgErro(e)); } finally { setSalvando(false); }
+  }
+  return (
+    <div className="space-y-3">
+      <table className="w-full text-sm">
+        <thead><tr><th className="th">Produto</th><th className="th text-right">Preço normal</th><th className="th text-right">Preço promocional</th><th className="th text-right">Desconto</th><th className="th text-right">Estoque</th></tr></thead>
+        <tbody>
+          {itens.map((i) => {
+            const p = num(precos[chave(i)] ?? "");
+            return (
+              <tr key={chave(i)} className="border-t border-slate-200">
+                <td className="td">{i.nome}{i.variacao && <span className="text-slate-500"> · {i.variacao}</span>}</td>
+                <td className="td text-right">{brl(i.preco_original)}</td>
+                <td className="td text-right">
+                  <input className="input w-28 text-right" inputMode="decimal" disabled={encerrada} value={precos[chave(i)] ?? ""} onChange={(e) => setPrecos({ ...precos, [chave(i)]: e.target.value })} />
+                </td>
+                <td className="td text-right">{pct(off(i.preco_original, p))}</td>
+                <td className="td text-right">{i.estoque}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {!encerrada && (
+        <div className="flex items-center gap-3">
+          <button className="btn" disabled={!mudados.length || salvando} onClick={salvar}>{salvando ? "Salvando…" : `Salvar ${mudados.length || ""} ${mudados.length === 1 ? "preço" : "preços"}`}</button>
+          {msg && <span className="text-sm text-slate-700">{msg}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Escolha de horários da Shopee ----------
+function useHorarios(loja: string) {
+  const [horarios, setHorarios] = useState<Horario[] | null>(null);
+  const [erro, setErro] = useState("");
+  useEffect(() => {
+    apiFetch<{ horarios: Horario[] }>(`/api/shopee/relampago?shop_id=${loja}&horarios=1&dias=7`).then((r) => setHorarios(r.horarios)).catch((e) => setErro(msgErro(e)));
+  }, [loja]);
+  return { horarios, erro };
+}
+const faixaHorario = (h: Horario) =>
+  `${new Date(h.start_time * 1000).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })} · ${new Date(h.start_time * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} às ${new Date(h.end_time * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+
+function Modal({ titulo, fechar, children }: { titulo: string; fechar: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={fechar}>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">{titulo}</h2><button className="btn-ghost" onClick={fechar}>Fechar</button></div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ModalDuplicar({ loja, id, fechar, pronto }: { loja: string; id: number; fechar: () => void; pronto: (m: string) => void }) {
+  const { horarios, erro } = useHorarios(loja);
+  const [sel, setSel] = useState<number[]>([]);
+  const [enviando, setEnviando] = useState(false);
+  const [falha, setFalha] = useState("");
+  async function duplicar() {
+    setEnviando(true); setFalha("");
+    try {
+      const r = await apiFetch<{ criadas: { flash_sale_id?: number; erro?: string; recusados?: number }[] }>("/api/shopee/relampago", { method: "POST", body: JSON.stringify({ acao: "duplicar", shop_id: loja, flash_sale_id: id, timeslot_ids: sel }) });
+      const ok = r.criadas.filter((c) => c.flash_sale_id).length;
+      const erros = r.criadas.filter((c) => c.erro).map((c) => c.erro);
+      pronto(`${ok} ${ok === 1 ? "oferta criada" : "ofertas criadas"}.${erros.length ? ` Falharam ${erros.length}: ${erros.join("; ")}` : ""}`);
+    } catch (e) { setFalha(msgErro(e)); setEnviando(false); }
+  }
+  return (
+    <Modal titulo="Duplicar oferta relâmpago" fechar={fechar}>
+      <p className="mb-3 text-sm text-slate-600">Escolha os horários. Os mesmos produtos, preços e estoques da oferta são copiados para cada horário.</p>
+      {erro && <p className="text-sm text-red-700">{erro}</p>}
+      {!horarios && !erro && <p className="text-sm text-slate-500">Buscando horários da Shopee…</p>}
+      {horarios && (
+        <div className="max-h-80 space-y-1 overflow-auto">
+          {horarios.length === 0 && <p className="text-sm text-slate-500">A Shopee não ofereceu horários nos próximos 7 dias.</p>}
+          {horarios.map((h) => (
+            <label key={h.timeslot_id} className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${h.ocupado ? "text-slate-400" : "hover:bg-slate-50"}`}>
+              <input type="checkbox" disabled={h.ocupado} checked={sel.includes(h.timeslot_id)} onChange={(e) => setSel(e.target.checked ? [...sel, h.timeslot_id] : sel.filter((x) => x !== h.timeslot_id))} />
+              {faixaHorario(h)} {h.ocupado && "· já tem oferta"}
+            </label>
+          ))}
+        </div>
+      )}
+      {falha && <p className="mt-2 text-sm text-red-700">{falha}</p>}
+      <div className="mt-4 flex justify-end"><button className="btn" disabled={!sel.length || enviando} onClick={duplicar}>{enviando ? "Criando…" : `Duplicar em ${sel.length} ${sel.length === 1 ? "horário" : "horários"}`}</button></div>
+    </Modal>
+  );
+}
+
+type Anuncio = { external_id: string; title: string; price: number };
+function ModalCriar({ loja, fechar, pronto }: { loja: string; fechar: () => void; pronto: (m: string) => void }) {
+  const { horarios, erro } = useHorarios(loja);
+  const [slot, setSlot] = useState<number | null>(null);
+  const [anuncios, setAnuncios] = useState<Anuncio[]>([]);
+  const [busca, setBusca] = useState("");
+  const [sel, setSel] = useState<Record<string, { preco: string; estoque: string }>>({});
+  const [enviando, setEnviando] = useState(false);
+  const [falha, setFalha] = useState("");
+  useEffect(() => {
+    apiFetch<{ anuncios: Anuncio[] }>(`/api/shopee/relampago?shop_id=${loja}&anuncios=1`).then((r) => setAnuncios(r.anuncios)).catch(() => {});
+  }, [loja]);
+  const termos = busca.toLowerCase().split(/\s+/).filter(Boolean);
+  const achados = termos.length ? anuncios.filter((a) => termos.every((t) => a.title.toLowerCase().includes(t))).slice(0, 50) : [];
+  const escolhidos = anuncios.filter((a) => sel[a.external_id]);
+  async function criar() {
+    setEnviando(true); setFalha("");
+    const itens = escolhidos.map((a) => {
+      const [item, modelo] = a.external_id.split(":");
+      return { item_id: Number(item), model_id: modelo ? Number(modelo) : null, nome: a.title, variacao: null, preco_original: Number(a.price), preco_promo: num(sel[a.external_id].preco), estoque: Math.round(num(sel[a.external_id].estoque)), limite_compra: 0 };
+    });
+    try {
+      const r = await apiFetch<{ flash_sale_id: number; recusados: { motivo: string }[] }>("/api/shopee/relampago", { method: "POST", body: JSON.stringify({ acao: "criar", shop_id: loja, timeslot_id: slot, itens }) });
+      pronto(`Oferta criada.${r.recusados.length ? ` A Shopee recusou ${r.recusados.length}: ${r.recusados.map((x) => x.motivo).join("; ")}` : ""}`);
+    } catch (e) { setFalha(msgErro(e)); setEnviando(false); }
+  }
+  const valido = slot != null && escolhidos.length > 0 && escolhidos.every((a) => num(sel[a.external_id].preco) > 0 && num(sel[a.external_id].estoque) > 0);
+  return (
+    <Modal titulo="Criar oferta relâmpago" fechar={fechar}>
+      <label className="label">Horário</label>
+      {erro && <p className="text-sm text-red-700">{erro}</p>}
+      <select className="input mb-4" value={slot ?? ""} onChange={(e) => setSlot(e.target.value ? Number(e.target.value) : null)}>
+        <option value="">{horarios ? "Escolha o horário" : "Buscando horários…"}</option>
+        {horarios?.filter((h) => !h.ocupado).map((h) => <option key={h.timeslot_id} value={h.timeslot_id}>{faixaHorario(h)}</option>)}
+      </select>
+      <label className="label">Adicionar produtos (anúncios importados da Shopee)</label>
+      <input className="input" placeholder="Busque pelo nome" value={busca} onChange={(e) => setBusca(e.target.value)} />
+      {achados.length > 0 && (
+        <ul className="mt-1 max-h-48 overflow-auto rounded-xl border border-slate-200">
+          {achados.map((a) => (
+            <li key={a.external_id}>
+              <button className="flex w-full justify-between px-3 py-1.5 text-left text-sm hover:bg-slate-50" onClick={() => { setSel({ ...sel, [a.external_id]: sel[a.external_id] ?? { preco: campo(Math.floor(Number(a.price) * 0.9 * 100) / 100), estoque: "10" } }); setBusca(""); }}>
+                <span className="truncate">{a.title}</span><span className="text-slate-500">{brl(Number(a.price))}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {escolhidos.length > 0 && (
+        <table className="mt-3 w-full text-sm">
+          <thead><tr><th className="th">Produto</th><th className="th text-right">Preço</th><th className="th text-right">Preço relâmpago</th><th className="th text-right">Estoque</th><th className="th"></th></tr></thead>
+          <tbody>
+            {escolhidos.map((a) => (
+              <tr key={a.external_id} className="border-t border-slate-100">
+                <td className="td">{a.title}</td>
+                <td className="td text-right">{brl(Number(a.price))}</td>
+                <td className="td text-right"><input className="input w-24 text-right" inputMode="decimal" value={sel[a.external_id].preco} onChange={(e) => setSel({ ...sel, [a.external_id]: { ...sel[a.external_id], preco: e.target.value } })} /></td>
+                <td className="td text-right"><input className="input w-20 text-right" inputMode="numeric" value={sel[a.external_id].estoque} onChange={(e) => setSel({ ...sel, [a.external_id]: { ...sel[a.external_id], estoque: e.target.value } })} /></td>
+                <td className="td"><button className="btn-ghost" onClick={() => { const n = { ...sel }; delete n[a.external_id]; setSel(n); }}>Tirar</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {falha && <p className="mt-2 text-sm text-red-700">{falha}</p>}
+      <div className="mt-4 flex justify-end"><button className="btn" disabled={!valido || enviando} onClick={criar}>{enviando ? "Criando…" : "Criar oferta"}</button></div>
+    </Modal>
+  );
+}
+
+// ---------- Robô de relâmpago ----------
+const REGRA_NOVA = { nome: "Robô de relâmpago", modo: "todos" as const, dias_semana: [0, 1, 2, 3, 4, 5, 6], hora_inicio: 0, hora_fim: 24, dias_a_frente: 3, margem_minima: 10, imposto_pct: 10, taxa_extra_pct: 5, ativo: true };
+type Rascunho = Partial<Regra> & { modelo_atual?: number | null };
+
+function Robo({ loja, ofertas, preModelo, limparPre }: { loja: string; ofertas: Relampago[]; preModelo: number | null; limparPre: () => void }) {
+  const [regras, setRegras] = useState<Regra[] | null>(null);
+  const [precisaSQL, setPrecisaSQL] = useState(false);
+  const [edit, setEdit] = useState<Rascunho | null>(null);
+  const [msg, setMsg] = useState("");
+  const [ocupado, setOcupado] = useState("");
+  const carregar = useCallback(() => {
+    apiFetch<{ regras: Regra[]; precisaSQL?: boolean }>(`/api/shopee/robo?shop_id=${loja}`).then((r) => { setRegras(r.regras); setPrecisaSQL(!!r.precisaSQL); }).catch((e) => setMsg(msgErro(e)));
+  }, [loja]);
+  useEffect(carregar, [carregar]);
+  useEffect(() => {
+    if (preModelo != null) { setEdit({ ...REGRA_NOVA, modelo_flash_sale_id: preModelo }); limparPre(); }
+  }, [preModelo, limparPre]);
+
+  async function salvar() {
+    if (!edit) return;
+    setOcupado("salvar"); setMsg("");
+    try {
+      await apiFetch("/api/shopee/robo", { method: "POST", body: JSON.stringify({ acao: "salvar", regra: { ...edit, shop_id: loja } }) });
+      setEdit(null); setMsg("Regra salva."); carregar();
+    } catch (e) { setMsg(msgErro(e)); } finally { setOcupado(""); }
+  }
+  async function rodar(id: string) {
+    setOcupado(id); setMsg("");
+    try {
+      const r = await apiFetch<{ resultado: NonNullable<Regra["ultimo_resultado"]> }>("/api/shopee/robo", { method: "POST", body: JSON.stringify({ acao: "rodar", id }) });
+      setMsg(`${r.resultado.criadas.length} ${r.resultado.criadas.length === 1 ? "oferta criada" : "ofertas criadas"}.${r.resultado.erros.length ? ` Erros: ${r.resultado.erros.join("; ")}` : ""} ${r.resultado.aviso}`);
+      carregar();
+    } catch (e) { setMsg(msgErro(e)); } finally { setOcupado(""); }
+  }
+  async function alternar(r: Regra) {
+    await apiFetch("/api/shopee/robo", { method: "POST", body: JSON.stringify({ acao: "salvar", regra: { ...r, ativo: !r.ativo, modelo_atual: r.modelo_flash_sale_id } }) }).catch((e) => setMsg(msgErro(e)));
+    carregar();
+  }
+  async function excluir(id: string) {
+    if (!confirm("Excluir esta regra? As ofertas já criadas continuam na Shopee.")) return;
+    await apiFetch(`/api/shopee/robo?id=${id}`, { method: "DELETE" }).catch((e) => setMsg(msgErro(e)));
+    carregar();
+  }
+
+  const MODOS = { todos: "Todos os horários livres", diario: "Uma oferta por dia", agenda: "Dias e horários escolhidos" };
+  if (precisaSQL)
+    return (
+      <div className="card text-sm">
+        Rode este SQL no Supabase para usar o robô: o arquivo <code>supabase/migrations/20261204_shopee_robo_relampago.sql</code>.
+      </div>
+    );
+
+  return (
+    <div className="space-y-4">
+      <div className="card text-sm text-slate-600">
+        O robô copia os produtos e preços de uma oferta modelo para os horários livres de relâmpago da Shopee. Ele roda sozinho uma vez por dia (8h30) e agenda até alguns dias à frente; produto sem custo no armazém ou abaixo da margem mínima fica de fora.
+      </div>
+      {msg && <div className="card text-sm">{msg}</div>}
+      {!edit && <div className="flex justify-end"><button className="btn" onClick={() => setEdit({ ...REGRA_NOVA })}>Nova regra</button></div>}
+
+      {edit && (
+        <div className="card space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div><label className="label">Nome</label><input className="input" value={edit.nome ?? ""} onChange={(e) => setEdit({ ...edit, nome: e.target.value })} /></div>
+            <div>
+              <label className="label">Oferta modelo (produtos e preços)</label>
+              <select className="input" value={edit.modelo_flash_sale_id ?? ""} onChange={(e) => setEdit({ ...edit, modelo_flash_sale_id: e.target.value ? Number(e.target.value) : null })}>
+                <option value="">{edit.modelo_itens?.length ? `Manter o modelo atual (${edit.modelo_itens.length} produtos)` : "Escolha uma oferta"}</option>
+                {ofertas.map((o) => <option key={o.flash_sale_id} value={o.flash_sale_id}>{dataHora(o.start_time)} · {o.item_count ?? 0} produtos</option>)}
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500">Lista as ofertas do filtro de cima. Para usar uma encerrada, troque o filtro para Encerradas.</p>
+            </div>
+            <div>
+              <label className="label">Frequência</label>
+              <select className="input" value={edit.modo} onChange={(e) => setEdit({ ...edit, modo: e.target.value as Regra["modo"] })}>
+                {Object.entries(MODOS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div><label className="label">Agendar até quantos dias à frente</label><input className="input" inputMode="numeric" value={edit.dias_a_frente ?? 3} onChange={(e) => setEdit({ ...edit, dias_a_frente: Number(e.target.value) || 1 })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="label">Começar a partir de (hora)</label><input className="input" inputMode="numeric" value={edit.hora_inicio ?? 0} onChange={(e) => setEdit({ ...edit, hora_inicio: Number(e.target.value) || 0 })} /></div>
+              <div><label className="label">Até (hora)</label><input className="input" inputMode="numeric" value={edit.hora_fim ?? 24} onChange={(e) => setEdit({ ...edit, hora_fim: Number(e.target.value) || 24 })} /></div>
+            </div>
+            {edit.modo === "agenda" && (
+              <div>
+                <label className="label">Dias da semana</label>
+                <div className="flex flex-wrap gap-2">
+                  {DIAS.map((d, i) => {
+                    const on = edit.dias_semana?.includes(i);
+                    return <button key={d} type="button" onClick={() => setEdit({ ...edit, dias_semana: on ? edit.dias_semana!.filter((x) => x !== i) : [...(edit.dias_semana ?? []), i] })} className={`rounded-full px-3 py-1.5 text-sm ${on ? "bg-brand text-white" : "bg-slate-100 text-slate-600"}`}>{d}</button>;
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-3 md:col-span-2">
+              <div><label className="label">Margem mínima (%)</label><input className="input" inputMode="decimal" value={edit.margem_minima ?? 0} onChange={(e) => setEdit({ ...edit, margem_minima: num(e.target.value) })} /></div>
+              <div><label className="label">Imposto (%)</label><input className="input" inputMode="decimal" value={edit.imposto_pct ?? 10} onChange={(e) => setEdit({ ...edit, imposto_pct: num(e.target.value) })} /></div>
+              <div><label className="label">Outras taxas Shopee (%)</label><input className="input" inputMode="decimal" value={edit.taxa_extra_pct ?? 5} onChange={(e) => setEdit({ ...edit, taxa_extra_pct: num(e.target.value) })} /></div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button className="btn" disabled={ocupado === "salvar" || (!edit.modelo_flash_sale_id && !edit.modelo_itens?.length)} onClick={salvar}>{ocupado === "salvar" ? "Salvando…" : "Salvar regra"}</button>
+            <button className="btn-ghost" onClick={() => setEdit(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {regras?.length === 0 && !edit && <div className="card text-sm text-slate-500">Nenhuma regra ainda. Crie uma ou use “Usar no robô” numa oferta relâmpago.</div>}
+      {regras?.map((r) => (
+        <div key={r.id} className="card space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-semibold">{r.nome} <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${r.ativo ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{r.ativo ? "Ligado" : "Desligado"}</span></p>
+              <p className="text-sm text-slate-600">
+                {MODOS[r.modo]}{r.modo === "agenda" ? ` (${r.dias_semana.map((d) => DIAS[d]).join(", ")})` : ""} · das {r.hora_inicio}h às {r.hora_fim}h · até {r.dias_a_frente} dias à frente · {r.modelo_itens?.length ?? 0} produtos · margem mínima {pct(Number(r.margem_minima))}
+              </p>
+              <p className="text-xs text-slate-500">{r.total_criadas} ofertas criadas no total{r.ultima_execucao ? ` · última rodada ${new Date(r.ultima_execucao).toLocaleString("pt-BR")}` : ""}</p>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <button className="btn-ghost" disabled={ocupado === r.id} onClick={() => rodar(r.id)}>{ocupado === r.id ? "Rodando…" : "Rodar agora"}</button>
+              <button className="btn-ghost" onClick={() => alternar(r)}>{r.ativo ? "Desligar" : "Ligar"}</button>
+              <button className="btn-ghost" onClick={() => setEdit({ ...r, modelo_atual: r.modelo_flash_sale_id, modelo_flash_sale_id: null })}>Editar</button>
+              <button className="btn-ghost text-red-700" onClick={() => excluir(r.id)}>Excluir</button>
+            </div>
+          </div>
+          {r.ultimo_resultado && (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-slate-600">Última rodada: {r.ultimo_resultado.criadas.length} criadas, {r.ultimo_resultado.pulados.length} produtos pulados, {r.ultimo_resultado.erros.length} erros</summary>
+              <div className="mt-2 space-y-1 text-slate-600">
+                {r.ultimo_resultado.criadas.map((c) => <p key={c.inicio}>Criada: {dataHora(c.inicio)} · {c.itens} produtos{c.recusados ? ` · ${c.recusados} recusados` : ""}</p>)}
+                {r.ultimo_resultado.pulados.map((p, i) => <p key={i} className="text-amber-700">Pulado: {p.nome} ({p.motivo})</p>)}
+                {r.ultimo_resultado.erros.map((e, i) => <p key={i} className="text-red-700">Erro: {e}</p>)}
+                {r.ultimo_resultado.aviso && <p>{r.ultimo_resultado.aviso}</p>}
+              </div>
+            </details>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

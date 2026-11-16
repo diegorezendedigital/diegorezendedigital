@@ -94,6 +94,18 @@ export async function shopeeGet<T = Record<string, unknown>>(token: string, shop
   return chamar<RespostaShopee>(u.toString()) as unknown as T;
 }
 
+// Chamada de escrita da loja (POST com corpo JSON). Mesma assinatura das leituras.
+export async function shopeePost<T = Record<string, unknown>>(token: string, shopId: string, path: string, body: Record<string, unknown>): Promise<T> {
+  const ts = Math.floor(Date.now() / 1000);
+  const u = new URL(shopeeHost() + path);
+  u.searchParams.set("partner_id", env("SHOPEE_PARTNER_ID"));
+  u.searchParams.set("timestamp", String(ts));
+  u.searchParams.set("sign", assinar(path, ts, token, shopId));
+  u.searchParams.set("access_token", token);
+  u.searchParams.set("shop_id", shopId);
+  return chamar<RespostaShopee>(u.toString(), { method: "POST", body: JSON.stringify(body) }) as unknown as T;
+}
+
 // A autorização da loja na Shopee vale 365 dias, contados da hora em que o vendedor autoriza.
 // Renovar o token (a cada ~4 horas) não muda essa data; só uma nova autorização muda.
 const DIAS_AUTORIZACAO = 365;
