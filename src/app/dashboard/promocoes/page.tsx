@@ -660,7 +660,7 @@ export default function PromocoesPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="page-title">Central de promoções</h1>
+        <h1 className="page-title">Central de promoções · Mercado Livre</h1>
         <p className="mt-1 max-w-3xl text-sm text-slate-600">
           Promoções que o Mercado Livre oferece às suas contas. Para cada anúncio o sistema calcula o lucro e a margem no preço da promoção, com o custo do armazém, a taxa, o frete e os
           impostos do CNPJ, e mostra se ainda atinge a sua meta.

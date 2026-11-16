@@ -19,9 +19,13 @@ const menus: Menu[] = [
   },
   { label: "Pedidos", href: "/dashboard/pedidos" },
   {
-    label: "Mercado Livre",
+    label: "Promoções",
     base: "/dashboard/promocoes",
-    filhos: [{ label: "Central de promoções", href: "/dashboard/promocoes" }],
+    filhos: [
+      { label: "Mercado Livre", href: "/dashboard/promocoes" },
+      { label: "Shopee", href: "/dashboard/promocoes/shopee" },
+      { label: "TikTok Shop", href: "/dashboard/promocoes/tiktok" },
+    ],
   },
   { label: "Calculadora", href: "/dashboard/calculadora" },
   { label: "Relatórios", href: "/dashboard/relatorios" },
