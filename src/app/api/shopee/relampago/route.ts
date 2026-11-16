@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   try {
     if (u.searchParams.get("anuncios")) {
       const { data } = await supabaseAdmin()
-        .from("listings").select("external_id, title, price, thumbnail").eq("store_id", user.id).eq("marketplace_id", "shopee").eq("ml_user_id", shopId).order("title").limit(3000);
+        .from("listings").select("external_id, title, price, thumbnail, sku, status").eq("store_id", user.id).eq("marketplace_id", "shopee").eq("ml_user_id", shopId).order("title").limit(3000);
       return NextResponse.json({ anuncios: data ?? [] });
     }
     const token = await tokenShopee(user.id, shopId);

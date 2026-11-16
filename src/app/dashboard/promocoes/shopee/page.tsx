@@ -509,73 +509,248 @@ function ModalDuplicar({ loja, id, fechar, pronto }: { loja: string; id: number;
   );
 }
 
-type Anuncio = { external_id: string; title: string; price: number };
+type Anuncio = { external_id: string; title: string; price: number; thumbnail: string | null; sku: string | null; status: string | null };
+type Familia = { item_id: string; nome: string; foto: string | null; filhos: (Anuncio & { variacao: string; model_id: string | null })[] };
+
+// Agrupa as variações pelo anúncio principal (pai). O título da variação na base é "Nome - Variação".
+function agruparFamilias(lista: Anuncio[]): Familia[] {
+  const grupos = new Map<string, Anuncio[]>();
+  for (const a of lista) {
+    const pai = a.external_id.split(":")[0];
+    grupos.set(pai, [...(grupos.get(pai) ?? []), a]);
+  }
+  return Array.from(grupos.entries()).map(([item_id, g]) => {
+    let prefixo = g[0].title;
+    for (const x of g.slice(1)) while (prefixo && !x.title.startsWith(prefixo)) prefixo = prefixo.slice(0, -1);
+    const corte = g.length > 1 ? prefixo.lastIndexOf(" - ") : -1;
+    const nome = corte > 0 ? prefixo.slice(0, corte) : g.length > 1 ? prefixo.trim() : g[0].title;
+    return {
+      item_id, nome, foto: g.find((x) => x.thumbnail)?.thumbnail ?? null,
+      filhos: g
+        .map((x) => ({ ...x, model_id: x.external_id.split(":")[1] ?? null, variacao: x.external_id.includes(":") ? x.title.slice(nome.length).replace(/^\s*-\s*/, "") || x.title : "Sem variação" }))
+        .sort((p, q) => p.variacao.localeCompare(q.variacao, "pt-BR", { numeric: true })),
+    };
+  }).sort((p, q) => p.nome.localeCompare(q.nome, "pt-BR"));
+}
+
 function ModalCriar({ loja, fechar, pronto }: { loja: string; fechar: () => void; pronto: (m: string) => void }) {
   const { horarios, erro } = useHorarios(loja);
   const [slot, setSlot] = useState<number | null>(null);
-  const [anuncios, setAnuncios] = useState<Anuncio[]>([]);
+  const [anuncios, setAnuncios] = useState<Anuncio[] | null>(null);
   const [busca, setBusca] = useState("");
-  const [sel, setSel] = useState<Record<string, { preco: string; estoque: string }>>({});
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
+  const [abertos, setAbertos] = useState<Set<string>>(new Set());
+  const [valores, setValores] = useState<Record<string, { preco: string; estoque: string }>>({});
+  const [descTodos, setDescTodos] = useState("10");
+  const [estTodos, setEstTodos] = useState("10");
+  const [passo, setPasso] = useState<"escolher" | "precos">("escolher");
   const [enviando, setEnviando] = useState(false);
   const [falha, setFalha] = useState("");
+
   useEffect(() => {
-    apiFetch<{ anuncios: Anuncio[] }>(`/api/shopee/relampago?shop_id=${loja}&anuncios=1`).then((r) => setAnuncios(r.anuncios)).catch(() => {});
+    apiFetch<{ anuncios: Anuncio[] }>(`/api/shopee/relampago?shop_id=${loja}&anuncios=1`)
+      .then((r) => setAnuncios(r.anuncios.filter((a) => !a.status || a.status === "active")))
+      .catch((e) => setFalha(msgErro(e)));
   }, [loja]);
+
+  const familias = agruparFamilias(anuncios ?? []);
   const termos = busca.toLowerCase().split(/\s+/).filter(Boolean);
-  const achados = termos.length ? anuncios.filter((a) => termos.every((t) => a.title.toLowerCase().includes(t))).slice(0, 50) : [];
-  const escolhidos = anuncios.filter((a) => sel[a.external_id]);
+  const visiveis = termos.length
+    ? familias.filter((f) => termos.every((t) => `${f.nome} ${f.item_id} ${f.filhos.map((x) => `${x.variacao} ${x.model_id ?? ""} ${x.sku ?? ""}`).join(" ")}`.toLowerCase().includes(t)))
+    : familias;
+  const porId = new Map<string, Anuncio>((anuncios ?? []).map((a) => [a.external_id, a] as [string, Anuncio]));
+
+  function marcar(ids: string[], on: boolean) {
+    const n = new Set(marcados);
+    ids.forEach((id) => (on ? n.add(id) : n.delete(id)));
+    setMarcados(n);
+  }
+  function alternarAberto(id: string) {
+    const n = new Set(abertos);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    setAbertos(n);
+  }
+  const precoComDesconto = (p: number, d: string) => campo(Math.floor(p * (1 - num(d) / 100) * 100) / 100);
+
+  function irParaPrecos() {
+    const v: Record<string, { preco: string; estoque: string }> = {};
+    marcados.forEach((id) => (v[id] = valores[id] ?? { preco: precoComDesconto(Number(porId.get(id)?.price ?? 0), descTodos), estoque: estTodos }));
+    setValores(v);
+    setPasso("precos");
+  }
+  function aplicarTodos() {
+    const v = { ...valores };
+    marcados.forEach((id) => (v[id] = { preco: precoComDesconto(Number(porId.get(id)?.price ?? 0), descTodos), estoque: estTodos }));
+    setValores(v);
+  }
+
+  const selecionados = Array.from(marcados).map((id) => porId.get(id)).filter(Boolean) as Anuncio[];
+  const familiasSel = agruparFamilias(selecionados);
+  const valido = slot != null && selecionados.length > 0 && selecionados.every((a) => num(valores[a.external_id]?.preco ?? "") > 0 && num(valores[a.external_id]?.preco ?? "") < Number(a.price) && num(valores[a.external_id]?.estoque ?? "") > 0);
+
   async function criar() {
     setEnviando(true); setFalha("");
-    const itens = escolhidos.map((a) => {
+    const itens = selecionados.map((a) => {
       const [item, modelo] = a.external_id.split(":");
-      return { item_id: Number(item), model_id: modelo ? Number(modelo) : null, nome: a.title, variacao: null, preco_original: Number(a.price), preco_promo: num(sel[a.external_id].preco), estoque: Math.round(num(sel[a.external_id].estoque)), limite_compra: 0 };
+      return { item_id: Number(item), model_id: modelo ? Number(modelo) : null, nome: a.title, variacao: null, preco_original: Number(a.price), preco_promo: num(valores[a.external_id].preco), estoque: Math.round(num(valores[a.external_id].estoque)), limite_compra: 0 };
     });
     try {
       const r = await apiFetch<{ flash_sale_id: number; recusados: { motivo: string }[] }>("/api/shopee/relampago", { method: "POST", body: JSON.stringify({ acao: "criar", shop_id: loja, timeslot_id: slot, itens }) });
-      pronto(`Oferta criada.${r.recusados.length ? ` A Shopee recusou ${r.recusados.length}: ${r.recusados.map((x) => x.motivo).join("; ")}` : ""}`);
+      pronto(`Oferta criada com ${itens.length - r.recusados.length} ${itens.length - r.recusados.length === 1 ? "variação" : "variações"}.${r.recusados.length ? ` A Shopee recusou ${r.recusados.length}: ${r.recusados.map((x) => x.motivo).join("; ")}` : ""}`);
     } catch (e) { setFalha(msgErro(e)); setEnviando(false); }
   }
-  const valido = slot != null && escolhidos.length > 0 && escolhidos.every((a) => num(sel[a.external_id].preco) > 0 && num(sel[a.external_id].estoque) > 0);
+
   return (
-    <Modal titulo="Criar oferta relâmpago" fechar={fechar}>
-      <label className="label">Horário</label>
-      {erro && <p className="text-sm text-red-700">{erro}</p>}
-      <select className="input mb-4" value={slot ?? ""} onChange={(e) => setSlot(e.target.value ? Number(e.target.value) : null)}>
-        <option value="">{horarios ? "Escolha o horário" : "Buscando horários…"}</option>
-        {horarios?.filter((h) => !h.ocupado).map((h) => <option key={h.timeslot_id} value={h.timeslot_id}>{faixaHorario(h)}</option>)}
-      </select>
-      <label className="label">Adicionar produtos (anúncios importados da Shopee)</label>
-      <input className="input" placeholder="Busque pelo nome" value={busca} onChange={(e) => setBusca(e.target.value)} />
-      {achados.length > 0 && (
-        <ul className="mt-1 max-h-48 overflow-auto rounded-xl border border-slate-200">
-          {achados.map((a) => (
-            <li key={a.external_id}>
-              <button className="flex w-full justify-between px-3 py-1.5 text-left text-sm hover:bg-slate-50" onClick={() => { setSel({ ...sel, [a.external_id]: sel[a.external_id] ?? { preco: campo(Math.floor(Number(a.price) * 0.9 * 100) / 100), estoque: "10" } }); setBusca(""); }}>
-                <span className="truncate">{a.title}</span><span className="text-slate-500">{brl(Number(a.price))}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {escolhidos.length > 0 && (
-        <table className="mt-3 w-full text-sm">
-          <thead><tr><th className="th">Produto</th><th className="th text-right">Preço</th><th className="th text-right">Preço relâmpago</th><th className="th text-right">Estoque</th><th className="th"></th></tr></thead>
-          <tbody>
-            {escolhidos.map((a) => (
-              <tr key={a.external_id} className="border-t border-slate-100">
-                <td className="td">{a.title}</td>
-                <td className="td text-right">{brl(Number(a.price))}</td>
-                <td className="td text-right"><input className="input w-24 text-right" inputMode="decimal" value={sel[a.external_id].preco} onChange={(e) => setSel({ ...sel, [a.external_id]: { ...sel[a.external_id], preco: e.target.value } })} /></td>
-                <td className="td text-right"><input className="input w-20 text-right" inputMode="numeric" value={sel[a.external_id].estoque} onChange={(e) => setSel({ ...sel, [a.external_id]: { ...sel[a.external_id], estoque: e.target.value } })} /></td>
-                <td className="td"><button className="btn-ghost" onClick={() => { const n = { ...sel }; delete n[a.external_id]; setSel(n); }}>Tirar</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {falha && <p className="mt-2 text-sm text-red-700">{falha}</p>}
-      <div className="mt-4 flex justify-end"><button className="btn" disabled={!valido || enviando} onClick={criar}>{enviando ? "Criando…" : "Criar oferta"}</button></div>
-    </Modal>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={fechar}>
+      <div className="flex h-[90vh] w-full max-w-6xl flex-col rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-semibold">Criar oferta relâmpago</h2>
+            <p className="text-xs text-slate-500">{passo === "escolher" ? "1. Escolha o horário e marque os produtos" : "2. Defina o preço relâmpago e o estoque"}</p>
+          </div>
+          <button className="btn-ghost" onClick={fechar}>Fechar</button>
+        </div>
+
+        {passo === "escolher" ? (
+          <>
+            <div className="grid gap-3 border-b border-slate-100 px-6 py-4 md:grid-cols-2">
+              <div>
+                <label className="label">Horário</label>
+                {erro && <p className="text-sm text-red-700">{erro}</p>}
+                <select className="input" value={slot ?? ""} onChange={(e) => setSlot(e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">{horarios ? "Escolha o horário" : "Buscando horários…"}</option>
+                  {horarios?.filter((h) => !h.ocupado).map((h) => <option key={h.timeslot_id} value={h.timeslot_id}>{faixaHorario(h)}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Buscar</label>
+                <input className="input" placeholder="Nome, ID do anúncio, ID da variação ou SKU" value={busca} onChange={(e) => setBusca(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto px-6">
+              {!anuncios ? (
+                <p className="py-6 text-sm text-slate-500">Carregando anúncios…</p>
+              ) : visiveis.length === 0 ? (
+                <p className="py-6 text-sm text-slate-500">Nenhum anúncio encontrado. Importe os anúncios da Shopee em Produtos &gt; Anúncios Marketplace.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 z-10 bg-white">
+                    <tr className="border-b border-slate-200">
+                      <th className="th w-10">
+                        <input type="checkbox" title="Marcar todos os da lista"
+                          checked={visiveis.length > 0 && visiveis.every((f) => f.filhos.every((x) => marcados.has(x.external_id)))}
+                          onChange={(e) => marcar(visiveis.flatMap((f) => f.filhos.map((x) => x.external_id)), e.target.checked)} />
+                      </th>
+                      <th className="th">Produto</th><th className="th">ID</th><th className="th">SKU</th><th className="th text-right">Preço</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visiveis.map((f) => {
+                      const ids = f.filhos.map((x) => x.external_id);
+                      const qtd = ids.filter((id) => marcados.has(id)).length;
+                      const aberto = abertos.has(f.item_id) || termos.length > 0;
+                      const precos = f.filhos.map((x) => Number(x.price));
+                      const min = Math.min(...precos), max = Math.max(...precos);
+                      const temVariacao = f.filhos.some((x) => x.model_id);
+                      return (
+                        <Fragment key={f.item_id}>
+                          <tr className="border-t border-slate-100 bg-slate-50/70">
+                            <td className="td">
+                              <input type="checkbox" checked={qtd === ids.length} ref={(el) => { if (el) el.indeterminate = qtd > 0 && qtd < ids.length; }}
+                                onChange={(e) => marcar(ids, e.target.checked)} />
+                            </td>
+                            <td className="td">
+                              <button type="button" className="flex items-center gap-3 text-left" onClick={() => temVariacao && alternarAberto(f.item_id)}>
+                                {f.foto ? <img src={f.foto} alt="" className="h-9 w-9 rounded-lg object-cover" /> : <div className="h-9 w-9 rounded-lg bg-slate-200" />}
+                                <span>
+                                  <span className="block font-medium">{f.nome}</span>
+                                  {temVariacao && <span className="text-xs text-brand">{aberto ? "▾" : "▸"} {f.filhos.length} variações{qtd ? ` · ${qtd} marcadas` : ""}</span>}
+                                </span>
+                              </button>
+                            </td>
+                            <td className="td font-mono text-xs text-slate-600">{f.item_id}</td>
+                            <td className="td text-xs text-slate-500">{!temVariacao ? f.filhos[0].sku ?? "—" : ""}</td>
+                            <td className="td whitespace-nowrap text-right">{min === max ? brl(min) : `${brl(min)} a ${brl(max)}`}</td>
+                          </tr>
+                          {temVariacao && aberto && f.filhos.map((x) => (
+                            <tr key={x.external_id} className="border-t border-slate-100">
+                              <td className="td pl-6"><input type="checkbox" checked={marcados.has(x.external_id)} onChange={(e) => marcar([x.external_id], e.target.checked)} /></td>
+                              <td className="td pl-14">{x.variacao}</td>
+                              <td className="td font-mono text-xs text-slate-500">{x.model_id}</td>
+                              <td className="td text-xs text-slate-500">{x.sku ?? "—"}</td>
+                              <td className="td text-right">{brl(Number(x.price))}</td>
+                            </tr>
+                          ))}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4">
+              <span className="text-sm text-slate-600"><b>{marcados.size}</b> {marcados.size === 1 ? "variação marcada" : "variações marcadas"}{marcados.size > 0 && <button className="ml-3 text-xs text-slate-500 underline" onClick={() => setMarcados(new Set())}>limpar</button>}</span>
+              <button className="btn" disabled={!marcados.size} onClick={irParaPrecos}>Continuar</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 px-6 py-4">
+              <div><label className="label">Desconto para todos (%)</label><input className="input w-28" inputMode="decimal" value={descTodos} onChange={(e) => setDescTodos(e.target.value)} /></div>
+              <div><label className="label">Estoque para todos</label><input className="input w-28" inputMode="numeric" value={estTodos} onChange={(e) => setEstTodos(e.target.value)} /></div>
+              <button className="btn-ghost" onClick={aplicarTodos}>Aplicar a todos</button>
+              <span className="ml-auto text-sm text-slate-500">{slot ? horarios?.find((h) => h.timeslot_id === slot) && faixaHorario(horarios.find((h) => h.timeslot_id === slot)!) : "Sem horário escolhido"}</span>
+            </div>
+            <div className="flex-1 overflow-auto px-6">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-white">
+                  <tr className="border-b border-slate-200"><th className="th">Produto</th><th className="th">ID</th><th className="th text-right">Preço</th><th className="th">Preço relâmpago</th><th className="th text-right">Desconto</th><th className="th">Estoque</th><th className="th"></th></tr>
+                </thead>
+                <tbody>
+                  {familiasSel.map((f) => (
+                    <Fragment key={f.item_id}>
+                      <tr className="border-t border-slate-100 bg-slate-50/70">
+                        <td className="td" colSpan={7}>
+                          <div className="flex items-center gap-3">
+                            {f.foto ? <img src={f.foto} alt="" className="h-8 w-8 rounded-lg object-cover" /> : <div className="h-8 w-8 rounded-lg bg-slate-200" />}
+                            <span className="font-medium">{f.nome}</span>
+                            <span className="font-mono text-xs text-slate-500">ID {f.item_id}</span>
+                          </div>
+                        </td>
+                      </tr>
+                      {f.filhos.map((x) => {
+                        const v = valores[x.external_id] ?? { preco: "", estoque: "" };
+                        const p = num(v.preco);
+                        const ruim = p <= 0 || p >= Number(x.price);
+                        return (
+                          <tr key={x.external_id} className="border-t border-slate-100">
+                            <td className="td pl-14">{x.variacao}</td>
+                            <td className="td font-mono text-xs text-slate-500">{x.model_id ?? "—"}</td>
+                            <td className="td text-right">{brl(Number(x.price))}</td>
+                            <td className="td"><input className={`input w-28 ${ruim ? "border-amber-400" : ""}`} inputMode="decimal" value={v.preco} onChange={(e) => setValores({ ...valores, [x.external_id]: { ...v, preco: e.target.value } })} /></td>
+                            <td className="td text-right">{p > 0 ? pct(off(Number(x.price), p)) : "—"}</td>
+                            <td className="td"><input className="input w-20" inputMode="numeric" value={v.estoque} onChange={(e) => setValores({ ...valores, [x.external_id]: { ...v, estoque: e.target.value.replace(/\D/g, "") } })} /></td>
+                            <td className="td"><button className="btn-ghost" onClick={() => marcar([x.external_id], false)}>Tirar</button></td>
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-6 py-4">
+              <button className="btn-ghost" onClick={() => setPasso("escolher")}>Voltar</button>
+              <div className="flex items-center gap-3">
+                {falha && <span className="text-sm text-red-700">{falha}</span>}
+                {!slot && <span className="text-xs text-amber-700">Escolha o horário no passo 1</span>}
+                <button className="btn" disabled={!valido || enviando} onClick={criar}>{enviando ? "Criando…" : `Criar oferta com ${selecionados.length} ${selecionados.length === 1 ? "variação" : "variações"}`}</button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
