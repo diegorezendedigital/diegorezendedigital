@@ -283,61 +283,169 @@ function ProdutosRelampago({ loja, id }: { loja: string; id: number }) {
   );
 }
 
-// ---------- Produtos de uma promoção de desconto (editável) ----------
+// ---------- Produtos de uma promoção de desconto (formato da Shopee: produto e variações embaixo) ----------
+type VarDesc = { model_id: number; nome: string; sku: string | null; preco_original: number; preco_promo: number | null; estoque: number; estoque_promo: number | null; ativo: boolean };
+type ProdDesc = { item_id: number; nome: string; imagem: string | null; limite_compra: number; variacoes: VarDesc[] };
+
 function ProdutosDesconto({ loja, id, encerrada }: { loja: string; id: number; encerrada: boolean }) {
-  const [itens, setItens] = useState<ItemOferta[] | null>(null);
+  const [produtos, setProdutos] = useState<ProdDesc[] | null>(null);
   const [precos, setPrecos] = useState<Record<string, string>>({});
+  const [limites, setLimites] = useState<Record<number, string>>({});
+  const [busca, setBusca] = useState("");
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const [trocando, setTrocando] = useState("");
   const [msg, setMsg] = useState("");
-  const chave = (i: ItemOferta) => `${i.item_id}:${i.model_id ?? ""}`;
+  const k = (p: ProdDesc, v: VarDesc) => `${p.item_id}:${v.model_id}`;
+
   const carregar = useCallback(() => {
-    apiFetch<{ itens: ItemOferta[] }>(`/api/shopee/descontos?shop_id=${loja}&discount_id=${id}`)
-      .then((r) => { setItens(r.itens); setPrecos(Object.fromEntries(r.itens.map((i) => [chave(i), campo(i.preco_promo)]))); })
+    apiFetch<{ produtos: ProdDesc[] }>(`/api/shopee/descontos?shop_id=${loja}&discount_id=${id}`)
+      .then((r) => {
+        setProdutos(r.produtos);
+        setPrecos(Object.fromEntries(r.produtos.flatMap((p) => p.variacoes.map((v) => [k(p, v), v.preco_promo != null ? campo(v.preco_promo) : ""]))));
+        setLimites(Object.fromEntries(r.produtos.map((p) => [p.item_id, String(p.limite_compra || "")])));
+      })
       .catch((e) => setErro(msgErro(e)));
   }, [loja, id]);
   useEffect(carregar, [carregar]);
+
   if (erro) return <p className="text-sm text-red-700">{erro}</p>;
-  if (!itens) return <p className="text-sm text-slate-500">Carregando produtos…</p>;
-  const mudados = itens.filter((i) => num(precos[chave(i)] ?? "") !== i.preco_promo && num(precos[chave(i)] ?? "") > 0);
+  if (!produtos) return <p className="text-sm text-slate-500">Carregando produtos e variações…</p>;
+
+  const mudouPreco = (p: ProdDesc, v: VarDesc) => v.ativo && num(precos[k(p, v)] ?? "") > 0 && num(precos[k(p, v)] ?? "") !== v.preco_promo;
+  const mudouLimite = (p: ProdDesc) => num(limites[p.item_id] ?? "") !== p.limite_compra;
+  const alterados = produtos.filter((p) => mudouLimite(p) || p.variacoes.some((v) => mudouPreco(p, v)));
+  const termos = busca.toLowerCase().split(/\s+/).filter(Boolean);
+  const visiveis = termos.length ? produtos.filter((p) => termos.every((t) => `${p.nome} ${p.item_id}`.toLowerCase().includes(t))) : produtos;
+
   async function salvar() {
     setSalvando(true); setMsg("");
     try {
-      const r = await apiFetch<{ falhas: { item_id: number; motivo: string }[] }>("/api/shopee/descontos", {
+      const r = await apiFetch<{ falhas: { motivo: string }[] }>("/api/shopee/descontos", {
         method: "POST",
-        body: JSON.stringify({ shop_id: loja, discount_id: id, itens: mudados.map((i) => ({ item_id: i.item_id, model_id: i.model_id, preco_promo: num(precos[chave(i)]), limite_compra: i.limite_compra })) }),
+        body: JSON.stringify({
+          acao: "salvar", shop_id: loja, discount_id: id,
+          produtos: alterados.map((p) => ({
+            item_id: p.item_id, limite_compra: Math.round(num(limites[p.item_id] ?? "")),
+            variacoes: p.variacoes.filter((v) => v.ativo).map((v) => ({ model_id: v.model_id, preco_promo: num(precos[k(p, v)] ?? "") || v.preco_promo })),
+          })),
+        }),
       });
-      setMsg(r.falhas?.length ? `Salvo, mas a Shopee recusou ${r.falhas.length}: ${r.falhas.map((f) => f.motivo).join("; ")}` : "Preços salvos na Shopee.");
+      setMsg(r.falhas?.length ? `Salvo, mas a Shopee recusou ${r.falhas.length}: ${r.falhas.map((f) => f.motivo).join("; ")}` : "Alterações salvas na Shopee.");
       carregar();
     } catch (e) { setMsg(msgErro(e)); } finally { setSalvando(false); }
   }
+
+  async function alternar(p: ProdDesc, v: VarDesc) {
+    const chave = k(p, v);
+    setTrocando(chave); setMsg("");
+    try {
+      await apiFetch("/api/shopee/descontos", {
+        method: "POST",
+        body: JSON.stringify(v.ativo
+          ? { acao: "desativar", shop_id: loja, discount_id: id, item_id: p.item_id, model_id: v.model_id }
+          : { acao: "ativar", shop_id: loja, discount_id: id, item_id: p.item_id, model_id: v.model_id, preco_promo: num(precos[chave] ?? ""), limite_compra: Math.round(num(limites[p.item_id] ?? "")) }),
+      });
+      setMsg(v.ativo ? `${v.nome} saiu da promoção.` : `${v.nome} entrou na promoção.`);
+      carregar();
+    } catch (e) { setMsg(msgErro(e)); } finally { setTrocando(""); }
+  }
+
+  const total = produtos.length;
   return (
-    <div className="space-y-3">
-      <table className="w-full text-sm">
-        <thead><tr><th className="th">Produto</th><th className="th text-right">Preço normal</th><th className="th text-right">Preço promocional</th><th className="th text-right">Desconto</th><th className="th text-right">Estoque</th></tr></thead>
-        <tbody>
-          {itens.map((i) => {
-            const p = num(precos[chave(i)] ?? "");
-            return (
-              <tr key={chave(i)} className="border-t border-slate-200">
-                <td className="td">{i.nome}{i.variacao && <span className="text-slate-500"> · {i.variacao}</span>}</td>
-                <td className="td text-right">{brl(i.preco_original)}</td>
-                <td className="td text-right">
-                  <input className="input w-28 text-right" inputMode="decimal" disabled={encerrada} value={precos[chave(i)] ?? ""} onChange={(e) => setPrecos({ ...precos, [chave(i)]: e.target.value })} />
-                </td>
-                <td className="td text-right">{pct(off(i.preco_original, p))}</td>
-                <td className="td text-right">{i.estoque}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="space-y-3 rounded-2xl bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <input className="input max-w-sm" placeholder="Buscar pelo nome ou ID do anúncio" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        <span className="text-sm text-slate-500"><b>{total}</b> {total === 1 ? "produto" : "produtos"} no total</span>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="th">Nome do produto</th><th className="th">Preço original</th><th className="th">Preço com desconto</th><th className="th">Desconto</th>
+              <th className="th text-right">Estoque</th><th className="th text-right">Estoque de promoção</th><th className="th">Limite de compra</th><th className="th text-center">Habilitar / Desabilitar</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visiveis.map((p) => (
+              <Fragment key={p.item_id}>
+                <tr className="border-t border-slate-200 bg-slate-50/70">
+                  <td className="td" colSpan={6}>
+                    <div className="flex items-center gap-3">
+                      {p.imagem ? <img src={p.imagem} alt="" className="h-10 w-10 rounded-lg object-cover" /> : <div className="h-10 w-10 rounded-lg bg-slate-200" />}
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{p.nome}</div>
+                        <div className="text-xs text-slate-500">ID do anúncio: <span className="font-mono">{p.item_id}</span></div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="td" colSpan={2}>
+                    <div className="flex items-center gap-2">
+                      <input className="input w-24" inputMode="numeric" disabled={encerrada} placeholder="Sem limite" value={limites[p.item_id] ?? ""} onChange={(e) => setLimites({ ...limites, [p.item_id]: e.target.value.replace(/\D/g, "") })} />
+                      <span className="text-xs text-slate-500">por comprador</span>
+                    </div>
+                  </td>
+                </tr>
+                {p.variacoes.map((v) => {
+                  const chave = k(p, v);
+                  const preco = num(precos[chave] ?? "");
+                  const pctOff = v.preco_original > 0 && preco > 0 ? ((v.preco_original - preco) / v.preco_original) * 100 : 0;
+                  const desab = encerrada;
+                  return (
+                    <tr key={chave} className={`border-t border-slate-100 ${v.ativo ? "" : "text-slate-400"}`}>
+                      <td className="td pl-14">
+                        <div>{v.nome}</div>
+                        <div className="text-xs text-slate-500">ID da variação: <span className="font-mono">{v.model_id || "—"}</span>{v.sku ? ` · SKU ${v.sku}` : ""}</div>
+                        {v.estoque === 0 && <div className="text-xs text-red-600">Esgotado</div>}
+                      </td>
+                      <td className="td whitespace-nowrap">{brl(v.preco_original)}</td>
+                      <td className="td">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-slate-500">R$</span>
+                          <input className="input w-24" inputMode="decimal" disabled={desab} value={precos[chave] ?? ""} placeholder={campo(v.preco_original)}
+                            onChange={(e) => setPrecos({ ...precos, [chave]: e.target.value })} />
+                        </div>
+                      </td>
+                      <td className="td">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-slate-500">ou</span>
+                          <input className="input w-16" inputMode="decimal" disabled={desab} value={preco > 0 ? campo(Math.round(pctOff * 10) / 10) : ""}
+                            onChange={(e) => {
+                              const pc = num(e.target.value);
+                              setPrecos({ ...precos, [chave]: pc > 0 && pc < 100 ? campo(Math.round(v.preco_original * (1 - pc / 100) * 100) / 100) : "" });
+                            }} />
+                          <span className="text-xs text-slate-500">%OFF</span>
+                        </div>
+                      </td>
+                      <td className="td text-right">{v.estoque}</td>
+                      <td className="td text-right">{v.estoque_promo ?? "Sem limite"}</td>
+                      <td className="td" />
+                      <td className="td text-center">
+                        <button type="button" role="switch" aria-checked={v.ativo} disabled={encerrada || trocando === chave} onClick={() => alternar(p, v)}
+                          title={v.ativo ? "Tirar da promoção" : "Colocar na promoção com o preço informado"}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${v.ativo ? "bg-emerald-500" : "bg-slate-300"}`}>
+                          <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${v.ativo ? "translate-x-5" : "translate-x-0.5"}`} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       {!encerrada && (
-        <div className="flex items-center gap-3">
-          <button className="btn" disabled={!mudados.length || salvando} onClick={salvar}>{salvando ? "Salvando…" : `Salvar ${mudados.length || ""} ${mudados.length === 1 ? "preço" : "preços"}`}</button>
-          {msg && <span className="text-sm text-slate-700">{msg}</span>}
+        <div className="flex flex-wrap items-center gap-3">
+          <button className="btn" disabled={!alterados.length || salvando} onClick={salvar}>
+            {salvando ? "Salvando…" : alterados.length ? `Salvar alterações (${alterados.length} ${alterados.length === 1 ? "produto" : "produtos"})` : "Salvar alterações"}
+          </button>
+          <span className="text-xs text-slate-500">A chave liga e desliga na hora. Para ligar uma variação, informe antes o preço com desconto.</span>
         </div>
       )}
+      {msg && <p className="text-sm text-slate-700">{msg}</p>}
     </div>
   );
 }
