@@ -538,8 +538,8 @@ function ModalCriar({ loja, fechar, pronto }: { loja: string; fechar: () => void
   const [slot, setSlot] = useState<number | null>(null);
   const [anuncios, setAnuncios] = useState<Anuncio[] | null>(null);
   const [busca, setBusca] = useState("");
-  const [marcados, setMarcados] = useState<Set<string>>(new Set());
-  const [abertos, setAbertos] = useState<Set<string>>(new Set());
+  const [marcados, setMarcados] = useState<Set<string>>(new Set<string>());
+  const [abertos, setAbertos] = useState<Set<string>>(new Set<string>());
   const [valores, setValores] = useState<Record<string, { preco: string; estoque: string }>>({});
   const [descTodos, setDescTodos] = useState("10");
   const [estTodos, setEstTodos] = useState("10");
@@ -584,7 +584,7 @@ function ModalCriar({ loja, fechar, pronto }: { loja: string; fechar: () => void
     setValores(v);
   }
 
-  const selecionados = Array.from(marcados).map((id) => porId.get(id)).filter(Boolean) as Anuncio[];
+  const selecionados = Array.from(marcados).map((id: string) => porId.get(id)).filter(Boolean) as Anuncio[];
   const familiasSel = agruparFamilias(selecionados);
   const valido = slot != null && selecionados.length > 0 && selecionados.every((a) => num(valores[a.external_id]?.preco ?? "") > 0 && num(valores[a.external_id]?.preco ?? "") < Number(a.price) && num(valores[a.external_id]?.estoque ?? "") > 0);
 
@@ -689,7 +689,7 @@ function ModalCriar({ loja, fechar, pronto }: { loja: string; fechar: () => void
               )}
             </div>
             <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4">
-              <span className="text-sm text-slate-600"><b>{marcados.size}</b> {marcados.size === 1 ? "variação marcada" : "variações marcadas"}{marcados.size > 0 && <button className="ml-3 text-xs text-slate-500 underline" onClick={() => setMarcados(new Set())}>limpar</button>}</span>
+              <span className="text-sm text-slate-600"><b>{marcados.size}</b> {marcados.size === 1 ? "variação marcada" : "variações marcadas"}{marcados.size > 0 && <button className="ml-3 text-xs text-slate-500 underline" onClick={() => setMarcados(new Set<string>())}>limpar</button>}</span>
               <button className="btn" disabled={!marcados.size} onClick={irParaPrecos}>Continuar</button>
             </div>
           </>
