@@ -96,6 +96,7 @@ export default function AnunciosPage() {
   const [trabalhando, setTrabalhando] = useState(false);
   const [resultados, setResultados] = useState<Resultado[]>([]);
 
+  const [menor30, setMenor30] = useState<Record<string, { preco: number; quando: string; vendas: number }>>({});
   const carregar = useCallback(async () => {
     // O banco devolve no máximo 1000 linhas por consulta: busca os anúncios em blocos.
     const todosAnuncios: Listing[] = [];
@@ -116,6 +117,25 @@ export default function AnunciosPage() {
     ]);
     if (erroAnuncios) setErro(erroAnuncios);
     setAnuncios(todosAnuncios);
+    // Menor preço por unidade vendido em cada anúncio nos últimos 30 dias (vem dos pedidos importados)
+    const desde = new Date(Date.now() - 30 * 86400_000).toISOString();
+    const menor: Record<string, { preco: number; quando: string; vendas: number }> = {};
+    for (let i = 0; i < 50000; i += 1000) {
+      const r = await supabase.from("sales").select("listing_id, sale_price, quantity, sold_at").not("listing_id", "is", null).gte("sold_at", desde).order("id").range(i, i + 999);
+      const lote = (r.data ?? []) as { listing_id: string; sale_price: number; quantity: number; sold_at: string }[];
+      for (const v of lote) {
+        const unit = Number(v.sale_price) / Math.max(Number(v.quantity) || 1, 1);
+        if (!(unit > 0)) continue;
+        const m = menor[v.listing_id];
+        if (!m) menor[v.listing_id] = { preco: unit, quando: v.sold_at, vendas: 1 };
+        else {
+          m.vendas++;
+          if (unit < m.preco) { m.preco = unit; m.quando = v.sold_at; }
+        }
+      }
+      if (r.error || lote.length < 1000) break;
+    }
+    setMenor30(menor);
     setProdutos((p.data ?? []) as Product[]);
     setEmpresas((c.data ?? []) as Company[]);
     setMps((m.data ?? []) as Marketplace[]);
@@ -518,6 +538,7 @@ export default function AnunciosPage() {
               <th className="th">CNPJ</th>
               <th className="th">Un.</th>
               <th className="th">Preço</th>
+              <th className="th" title="Menor preço por unidade em que o anúncio vendeu nos últimos 30 dias (pedidos importados)">Menor 30 dias</th>
               <th className="th">Custo</th>
               <th className="th">Taxa</th>
               <th className="th">Frete</th>
@@ -535,7 +556,7 @@ export default function AnunciosPage() {
           <tbody className="divide-y divide-slate-100">
             {linhas.length === 0 && (
               <tr>
-                <td className="td text-slate-500" colSpan={17}>
+                <td className="td text-slate-500" colSpan={18}>
                   {doMp.length === 0
                     ? mpAtivo === "mercado_livre"
                       ? "Nenhum anúncio ainda. Conecte o Mercado Livre e clique em “Importar do Mercado Livre”."
@@ -605,6 +626,18 @@ export default function AnunciosPage() {
                   />
                 </td>
                 <td className="td font-medium">{brl(l.price)}</td>
+                <td className="td whitespace-nowrap">
+                  {menor30[l.id] ? (
+                    <span
+                      title={`Menor preço vendido em ${new Date(menor30[l.id].quando).toLocaleDateString("pt-BR")} · ${menor30[l.id].vendas} ${menor30[l.id].vendas === 1 ? "venda" : "vendas"} em 30 dias`}
+                      className={menor30[l.id].preco < Number(l.price) - 0.009 ? "font-medium text-amber-700" : "text-slate-700"}
+                    >
+                      {brl(menor30[l.id].preco)}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-400">sem venda</span>
+                  )}
+                </td>
                 <td className="td text-slate-700">{a ? brl(a.custo) : "—"}</td>
                 <td
                   className="td text-slate-700"
