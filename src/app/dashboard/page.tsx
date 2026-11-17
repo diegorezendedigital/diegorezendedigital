@@ -55,6 +55,12 @@ function resumo(vs: Venda[]) {
     impostos: vs.reduce((t, v) => t + n(v.tax_amount), 0),
     margem: faturamento > 0 ? (lucro / faturamento) * 100 : 0,
     ticket: pedidos > 0 ? faturamento / pedidos : 0,
+    // Retorno sobre o investimento: lucro ÷ custo dos produtos (só das vendas com custo informado)
+    roi: (() => {
+      const comCusto = vs.filter((v) => n(v.cost_price) > 0);
+      const c = comCusto.reduce((t, v) => t + n(v.cost_price), 0);
+      return c > 0 ? (comCusto.reduce((t, v) => t + n(v.profit), 0) / c) * 100 : 0;
+    })(),
     semCusto: vs.filter((v) => !(n(v.cost_price) > 0)).length,
   };
 }
@@ -97,6 +103,7 @@ const ICONES = {
   margem: "M19 5L5 19M6.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
   pedidos: "M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0",
   ticket: "M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01",
+  roi: "M3 3v18h18M7 14l4-4 4 4 5-5",
   unidades: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z",
 };
 
@@ -317,6 +324,7 @@ export default function InicioPage() {
     { k: "faturamento", t: "Faturamento", v: brl(a.faturamento), d: <Delta a={a.faturamento} b={b.faturamento} />, s: calc.ultimos7.map((x) => x.faturamento), cor: COR.faturamento },
     { k: "lucro", t: "Lucro", v: brl(a.lucro), d: <Delta a={a.lucro} b={b.lucro} />, s: calc.ultimos7.map((x) => x.lucro), cor: COR.lucro, destaque: a.lucro < 0 ? "text-red-600" : "text-emerald-700" },
     { k: "margem", t: "Margem", v: pct(a.margem), d: <Delta a={a.margem} b={b.margem} pontos />, s: calc.ultimos7.map((x) => x.margem), cor: "#0ea5e9" },
+    { k: "roi", t: "ROI", v: pct(a.roi), d: <Delta a={a.roi} b={b.roi} pontos />, s: calc.ultimos7.map((x) => x.roi), cor: "#8b5cf6" },
     { k: "pedidos", t: "Pedidos", v: String(a.pedidos), d: <Delta a={a.pedidos} b={b.pedidos} />, s: calc.ultimos7.map((x) => x.pedidos), cor: "#f59e0b" },
     { k: "ticket", t: "Ticket médio", v: brl(a.ticket), d: <Delta a={a.ticket} b={b.ticket} />, s: calc.ultimos7.map((x) => x.ticket), cor: "#ec4899" },
     { k: "unidades", t: "Unidades vendidas", v: String(a.unidades), d: <Delta a={a.unidades} b={b.unidades} />, s: calc.ultimos7.map((x) => x.unidades), cor: "#64748b" },
@@ -353,7 +361,7 @@ export default function InicioPage() {
       {erro && <div className="card text-sm text-red-700">{erro}</div>}
 
       {/* Indicadores */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         {cards.map((c) => (
           <div key={c.k} className="card relative overflow-hidden !p-4">
             <div className="flex items-center justify-between">
