@@ -81,7 +81,8 @@ const MP_ESTILO: Record<string, { sigla: string; cls: string }> = {
 const ID_MP: Record<string, string> = { "Mercado Livre": "mercado_livre", Shopee: "shopee", "TikTok Shop": "tiktok_shop" };
 
 // Caixa de seleção da loja, com as lojas agrupadas por marketplace
-function SeletorLoja({ lojas, valor, onChange, rotulo = "Loja", textoTodas = "Todas as lojas", direita = false }: { lojas: { id: string; nome: string; mp: string }[]; valor: string; onChange: (id: string) => void; rotulo?: string; textoTodas?: string; direita?: boolean }) {
+// Caixa de seleção de lojas: marque uma ou várias; nenhuma marcada = todas
+function SeletorLoja({ lojas, valor, onChange, rotulo = "Loja", textoTodas = "Todas as lojas", direita = false }: { lojas: { id: string; nome: string; mp: string }[]; valor: string[]; onChange: (ids: string[]) => void; rotulo?: string; textoTodas?: string; direita?: boolean }) {
   const [aberto, setAberto] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -97,45 +98,58 @@ function SeletorLoja({ lojas, valor, onChange, rotulo = "Loja", textoTodas = "To
       document.removeEventListener("keydown", esc);
     };
   }, [aberto]);
-  const atual = lojas.find((l) => l.id === valor);
-  const escolher = (id: string) => {
-    onChange(id);
-    setAberto(false);
+  const marcadas = lojas.filter((l) => valor.includes(l.id));
+  const alternar = (ids: string[], ligar: boolean) => {
+    const novo = new Set(valor);
+    ids.forEach((id) => (ligar ? novo.add(id) : novo.delete(id)));
+    // Todas marcadas é o mesmo que "todas as lojas"
+    onChange(novo.size === lojas.length ? [] : Array.from(novo));
   };
-  const item = (ativo: boolean) => `flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${ativo ? "bg-brand-light font-semibold text-brand" : "text-slate-700 hover:bg-slate-50"}`;
+  const mpsMarcados = Array.from(new Set(marcadas.map((l) => l.mp)));
+  const linha = "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50";
   return (
     <div className="relative" ref={ref}>
       <label className="label">{rotulo}</label>
       <button type="button" onClick={() => setAberto(!aberto)} aria-haspopup="listbox" aria-expanded={aberto} className="input flex h-[38px] w-60 items-center justify-between gap-2 py-0 text-left">
         <span className="flex min-w-0 items-center gap-2">
-          {atual && <MarcaMP mp={ID_MP[atual.mp] ?? "mercado_livre"} />}
-          <span className="truncate">{atual ? atual.nome : textoTodas}</span>
+          {mpsMarcados.map((mp) => <MarcaMP key={mp} mp={ID_MP[mp] ?? "mercado_livre"} />)}
+          <span className="truncate">{marcadas.length === 0 ? textoTodas : marcadas.length === 1 ? marcadas[0].nome : `${marcadas.length} lojas`}</span>
         </span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-slate-400 transition-transform ${aberto ? "rotate-180" : ""}`}><path d="m6 9 6 6 6-6" /></svg>
       </button>
       {aberto && (
-        <div role="listbox" className={`absolute ${direita ? "right-0" : "left-0"} top-full z-40 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl`}>
-          <button type="button" role="option" aria-selected={!valor} className={item(!valor)} onClick={() => escolher("")}>
+        <div role="listbox" aria-multiselectable="true" className={`absolute ${direita ? "right-0" : "left-0"} top-full z-40 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl`}>
+          <label className={`${linha} ${valor.length === 0 ? "bg-brand-light font-semibold text-brand" : ""}`}>
+            <input type="checkbox" checked={valor.length === 0} onChange={() => onChange([])} />
             {textoTodas}
-          </button>
+          </label>
           {["Mercado Livre", "Shopee", "TikTok Shop"].map((mp) => {
             const doMp = lojas.filter((x) => x.mp === mp);
             if (doMp.length === 0) return null;
+            const ids = doMp.map((x) => x.id);
+            const qtd = ids.filter((id) => valor.includes(id)).length;
             return (
               <div key={mp} className="mt-1.5 border-t border-slate-100 pt-1.5">
-                <div className="flex items-center gap-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                <label className="flex cursor-pointer items-center gap-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600" title={`Marcar todas as lojas ${mp}`}>
+                  <input type="checkbox" checked={qtd === ids.length} ref={(el) => { if (el) el.indeterminate = qtd > 0 && qtd < ids.length; }} onChange={(e) => alternar(ids, e.target.checked)} />
                   <MarcaMP mp={ID_MP[mp] ?? "mercado_livre"} tamanho={16} />
                   {mp}
-                </div>
-                {doMp.map((l) => (
-                  <button key={l.id} type="button" role="option" aria-selected={valor === l.id} className={item(valor === l.id)} onClick={() => escolher(l.id)}>
-                    <span className="truncate">{l.nome}</span>
-                    {valor === l.id && <span className="ml-auto text-brand">✓</span>}
-                  </button>
-                ))}
+                </label>
+                {doMp.map((l) => {
+                  const on = valor.includes(l.id);
+                  return (
+                    <label key={l.id} className={`${linha} pl-7 ${on ? "font-semibold text-brand" : ""}`}>
+                      <input type="checkbox" checked={on} onChange={(e) => alternar([l.id], e.target.checked)} />
+                      <span className="truncate">{l.nome}</span>
+                    </label>
+                  );
+                })}
               </div>
             );
           })}
+          <div className="mt-1.5 flex justify-end border-t border-slate-100 pt-1.5">
+            <button type="button" className="rounded-lg px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand-light" onClick={() => setAberto(false)}>Pronto</button>
+          </div>
         </div>
       )}
     </div>
@@ -218,7 +232,7 @@ export default function PedidosPage() {
   const [busca, setBusca] = useState("");
   const [buscaAtiva, setBuscaAtiva] = useState("");
   // Loja (conta do Mercado Livre) escolhida: "" = todas juntas. A escolha fica lembrada neste navegador.
-  const [lojaSel, setLojaSel] = useState("");
+  const [lojaSel, setLojaSel] = useState<string[]>([]);
   const [soSemCusto, setSoSemCusto] = useState(false);
   // Lojas = contas do Mercado Livre conectadas (a tabela de conexões é protegida: vem pela API)
   useEffect(() => {
@@ -234,15 +248,15 @@ export default function PedidosPage() {
   const nomeLoja = (id: string) => lojas.find((x) => x.id === id)?.nome ?? "";
   useEffect(() => {
     try {
-      setLojaSel(localStorage.getItem("pedidos.loja") || "");
+      setLojaSel((localStorage.getItem("pedidos.loja") || "").split(",").filter(Boolean));
     } catch {
       /* navegador sem armazenamento */
     }
   }, []);
-  const escolherLoja = (id: string) => {
-    setLojaSel(id);
+  const escolherLoja = (ids: string[]) => {
+    setLojaSel(ids);
     try {
-      localStorage.setItem("pedidos.loja", id);
+      localStorage.setItem("pedidos.loja", ids.join(","));
     } catch {
       /* ignora */
     }
@@ -462,7 +476,7 @@ export default function PedidosPage() {
 
   const baseFiltrada = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return (linhas ?? []).filter((l) => (!lojaSel || l.contaId === lojaSel) && (!q || l.pedido.toLowerCase().includes(q) || l.pack.includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q));
+    return (linhas ?? []).filter((l) => (lojaSel.length === 0 || lojaSel.includes(l.contaId)) && (!q || l.pedido.toLowerCase().includes(q) || l.pack.includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q));
   }, [linhas, busca, lojaSel]);
   // Pedidos (um pedido pode ter vários itens) que ainda têm alguma venda sem custo
   const pedidosSemCusto = useMemo(() => new Set(baseFiltrada.filter((l) => l.custo === 0).map((l) => l.pack || l.pedido)).size, [baseFiltrada]);
