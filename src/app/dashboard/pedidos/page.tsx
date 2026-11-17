@@ -78,6 +78,8 @@ const MP_ESTILO: Record<string, { sigla: string; cls: string }> = {
   "TikTok Shop": { sigla: "TT", cls: "bg-[#111] text-white" },
 };
 
+const ID_MP: Record<string, string> = { "Mercado Livre": "mercado_livre", Shopee: "shopee", "TikTok Shop": "tiktok_shop" };
+
 // Caixa de seleção da loja, com as lojas agrupadas por marketplace
 function SeletorLoja({ lojas, valor, onChange, rotulo = "Loja", textoTodas = "Todas as lojas", direita = false }: { lojas: { id: string; nome: string; mp: string }[]; valor: string; onChange: (id: string) => void; rotulo?: string; textoTodas?: string; direita?: boolean }) {
   const [aberto, setAberto] = useState(false);
@@ -106,7 +108,7 @@ function SeletorLoja({ lojas, valor, onChange, rotulo = "Loja", textoTodas = "To
       <label className="label">{rotulo}</label>
       <button type="button" onClick={() => setAberto(!aberto)} aria-haspopup="listbox" aria-expanded={aberto} className="input flex h-[38px] w-60 items-center justify-between gap-2 py-0 text-left">
         <span className="flex min-w-0 items-center gap-2">
-          {atual && <span className={`inline-flex h-5 min-w-[22px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${MP_ESTILO[atual.mp]?.cls ?? ""}`}>{MP_ESTILO[atual.mp]?.sigla}</span>}
+          {atual && <MarcaMP mp={ID_MP[atual.mp] ?? "mercado_livre"} />}
           <span className="truncate">{atual ? atual.nome : textoTodas}</span>
         </span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 text-slate-400 transition-transform ${aberto ? "rotate-180" : ""}`}><path d="m6 9 6 6 6-6" /></svg>
@@ -122,7 +124,7 @@ function SeletorLoja({ lojas, valor, onChange, rotulo = "Loja", textoTodas = "To
             return (
               <div key={mp} className="mt-1.5 border-t border-slate-100 pt-1.5">
                 <div className="flex items-center gap-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  <span className={`inline-flex h-4 min-w-[20px] items-center justify-center rounded-full px-1 text-[9px] font-bold normal-case tracking-normal ${MP_ESTILO[mp].cls}`}>{MP_ESTILO[mp].sigla}</span>
+                  <MarcaMP mp={ID_MP[mp] ?? "mercado_livre"} tamanho={16} />
                   {mp}
                 </div>
                 {doMp.map((l) => (

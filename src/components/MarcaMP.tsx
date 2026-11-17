@@ -16,7 +16,7 @@ export default function MarcaMP({ mp, tamanho = 20 }: { mp: string; tamanho?: nu
   if (!semLogo)
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={`/marcas/${mp}.png`} alt={s.nome} title={s.nome} width={tamanho} height={tamanho} className="inline-block shrink-0 rounded-full object-contain" onError={() => setSemLogo(true)} />
+      <img src={`/marcas/${mp}.png`} alt={s.nome} title={s.nome} width={tamanho} height={tamanho} className="inline-block shrink-0 object-contain" onError={() => setSemLogo(true)} />
     );
   return (
     <span title={s.nome} style={{ height: tamanho, minWidth: tamanho + 4 }} className={`inline-flex items-center justify-center rounded-full px-1 text-[10px] font-bold ${s.cls}`}>
