@@ -126,8 +126,8 @@ function Evolucao({ pontos, rotuloPico }: { pontos: { rotulo: string; dica: stri
           <p className="text-sm font-semibold text-slate-900">{comVenda} de {pontos.length}</p>
         </div>
       </div>
-      <div className="relative">
-        <div className="absolute inset-x-0 top-0 h-48">
+      <div className="relative pt-6">
+        <div className="absolute inset-x-0 top-6 h-48">
           {linhas.map((l) => (
             <div key={l} className="absolute inset-x-0 border-t border-dashed border-slate-200" style={{ top: `${(1 - l) * 100}%` }}>
               <span className="absolute -top-2.5 right-0 bg-white pl-1 text-[10px] text-slate-400">{curto(max * l)}</span>
@@ -200,9 +200,9 @@ function Rosca({ partes, centro, sub }: { partes: { nome: string; valor: number;
         {partes.map((p) => (
           <li key={p.nome} className="flex items-center gap-2 text-sm">
             <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: p.cor }} />
-            <span className="flex-1 text-slate-600">{p.nome}</span>
-            <span className="font-semibold text-slate-900">{brl(p.valor)}</span>
-            <span className="w-12 text-right text-xs text-slate-500">{total ? `${((Math.max(0, p.valor) / total) * 100).toFixed(1).replace(".", ",")}%` : "—"}</span>
+            <span className="min-w-0 flex-1 text-slate-600">{p.nome}</span>
+            <span className="whitespace-nowrap font-semibold text-slate-900">{brl(p.valor)}</span>
+            <span className="w-12 shrink-0 text-right text-xs text-slate-500">{total ? `${((Math.max(0, p.valor) / total) * 100).toFixed(1).replace(".", ",")}%` : "—"}</span>
           </li>
         ))}
       </ul>

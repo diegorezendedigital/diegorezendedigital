@@ -128,7 +128,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen">
       <header ref={barra} className="sticky top-0 z-30 px-3 pt-3">
-        <div className="mx-auto flex min-h-[3.5rem] max-w-7xl flex-wrap items-center gap-x-6 rounded-3xl bg-white px-5 py-1.5 shadow-card">
+        <div className="mx-auto flex min-h-[3.5rem] max-w-none items-center gap-x-4 rounded-3xl bg-white px-5 py-1.5 shadow-card">
           <Link href="/dashboard" className="flex shrink-0 items-center gap-2 font-display text-lg font-bold tracking-tight">
             <svg width="28" height="28" viewBox="0 0 30 30" aria-hidden="true">
               <circle cx="15" cy="15" r="15" fill="#5B3DF5" />
@@ -141,10 +141,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </span>
           </Link>
 
-          <nav className="flex flex-1 flex-wrap items-center gap-1 py-0">
+          <nav className="flex min-w-0 flex-1 items-center gap-0.5 py-0">
             {todos.map((m) => {
               const on = ativo(m);
-              const base = `flex items-center gap-1 whitespace-nowrap rounded-full px-4 py-2 text-sm ${
+              const base = `flex items-center gap-1 whitespace-nowrap rounded-full px-3 py-2 text-sm ${
                 on ? "bg-brand font-semibold text-white" : "font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900"
               }`;
               if (!m.filhos) {
@@ -210,7 +210,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
-      <main className={`mx-auto p-5 ${(pathname.startsWith("/dashboard/pedidos") || pathname.startsWith("/dashboard/produtos/armazem") || pathname.startsWith("/dashboard/produtos/anuncios") || pathname.startsWith("/dashboard/promocoes")) ? "max-w-none px-6" : "max-w-7xl"} pb-12`}>{children}</main>
+      <main className={`mx-auto p-5 ${(pathname === "/dashboard" || pathname.startsWith("/dashboard/pedidos") || pathname.startsWith("/dashboard/produtos/armazem") || pathname.startsWith("/dashboard/produtos/anuncios") || pathname.startsWith("/dashboard/promocoes")) ? "max-w-none px-6" : "max-w-7xl"} pb-12`}>{children}</main>
       <div className="pointer-events-none fixed bottom-2 left-2 z-50 rounded bg-white/90 px-2 py-1 font-mono text-[11px] leading-tight text-slate-600 shadow-sm ring-1 ring-slate-200">
         v{process.env.NEXT_PUBLIC_APP_VERSION} · atualizado em{" "}
         {process.env.NEXT_PUBLIC_BUILD_TIME
