@@ -129,7 +129,19 @@ export type Expense = {
   created_at: string;
 };
 
+// Categorias prontas das despesas do DRE. O usuário pode criar outras (o texto da categoria é gravado direto).
 export const CATEGORIAS_DESPESA = [
+  { id: "aluguel", label: "Aluguel" },
+  { id: "energia", label: "Energia (luz)" },
+  { id: "agua", label: "Água" },
+  { id: "internet", label: "Internet e telefone" },
+  { id: "funcionarios", label: "Funcionários" },
+  { id: "pro_labore", label: "Pró-labore" },
+  { id: "embalagem", label: "Embalagem" },
+  { id: "combustivel", label: "Combustível (gasolina)" },
+  { id: "contador", label: "Contador" },
+  { id: "sistemas", label: "Sistemas e assinaturas" },
+  { id: "marketing", label: "Marketing e anúncios" },
   { id: "despesa_fixa", label: "Despesa fixa" },
   { id: "frete", label: "Frete" },
   { id: "imposto", label: "Imposto" },
