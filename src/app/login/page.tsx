@@ -25,14 +25,14 @@ export default function LoginPage() {
       setErro("E-mail ou senha incorretos.");
       return;
     }
-    router.push("/dashboard/produtos");
+    router.push("/dashboard");
   }
 
   async function entrarComGoogle() {
     setErro("");
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/dashboard/produtos` },
+      options: { redirectTo: `${window.location.origin}/dashboard` },
     });
     if (error) setErro("Não foi possível entrar com o Google. Tente novamente.");
   }

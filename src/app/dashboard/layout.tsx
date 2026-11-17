@@ -9,6 +9,7 @@ type Item = { label: string; href: string };
 type Menu = { label: string; href?: string; base?: string; filhos?: Item[] };
 
 const menus: Menu[] = [
+  { label: "Início", href: "/dashboard" },
   {
     label: "Produtos",
     base: "/dashboard/produtos",
@@ -102,7 +103,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen">
       <header ref={barra} className="sticky top-0 z-30 px-3 pt-3">
         <div className="mx-auto flex min-h-[3.5rem] max-w-7xl flex-wrap items-center gap-x-6 rounded-3xl bg-white px-5 py-1.5 shadow-card">
-          <Link href="/dashboard/produtos/armazem" className="flex shrink-0 items-center gap-2 font-display text-lg font-bold tracking-tight">
+          <Link href="/dashboard" className="flex shrink-0 items-center gap-2 font-display text-lg font-bold tracking-tight">
             <svg width="28" height="28" viewBox="0 0 30 30" aria-hidden="true">
               <circle cx="15" cy="15" r="15" fill="#5B3DF5" />
               <path d="M7.5 19.5 L12.5 12 L16 16 L22.5 8.5" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />

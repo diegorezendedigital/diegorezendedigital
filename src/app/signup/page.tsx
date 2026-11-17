@@ -86,7 +86,7 @@ function SignupForm() {
       );
       return;
     }
-    if (data.session) router.push("/dashboard/produtos");
+    if (data.session) router.push("/dashboard");
     else setAviso("Conta criada! Confirme o e-mail que enviamos para você e depois entre.");
   }
 
@@ -94,7 +94,7 @@ function SignupForm() {
     setErro("");
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/dashboard/produtos` },
+      options: { redirectTo: `${window.location.origin}/dashboard` },
     });
     if (error) setErro("Não foi possível continuar com o Google. Tente novamente.");
   }
