@@ -26,12 +26,12 @@ export async function GET(req: Request) {
   type Linha = { id: string; email: string; nome: string | null; user_id: string | null; created_at: string; last_seen_at: string | null; permissoes?: string[] | null };
   const campos = "id, email, nome, user_id, created_at, last_seen_at";
   let semColuna = false;
-  let r = await admin.from("store_members").select(`${campos}, permissoes`).eq("store_id", user.id).order("created_at");
+  let r: { data: unknown; error: { message: string } | null } = await admin.from("store_members").select(`${campos}, permissoes`).eq("store_id", user.id).order("created_at");
   if (r.error && /permissoes/.test(r.error.message)) {
     semColuna = true;
     r = await admin.from("store_members").select(campos).eq("store_id", user.id).order("created_at");
   }
-  const data = (r.data ?? []) as unknown as Linha[];
+  const data = ((r.data as Linha[] | null) ?? []);
   const error = r.error;
   if (error) return NextResponse.json({ papel: user.papel, loja: { id: user.id, nome: loja?.name ?? "" }, membros: [], precisaSQL: falta(error.message) });
   // Convite aceito = o convidado já entrou alguma vez
