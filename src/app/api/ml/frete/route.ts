@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, userFromRequest } from "@/lib/server/supabase-admin";
 import { atualizarFretes } from "@/lib/server/frete";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +9,7 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["anuncios", "armazem", "calculadora"]); if (semAcesso) return semAcesso; }
   try {
     const body = await req.json().catch(() => ({}));
     return NextResponse.json(await atualizarFretes(user.id, { forcar: !!body.forcar, consultarML: true }));

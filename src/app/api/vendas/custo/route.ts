@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { conferirSenha } from "@/lib/server/senha";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["pedidos"]); if (semAcesso) return semAcesso; }
   try {
     const body = await req.json().catch(() => ({}));
     const custo = Number(body.custo);

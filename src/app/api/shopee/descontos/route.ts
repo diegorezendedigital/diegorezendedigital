@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, userFromRequest } from "@/lib/server/supabase-admin";
 import { shopeeGet, shopeePost, tokenShopee } from "@/lib/server/shopee";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +41,7 @@ async function emLotes<T, R>(lista: T[], n: number, f: (x: T) => Promise<R>): Pr
 export async function GET(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_shopee"]); if (semAcesso) return semAcesso; }
   const u = new URL(req.url);
   const shopId = u.searchParams.get("shop_id") ?? "";
   const id = Number(u.searchParams.get("discount_id"));
@@ -117,6 +118,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_shopee"]); if (semAcesso) return semAcesso; }
   const b = await req.json().catch(() => ({}));
   const shopId = String(b.shop_id ?? "");
   const discountId = Number(b.discount_id);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, userFromRequest } from "@/lib/server/supabase-admin";
 import { getAccessToken, mlGet } from "@/lib/server/ml";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +26,7 @@ type ItemBruto = {
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_ml"]); if (semAcesso) return semAcesso; }
   try {
     const b = await req.json().catch(() => ({}));
     if (!b.ml_user_id || !b.promotion_id || !b.promotion_type) return NextResponse.json({ error: "Informe a conta e a promoção" }, { status: 400 });

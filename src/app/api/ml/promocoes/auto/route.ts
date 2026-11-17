@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { criarRodada, dispararWorker, emSegundoPlano, estaParada, executarEEncadear, faltaTabela, pararRodada, rodadaAtiva } from "@/lib/server/promocoes-rodada";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +12,7 @@ const SQL_PENDENTE = "Falta criar as tabelas da automação no Supabase: rode o 
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_ml"]); if (semAcesso) return semAcesso; }
   const b = await req.json().catch(() => ({}));
   const acao = String(b.acao || "iniciar");
   const admin = supabaseAdmin();

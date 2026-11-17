@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { getAccessToken, getConnection } from "@/lib/server/ml";
 import { carregarContexto, reajustarAnuncio, ResultadoPreco } from "@/lib/server/reprice";
 import type { Listing } from "@/lib/types";
@@ -11,6 +11,7 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["anuncios"]); if (semAcesso) return semAcesso; }
 
   try {
     const body = await req.json().catch(() => ({}));

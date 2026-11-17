@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, userFromRequest } from "@/lib/server/supabase-admin";
 import { getAccessToken, listConnections, mlGet } from "@/lib/server/ml";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +13,7 @@ type ItensResp = { results?: { id?: string; original_price?: number; price?: num
 export async function GET(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_ml"]); if (semAcesso) return semAcesso; }
   const inicio = Date.now();
   try {
     const contas = await listConnections(user.id);

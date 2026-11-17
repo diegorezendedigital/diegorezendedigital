@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { skuDoItem } from "@/lib/server/sku-ml";
 import { getAccessToken, itensDoML } from "@/lib/server/ml";
 
@@ -14,6 +14,7 @@ type Anuncio = { id: string; external_id: string; sku: string | null; product_id
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["anuncios", "armazem"]); if (semAcesso) return semAcesso; }
   const inicio = Date.now();
   try {
     const admin = supabaseAdmin();

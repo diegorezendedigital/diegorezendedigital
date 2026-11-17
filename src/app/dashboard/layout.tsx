@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase/client";
+import { apiFetch, supabase } from "@/lib/supabase/client";
 import { lojaAtual } from "@/lib/loja";
+import { abaDoCaminho, pode, primeiraAba } from "@/lib/abas";
 
 type Item = { label: string; href: string };
 type Menu = { label: string; href?: string; base?: string; filhos?: Item[] };
@@ -50,6 +51,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [nomeLoja, setNomeLoja] = useState("");
   const [ehAdmin, setEhAdmin] = useState(false);
   const [convidado, setConvidado] = useState(false);
+  const [permissoes, setPermissoes] = useState<string[] | null>(null);
   const [aberto, setAberto] = useState<string | null>(null);
   const barra = useRef<HTMLElement | null>(null);
 
@@ -74,11 +76,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         await supabase.from("stores").insert({ id: user.id, name: nome });
       }
       const adminResp = await supabase.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
+      let perms: string[] | null = null;
+      if (convidado) perms = await apiFetch<{ permissoes?: string[] | null }>("/api/equipe").then((r) => r.permissoes ?? null).catch(() => null);
 
       if (ativo) {
         setNomeLoja(nome);
         setEhAdmin(!!adminResp.data);
         setConvidado(convidado);
+        setPermissoes(perms);
         setCarregando(false);
       }
     }
@@ -110,7 +115,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Convidado não vê Integrações nem Configurações (conectar contas, CNPJ, senha master e usuários são do master)
   const SO_MASTER = ["/dashboard/integracoes", "/dashboard/configuracoes"];
-  const base: Menu[] = convidado ? menus.filter((m) => !SO_MASTER.includes(m.href ?? m.base ?? "")) : menus;
+  // Colaborador: só as abas que o master liberou
+  const liberado = (href: string) => !convidado || pode(permissoes, abaDoCaminho(href));
+  const base: Menu[] = convidado
+    ? menus
+        .filter((m) => !SO_MASTER.includes(m.href ?? m.base ?? ""))
+        .map((m) => (m.filhos ? { ...m, filhos: m.filhos.filter((f) => liberado(f.href)) } : m))
+        .filter((m) => (m.filhos ? m.filhos.length > 0 : liberado(m.href as string)))
+    : menus;
+  if (convidado && !liberado(pathname)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6 text-center">
+        <div className="card max-w-md">
+          <p className="font-semibold">Você não tem acesso a esta área</p>
+          <p className="mt-1 text-sm text-slate-600">Peça ao usuário master da loja para liberar esta aba para você.</p>
+          <Link href={primeiraAba(permissoes)} className="btn mt-4">Ir para uma área liberada</Link>
+        </div>
+      </div>
+    );
+  }
   const todos: Menu[] = ehAdmin ? [...base, { label: "Admin", href: "/dashboard/admin" }] : base;
   if (convidado && SO_MASTER.some((p) => pathname.startsWith(p))) {
     return (

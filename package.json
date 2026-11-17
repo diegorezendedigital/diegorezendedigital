@@ -1,6 +1,6 @@
 {
   "name": "margemcerta",
-  "version": "2.78.0",
+  "version": "2.79.0",
   "private": true,
   "scripts": {
     "dev": "next dev",

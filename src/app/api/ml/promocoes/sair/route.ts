@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, userFromRequest } from "@/lib/server/supabase-admin";
 import { getAccessToken, mlDelete } from "@/lib/server/ml";
 import { itemNaPromocao, precisaOferta } from "@/lib/server/promocoes-motor";
 
@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_ml"]); if (semAcesso) return semAcesso; }
   try {
     const b = await req.json().catch(() => ({}));
     if (!b.ml_user_id || !b.item_id || !b.promotion_id || !b.promotion_type) return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });

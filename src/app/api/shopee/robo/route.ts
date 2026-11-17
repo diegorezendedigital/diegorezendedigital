@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { tokenShopee } from "@/lib/server/shopee";
 import { executarRegra, itensDaOferta, type Regra } from "@/lib/server/shopee-relampago";
 
@@ -13,6 +13,7 @@ const falta = (m: string) => /shopee_flash_rules|schema cache|does not exist/i.t
 export async function GET(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_shopee"]); if (semAcesso) return semAcesso; }
   const shopId = new URL(req.url).searchParams.get("shop_id") ?? "";
   const { data, error } = await supabaseAdmin().from("shopee_flash_rules").select("*").eq("store_id", user.id).eq("shop_id", shopId).order("created_at");
   if (error) return NextResponse.json({ regras: [], precisaSQL: falta(error.message), error: falta(error.message) ? undefined : error.message });
@@ -24,6 +25,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_shopee"]); if (semAcesso) return semAcesso; }
   const b = await req.json().catch(() => ({}));
   const admin = supabaseAdmin();
   try {
@@ -70,6 +72,7 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_shopee"]); if (semAcesso) return semAcesso; }
   const id = new URL(req.url).searchParams.get("id");
   const { error } = await supabaseAdmin().from("shopee_flash_rules").delete().eq("id", id).eq("store_id", user.id);
   if (error) return erro(error.message);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { shopeePost, tokenShopee } from "@/lib/server/shopee";
 import { criarOfertaComItens, editarItensOferta, horariosDisponiveis, horariosOcupados, itensDaOferta, margensDosItens, type ItemRelampago, type MudancaRelampago } from "@/lib/server/shopee-relampago";
 
@@ -14,6 +14,7 @@ const erro = (e: unknown, status = 400) => NextResponse.json({ error: e instance
 export async function GET(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_shopee"]); if (semAcesso) return semAcesso; }
   const u = new URL(req.url);
   const shopId = u.searchParams.get("shop_id") ?? "";
   try {
@@ -45,6 +46,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_shopee"]); if (semAcesso) return semAcesso; }
   const b = await req.json().catch(() => ({}));
   const shopId = String(b.shop_id ?? "");
   const token = await tokenShopee(user.id, shopId);

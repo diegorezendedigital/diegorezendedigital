@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, userFromRequest } from "@/lib/server/supabase-admin";
 import { getAccessToken } from "@/lib/server/ml";
 import { freteML } from "@/lib/server/frete-ml";
 
@@ -11,6 +11,7 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_ml"]); if (semAcesso) return semAcesso; }
   try {
     const b = await req.json().catch(() => ({}));
     const lista: { ml_user_id: string; item_id: string; price: number }[] = Array.isArray(b.consultas) ? b.consultas.slice(0, 80) : [];

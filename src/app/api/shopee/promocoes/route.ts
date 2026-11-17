@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, userFromRequest } from "@/lib/server/supabase-admin";
 import { shopeeGet, tokenShopee } from "@/lib/server/shopee";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +42,7 @@ const LIMITE = 100;
 export async function GET(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["promo_shopee"]); if (semAcesso) return semAcesso; }
   const url = new URL(req.url);
   const shopId = url.searchParams.get("shop_id") ?? "";
   const encerradas = url.searchParams.get("periodo") === "encerradas";

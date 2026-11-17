@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { calcularLucro } from "@/lib/pricing";
 import type { Company } from "@/lib/types";
 
@@ -16,6 +16,7 @@ type Custo = { product_id: string; cost_price: number; icms_credit: number; pis_
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["pedidos"]); if (semAcesso) return semAcesso; }
   const inicioMs = Date.now();
   try {
     const b = await req.json().catch(() => ({}));

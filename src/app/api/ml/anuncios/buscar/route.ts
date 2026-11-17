@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { skuDoItem } from "@/lib/server/sku-ml";
 import { getAccessToken, itensDoML, listConnections, mlGet } from "@/lib/server/ml";
 
@@ -28,6 +28,7 @@ type ItemML = {
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["anuncios", "armazem", "calculadora"]); if (semAcesso) return semAcesso; }
   try {
     const b = await req.json().catch(() => ({}));
     const termo = String(b.termo ?? "").trim().replace(/^#/, "");

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { shopeeGet, tokenShopee } from "@/lib/server/shopee";
 import { CANAIS, faixaDoPreco } from "@/lib/taxas-publicas";
 
@@ -26,6 +26,7 @@ type Modelo = { model_id: number; model_sku?: string; model_name?: string; price
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const semAcesso = exigirAba(user, ["anuncios"]); if (semAcesso) return semAcesso; }
   const inicio = Date.now();
   try {
     const storeId = user.id;
