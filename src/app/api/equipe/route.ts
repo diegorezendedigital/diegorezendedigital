@@ -1,0 +1,79 @@
+import { NextResponse } from "next/server";
+import { apenasMaster, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+
+export const dynamic = "force-dynamic";
+
+const falta = (m: string) => /store_members|schema cache|does not exist/i.test(m);
+
+// GET: quem sou eu na loja + (para o master) a lista de convidados
+export async function GET(req: Request) {
+  const user = await userFromRequest(req);
+  if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  const admin = supabaseAdmin();
+  const { data: loja } = await admin.from("stores").select("name").eq("id", user.id).maybeSingle();
+  if (user.papel === "convidado") {
+    await admin.from("store_members").update({ last_seen_at: new Date().toISOString() }).eq("user_id", user.authId);
+    return NextResponse.json({ papel: user.papel, loja: { id: user.id, nome: loja?.name ?? "" }, membros: [] });
+  }
+  const { data, error } = await admin.from("store_members").select("id, email, nome, user_id, created_at, last_seen_at").eq("store_id", user.id).order("created_at");
+  if (error) return NextResponse.json({ papel: user.papel, loja: { id: user.id, nome: loja?.name ?? "" }, membros: [], precisaSQL: falta(error.message) });
+  // Convite aceito = o convidado já entrou alguma vez
+  const ids = (data ?? []).map((m) => m.user_id).filter(Boolean) as string[];
+  const entrou = new Map<string, string | null>();
+  for (const id of ids) {
+    const r = await admin.auth.admin.getUserById(id);
+    entrou.set(id, r.data.user?.last_sign_in_at ?? null);
+  }
+  return NextResponse.json({
+    papel: user.papel,
+    loja: { id: user.id, nome: loja?.name ?? "" },
+    membros: (data ?? []).map((m) => ({ ...m, ultimo_login: m.user_id ? entrou.get(m.user_id) ?? null : null })),
+  });
+}
+
+// POST { email, nome } → convida: cria o login e manda o e-mail para a pessoa criar a senha
+export async function POST(req: Request) {
+  const user = await userFromRequest(req);
+  if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  const bloqueio = apenasMaster(user);
+  if (bloqueio) return bloqueio;
+  const b = await req.json().catch(() => ({}));
+  const email = String(b.email ?? "").trim().toLowerCase();
+  const nome = String(b.nome ?? "").trim().slice(0, 80);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return NextResponse.json({ error: "E-mail inválido" }, { status: 400 });
+  if (email === (user.email ?? "").toLowerCase()) return NextResponse.json({ error: "Esse é o seu próprio e-mail." }, { status: 400 });
+  const admin = supabaseAdmin();
+  const { error: e0 } = await admin.from("store_members").select("id").limit(1);
+  if (e0) return NextResponse.json({ error: falta(e0.message) ? "Rode o SQL de usuários da loja no Supabase antes de convidar." : e0.message }, { status: 400 });
+
+  const origem = req.headers.get("origin") || `https://${req.headers.get("host")}`;
+  const r = await admin.auth.admin.inviteUserByEmail(email, { redirectTo: `${origem}/redefinir-senha`, data: { name: nome, convidado_por: user.id } });
+  if (r.error || !r.data.user) {
+    const msg = r.error?.message ?? "";
+    if (/already|registered|exists/i.test(msg))
+      return NextResponse.json({ error: "Esse e-mail já tem conta no sistema. Para evitar misturar lojas, use outro e-mail para o convidado." }, { status: 400 });
+    if (/rate limit/i.test(msg)) return NextResponse.json({ error: "Limite de e-mails do Supabase atingido. Tente de novo em uma hora." }, { status: 429 });
+    return NextResponse.json({ error: `Não foi possível convidar: ${msg}` }, { status: 500 });
+  }
+  const { error } = await admin.from("store_members").insert({ store_id: user.id, user_id: r.data.user.id, email, nome: nome || null, invited_by: user.authId });
+  if (error) {
+    await admin.auth.admin.deleteUser(r.data.user.id).catch(() => {});
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}
+
+// DELETE ?id= → remove o convidado da loja e apaga o login dele (foi criado só para esta loja)
+export async function DELETE(req: Request) {
+  const user = await userFromRequest(req);
+  if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  const bloqueio = apenasMaster(user);
+  if (bloqueio) return bloqueio;
+  const id = new URL(req.url).searchParams.get("id");
+  const admin = supabaseAdmin();
+  const { data: m } = await admin.from("store_members").select("id, user_id").eq("id", id).eq("store_id", user.id).maybeSingle();
+  if (!m) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  if (m.user_id) await admin.auth.admin.deleteUser(m.user_id as string).catch(() => {});
+  await admin.from("store_members").delete().eq("id", m.id);
+  return NextResponse.json({ ok: true });
+}

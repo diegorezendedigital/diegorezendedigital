@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
+import { lojaAtual } from "@/lib/loja";
 import { Company, Product, brl, formatarCnpj, mensagemErro } from "@/lib/types";
 import { ItemNFe, NFe, custoUnitario, lerNFe } from "@/lib/nfe";
 
@@ -93,7 +94,7 @@ export default function NfePage() {
     setAplicando(true);
     try {
       const { data } = await supabase.auth.getSession();
-      const uid = data.session?.user.id;
+      const uid = data.session ? await lojaAtual() : undefined;
       if (!uid) throw new Error("Sessão expirada. Entre novamente.");
 
       const atuais = new Map(produtos.map((p) => [p.id, p]));

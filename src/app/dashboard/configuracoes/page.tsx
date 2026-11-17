@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, supabase } from "@/lib/supabase/client";
+import { lojaAtual } from "@/lib/loja";
 import AlterarSenha from "@/components/AlterarSenha";
 import { Company, campo, formatarCnpj, mensagemErro, num } from "@/lib/types";
 import type { Regime } from "@/lib/pricing";
@@ -94,7 +95,7 @@ export default function ConfiguracoesPage() {
     setSalvando(true);
     try {
       const { data } = await supabase.auth.getSession();
-      const uid = data.session?.user.id;
+      const uid = data.session ? await lojaAtual() : undefined;
       if (!uid) throw new Error("Sessão expirada. Entre novamente.");
 
       const dados = {

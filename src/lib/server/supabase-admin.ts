@@ -14,10 +14,24 @@ export function supabaseAdmin() {
 }
 
 // Descobre quem está logado a partir do "Authorization: Bearer <token>" enviado pelo navegador.
-export async function userFromRequest(req: Request) {
+// Usuário convidado age na loja de quem o convidou: "id" é sempre a LOJA (store_id), "authId" é o login de verdade.
+export type UsuarioLoja = { id: string; authId: string; papel: "master" | "convidado"; email?: string; user_metadata?: Record<string, unknown> };
+export async function userFromRequest(req: Request): Promise<UsuarioLoja | null> {
   const header = req.headers.get("authorization") || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
   if (!token) return null;
-  const { data, error } = await supabaseAdmin().auth.getUser(token);
-  return error || !data.user ? null : data.user;
+  const admin = supabaseAdmin();
+  const { data, error } = await admin.auth.getUser(token);
+  if (error || !data.user) return null;
+  const u = data.user;
+  const base = { authId: u.id, email: u.email, user_metadata: u.user_metadata };
+  // Tabela ainda não criada (SQL não rodado): todo mundo é master da própria loja
+  const { data: m } = await admin.from("store_members").select("store_id").eq("user_id", u.id).maybeSingle();
+  if (m?.store_id) return { ...base, id: m.store_id as string, papel: "convidado" };
+  return { ...base, id: u.id, papel: "master" };
+}
+
+// Ações que só o usuário master da loja pode fazer (conectar contas, CNPJ, senha master, usuários).
+export function apenasMaster(u: UsuarioLoja): Response | null {
+  return u.papel === "master" ? null : Response.json({ error: "Só o usuário master da loja pode fazer isso." }, { status: 403 });
 }

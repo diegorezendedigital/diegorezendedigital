@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { lojaAtual } from "@/lib/loja";
 import CalculadoraCanal from "@/components/CalculadoraCanal";
 import { Marketplace, Product, brl, calcularTaxas, campo, num, pct } from "@/lib/types";
 
@@ -58,7 +59,7 @@ function CalculadoraGeral() {
   async function registrarVenda() {
     setMsg("");
     const { data } = await supabase.auth.getSession();
-    const uid = data.session?.user.id;
+    const uid = data.session ? await lojaAtual() : undefined;
     if (!uid || !mp || precoN <= 0) {
       setMsg("Informe o preço de venda.");
       return;

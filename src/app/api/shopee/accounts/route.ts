@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { apenasMaster, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { shopeeEhTeste } from "@/lib/server/shopee";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +37,7 @@ export async function GET(req: Request) {
 export async function PATCH(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  { const bloqueio = apenasMaster(user); if (bloqueio) return bloqueio; }
   const b = await req.json().catch(() => ({}));
   const shopId = String(b.shop_id || "");
   if (!shopId) return NextResponse.json({ error: "Informe a loja" }, { status: 400 });

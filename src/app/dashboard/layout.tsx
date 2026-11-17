@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { lojaAtual } from "@/lib/loja";
 
 type Item = { label: string; href: string };
 type Menu = { label: string; href?: string; base?: string; filhos?: Item[] };
@@ -32,7 +33,14 @@ const menus: Menu[] = [
   { label: "Relatórios", href: "/dashboard/relatorios" },
   { label: "DRE", href: "/dashboard/dre" },
   { label: "Integrações", href: "/dashboard/integracoes" },
-  { label: "Configurações", href: "/dashboard/configuracoes" },
+  {
+    label: "Configurações",
+    base: "/dashboard/configuracoes",
+    filhos: [
+      { label: "CNPJs e senha", href: "/dashboard/configuracoes" },
+      { label: "Usuários da loja", href: "/dashboard/configuracoes/usuarios" },
+    ],
+  },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -41,6 +49,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [carregando, setCarregando] = useState(true);
   const [nomeLoja, setNomeLoja] = useState("");
   const [ehAdmin, setEhAdmin] = useState(false);
+  const [convidado, setConvidado] = useState(false);
   const [aberto, setAberto] = useState<string | null>(null);
   const barra = useRef<HTMLElement | null>(null);
 
@@ -55,9 +64,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         return;
       }
 
-      const lojaResp = await supabase.from("stores").select("name").eq("id", user.id).maybeSingle();
+      const lojaId = (await lojaAtual()) ?? user.id;
+      const convidado = lojaId !== user.id;
+      const lojaResp = await supabase.from("stores").select("name").eq("id", lojaId).maybeSingle();
       let nome: string = lojaResp.data?.name ?? "";
-      if (!lojaResp.data) {
+      if (!lojaResp.data && !convidado) {
         // Conta antiga sem loja: cria agora (a regra do banco permite só a própria loja).
         nome = (user.user_metadata?.full_name as string | undefined) || "Minha Loja";
         await supabase.from("stores").insert({ id: user.id, name: nome });
@@ -67,6 +78,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (ativo) {
         setNomeLoja(nome);
         setEhAdmin(!!adminResp.data);
+        setConvidado(convidado);
         setCarregando(false);
       }
     }
@@ -96,7 +108,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (carregando) return <p className="p-8 text-sm text-slate-500">Carregando…</p>;
 
-  const todos: Menu[] = ehAdmin ? [...menus, { label: "Admin", href: "/dashboard/admin" }] : menus;
+  // Convidado não vê Integrações nem Configurações (conectar contas, CNPJ, senha master e usuários são do master)
+  const SO_MASTER = ["/dashboard/integracoes", "/dashboard/configuracoes"];
+  const base: Menu[] = convidado ? menus.filter((m) => !SO_MASTER.includes(m.href ?? m.base ?? "")) : menus;
+  const todos: Menu[] = ehAdmin ? [...base, { label: "Admin", href: "/dashboard/admin" }] : base;
+  if (convidado && SO_MASTER.some((p) => pathname.startsWith(p))) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6 text-center">
+        <div className="card max-w-md">
+          <p className="font-semibold">Área do usuário master</p>
+          <p className="mt-1 text-sm text-slate-600">Integrações, CNPJs, senha master e usuários da loja são gerenciados pelo dono da conta.</p>
+          <Link href="/dashboard" className="btn mt-4">Voltar ao início</Link>
+        </div>
+      </div>
+    );
+  }
   const ativo = (m: Menu) => (m.base ? pathname.startsWith(m.base) : pathname === m.href);
 
   return (
@@ -172,7 +198,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </nav>
 
           <div className="ml-auto flex shrink-0 items-center gap-4">
-            {nomeLoja && <span className="hidden font-mono text-xs text-slate-500 md:inline">{nomeLoja}</span>}
+            {nomeLoja && (
+              <span className="hidden items-center gap-1.5 font-mono text-xs text-slate-500 md:inline-flex">
+                {nomeLoja}
+                <span className={`rounded-full px-1.5 py-0.5 font-sans text-[10px] font-semibold ${convidado ? "bg-slate-100 text-slate-600" : "bg-brand-light text-brand"}`}>{convidado ? "convidado" : "master"}</span>
+              </span>
+            )}
             <button onClick={sair} className="text-sm text-slate-600 hover:text-slate-900">
               Sair
             </button>

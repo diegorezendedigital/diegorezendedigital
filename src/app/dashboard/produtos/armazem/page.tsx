@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch, supabase } from "@/lib/supabase/client";
+import { lojaAtual } from "@/lib/loja";
 import { Company, CustoProduto, Product, brl, campo, formatarCnpj, mensagemErro, num } from "@/lib/types";
 import { LinhaProduto, baixarModelo, lerPlanilha } from "@/lib/planilha";
 import { analisarAnuncio } from "@/lib/anuncio";
@@ -348,7 +349,7 @@ export default function ArmazemPage() {
     setErro("");
     setAviso("");
     const { data } = await supabase.auth.getSession();
-    const uid = data.session?.user.id;
+    const uid = data.session ? await lojaAtual() : undefined;
     if (!uid) return;
     // Várias variantes de uma vez: modelo + cores + tamanhos
     if (form.tipo === "multi") {
@@ -694,7 +695,7 @@ export default function ArmazemPage() {
     setImportando(true);
     try {
       const { data } = await supabase.auth.getSession();
-      const uid = data.session?.user.id;
+      const uid = data.session ? await lojaAtual() : undefined;
       if (!uid) throw new Error("Sessão expirada. Entre novamente.");
 
       // O que já existe: campos em branco na planilha não apagam o que está salvo.

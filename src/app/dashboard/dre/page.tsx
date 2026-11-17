@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { lojaAtual } from "@/lib/loja";
 import { CATEGORIAS_DESPESA, Expense, Sale, brl, intervaloDoMes, mesAtual, num, pct } from "@/lib/types";
 
 export default function DrePage() {
@@ -33,7 +34,7 @@ export default function DrePage() {
   async function adicionarDespesa(e: React.FormEvent) {
     e.preventDefault();
     const { data } = await supabase.auth.getSession();
-    const uid = data.session?.user.id;
+    const uid = data.session ? await lojaAtual() : undefined;
     if (!uid) return;
     const { error } = await supabase.from("expenses").insert({
       store_id: uid,
