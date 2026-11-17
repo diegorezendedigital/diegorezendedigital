@@ -427,6 +427,36 @@ export default function PedidosPage() {
     carregar();
   }, [carregar]);
 
+  // Atualização automática: enquanto a aba estiver aberta e visível, busca os pedidos de hoje a cada 5 minutos.
+  const [autoLigado, setAutoLigado] = useState(true);
+  const [ultimaAuto, setUltimaAuto] = useState<Date | null>(null);
+  const [rodandoAuto, setRodandoAuto] = useState(false);
+  const ocupadoRef = useRef(false);
+  ocupadoRef.current = reprocessando || reprocessandoCustos || rodandoAuto;
+  const carregarRef = useRef(carregar);
+  carregarRef.current = carregar;
+  useEffect(() => {
+    try { setAutoLigado(localStorage.getItem("pedidos_auto") !== "0"); } catch { /* sem armazenamento */ }
+  }, []);
+  useEffect(() => {
+    if (!autoLigado) return;
+    async function rodada() {
+      if (ocupadoRef.current || document.visibilityState !== "visible") return;
+      setRodandoAuto(true);
+      try {
+        await sincronizarVendas(1, () => {});
+        setUltimaAuto(new Date());
+        await carregarRef.current();
+      } catch {
+        /* falha silenciosa: tenta de novo na próxima rodada */
+      } finally {
+        setRodandoAuto(false);
+      }
+    }
+    const t = setInterval(rodada, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [autoLigado]);
+
   const baseFiltrada = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return (linhas ?? []).filter((l) => (!lojaSel || l.contaId === lojaSel) && (!q || l.pedido.toLowerCase().includes(q) || l.pack.includes(q) || l.produto.toLowerCase().includes(q) || l.sku.toLowerCase().includes(q) || l.uf.toLowerCase() === q));
@@ -547,6 +577,11 @@ export default function PedidosPage() {
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-500" title="Enquanto esta tela estiver aberta, os pedidos de hoje são buscados nos marketplaces a cada 5 minutos">
+            <input type="checkbox" checked={autoLigado} onChange={(e) => { setAutoLigado(e.target.checked); try { localStorage.setItem("pedidos_auto", e.target.checked ? "1" : "0"); } catch { /* sem armazenamento */ } }} />
+            Atualizar a cada 5 min
+            {rodandoAuto ? <span className="text-brand">· atualizando…</span> : ultimaAuto ? <span>· última às {ultimaAuto.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span> : null}
+          </label>
           <div className="flex flex-wrap items-end justify-end gap-2">
             <button className="btn-ghost" onClick={() => setModalLojas("custos")} disabled={reprocessando || reprocessandoCustos} title="Recalcula o custo das vendas do período com o custo cadastrado na data de cada venda">
               {reprocessandoCustos ? "Reprocessando custos…" : "Reprocessar custos"}
