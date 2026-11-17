@@ -102,7 +102,7 @@ export async function revisarParticipacoes(
         await mlPost(a.token, urlEntrar, corpoDeEntrada(promo, { preco: alvo.preco, temFaixa: true }));
         res.reajustados++;
         await log("entrou", alvo.preco, alvo.margem,
-          `Preço reajustado pelo custo atual: de ${reais(atual)} (margem ${porcento(margemAtual)}) para ${reais(alvo.preco)} (margem ${porcento(alvo.margem ?? minimo)}, meta ${porcento(minimo)}).`);
+          `Preço reajustado pelo custo atual: saiu da promoção a ${reais(atual)} (margem ${porcento(margemAtual)}) e entrou de novo a ${reais(alvo.preco)} (margem ${porcento(alvo.margem ?? minimo)}, meta ${porcento(minimo)}).`);
       } catch (e) {
         const motivo = e instanceof Error ? e.message : "erro do Mercado Livre";
         try {

@@ -770,9 +770,18 @@ export default function PromocoesPage() {
                         {h.min_margin != null && <div className="font-mono text-[10px] text-slate-500">meta {pct(Number(h.min_margin))}</div>}
                       </td>
                       <td className="p-3">
-                        <span className={`badge ${h.status === "entrou" ? "bg-emerald-100 text-emerald-800" : h.status === "erro" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
-                          {h.status === "entrou" ? "Entrou" : h.status === "erro" ? "Erro" : "Ficou de fora"}
-                        </span>
+                        {(() => {
+                          const msg = h.message ?? "";
+                          const tipo = msg.startsWith("Preço reajustado") ? "reajustado" : msg.startsWith("Saiu da promoção") ? "saiu" : h.status;
+                          const estilo: Record<string, [string, string]> = {
+                            entrou: ["bg-emerald-100 text-emerald-800", "Entrou"],
+                            reajustado: ["bg-sky-100 text-sky-800", "Reajustado pelo custo"],
+                            saiu: ["bg-amber-100 text-amber-800", "Saiu (margem abaixo)"],
+                            erro: ["bg-red-100 text-red-700", "Erro"],
+                          };
+                          const [cls, txt] = estilo[tipo] ?? ["bg-slate-200 text-slate-700", "Ficou de fora"];
+                          return <span className={`badge ${cls}`}>{txt}</span>;
+                        })()}
                         {h.message && <div className="mt-0.5 text-xs text-slate-600">{h.message}</div>}
                       </td>
                     </tr>
