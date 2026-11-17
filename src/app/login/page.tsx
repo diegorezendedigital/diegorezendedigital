@@ -14,6 +14,19 @@ export default function LoginPage() {
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
+  const [aviso, setAviso] = useState("");
+
+  async function esqueciSenha() {
+    setErro("");
+    setAviso("");
+    if (!email.trim()) {
+      setErro("Digite seu e-mail acima e clique de novo em “Esqueci minha senha”.");
+      return;
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/redefinir-senha` });
+    if (error) setErro("Não foi possível enviar o e-mail agora. Tente de novo em alguns minutos.");
+    else setAviso("Se esse e-mail tiver conta, enviamos um link para criar uma nova senha. Confira a caixa de entrada e o spam.");
+  }
 
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
@@ -73,7 +86,13 @@ export default function LoginPage() {
             </label>
             <input id="senha" type="password" className={campo} value={senha} onChange={(e) => setSenha(e.target.value)} required />
           </div>
+          <div className="-mt-2 text-right">
+            <button type="button" onClick={esqueciSenha} className="text-xs text-ink/60 underline underline-offset-4 hover:text-ink">
+              Esqueci minha senha
+            </button>
+          </div>
           {erro && <p className="text-sm text-red-700">{erro}</p>}
+          {aviso && <p className="text-sm text-emerald-700">{aviso}</p>}
           <button
             disabled={enviando}
             className="w-full rounded-full bg-ink px-4 py-3 text-sm font-medium text-paper hover:bg-inkdeep transition-colors disabled:opacity-60"

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, supabase } from "@/lib/supabase/client";
+import AlterarSenha from "@/components/AlterarSenha";
 import { Company, campo, formatarCnpj, mensagemErro, num } from "@/lib/types";
 import type { Regime } from "@/lib/pricing";
 
@@ -146,6 +147,14 @@ export default function ConfiguracoesPage() {
       <p className="text-sm text-slate-600">
         As contas do Mercado Livre (conectar, reconectar, desconectar) ficam em <Link href="/dashboard/integracoes" className="underline">Integrações</Link>.
       </p>
+
+      <section className="space-y-3">
+        <h2 className="font-mono text-xs uppercase tracking-wider text-slate-500">Senha de login</h2>
+        <div className="card">
+          <p className="mb-3 text-sm text-slate-600">Troque a senha que você usa para entrar no sistema.</p>
+          <AlterarSenha />
+        </div>
+      </section>
 
       <section className="space-y-3">
         <h2 className="font-mono text-xs uppercase tracking-wider text-slate-500">Senha master</h2>
