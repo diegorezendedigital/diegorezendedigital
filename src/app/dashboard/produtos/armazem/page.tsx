@@ -150,12 +150,18 @@ export default function ArmazemPage() {
   const statusEfetivo = statusMap === "todos" && mpFiltro !== "todos" ? "sim" : statusMap;
   const tipoDe = (p: Product) => p.tipo ?? "unico";
 
-  // Filtros (acima das abas). Pesquisa aceita várias entradas separadas por vírgula.
+  // Filtros (acima das abas). Pesquisa: vírgula separa entradas (uma OU outra); dentro de cada entrada, as palavras
+  // precisam aparecer TODAS ("polo camisa g"). Palavras curtas (até 3 letras, como P, M, G, GG, 42) contam como
+  // palavra exata, para "G" não pegar "GG" nem "Gola".
   const filtrados = useMemo(() => {
     const termos = busca
       .split(/[,\n]/)
       .map((t) => t.trim().toLowerCase())
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((t) => t.split(/\s+/).filter(Boolean));
+    const escapar = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const contem = (texto: string, palavra: string) =>
+      palavra.length <= 3 ? new RegExp(`(^|[^0-9a-zà-ÿ])${escapar(palavra)}($|[^0-9a-zà-ÿ])`, "i").test(texto) : texto.includes(palavra);
     return produtos.filter((p) => {
       if (statusEfetivo === "sim" && !mapeadoEm(p.id, mpFiltro)) return false;
       if (statusEfetivo === "nao" && mapeadoEm(p.id, mpFiltro)) return false;
@@ -168,9 +174,8 @@ export default function ArmazemPage() {
       const nome = `${p.name} ${p.grupo ?? ""}`.toLowerCase();
       const sku = (p.sku ?? "").toLowerCase();
       const ean = p.ean ?? "";
-      return termos.some((t) =>
-        campoBusca === "sku" ? sku.includes(t) : campoBusca === "nome" ? nome.includes(t) : campoBusca === "ean" ? ean.includes(t) : nome.includes(t) || sku.includes(t) || ean.includes(t)
-      );
+      const alvo = campoBusca === "sku" ? sku : campoBusca === "nome" ? nome : campoBusca === "ean" ? ean : `${nome} ${sku} ${ean}`;
+      return termos.some((palavras) => palavras.every((w) => contem(alvo, w)));
     });
   }, [produtos, busca, campoBusca, statusEfetivo, mpFiltro, estoqueFiltro, custoFiltro, grupoFiltro, mapeadoEm]);
 
@@ -950,7 +955,7 @@ export default function ArmazemPage() {
             <option value="sku">SKU</option>
             <option value="ean">EAN</option>
           </select>
-          <input className="h-10 min-w-0 flex-1 bg-transparent px-3 text-sm outline-none" placeholder="Separe várias entradas com vírgula" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          <input className="h-10 min-w-0 flex-1 bg-transparent px-3 text-sm outline-none" placeholder="ex.: camisa polo G  (todas as palavras) · use vírgula para buscar mais de uma coisa" value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
         <select className="input h-10 w-auto py-0" value={statusMap} onChange={(e) => setStatusMap(e.target.value as typeof statusMap)} aria-label="Status mapeado">
           <option value="todos">Status mapeado</option>
@@ -1003,6 +1008,19 @@ export default function ArmazemPage() {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="rounded-full bg-brand-light px-3 py-1 font-medium text-brand">Grupo: {grupoFiltro}</span>
           <button className="text-brand hover:underline" onClick={() => setGrupoFiltro(null)}>Ver todos os produtos</button>
+        </div>
+      )}
+      {busca.trim() !== "" && visiveis.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="text-slate-600">
+            <b>{visiveis.length}</b> {visiveis.length === 1 ? "produto encontrado" : "produtos encontrados"} para “{busca.trim()}”
+          </span>
+          {!todosMarcados ? (
+            <button className="btn" onClick={marcarTodos}>Selecionar os {visiveis.length} encontrados</button>
+          ) : (
+            <button className="btn-ghost" onClick={marcarTodos}>Desmarcar os encontrados</button>
+          )}
+          <span className="text-xs text-slate-500">Depois desmarque na lista o que não quiser e use “Editar custo em massa”.</span>
         </div>
       )}
       {sel.size > 0 && (
