@@ -120,6 +120,7 @@ export async function aplicarDescontoProprio(a: Entrada): Promise<ResultadoPropr
   }
 
   // 5) Já tem desconto próprio perto da meta e com validade sobrando: mantém
+  let precoAnterior: number | null = null;
   if (minha) {
     const atual = centavos(Number(minha.price) || Number(item.price) || 0);
     if (atual > 0) {
@@ -130,6 +131,7 @@ export async function aplicarDescontoProprio(a: Entrada): Promise<ResultadoPropr
       }
     }
     // Fora da meta ou perto de vencer: remove e cria de novo no preço certo
+    precoAnterior = centavos(Number(minha.price) || 0) || null;
     await apagarMeu();
   }
 
@@ -146,6 +148,15 @@ export async function aplicarDescontoProprio(a: Entrada): Promise<ResultadoPropr
     return { ...vazio, preco: alvo, margem: c.margem, status: "erro", mensagem: `O Mercado Livre recusou o desconto de ${reais(alvo)}: ${msg}` };
   }
   const desconto = ((base - alvo) / base) * 100;
+  if (precoAnterior != null && Math.abs(precoAnterior - alvo) >= 0.05) {
+    return {
+      ...vazio,
+      preco: alvo,
+      margem: c.margem,
+      status: "criado",
+      mensagem: `Preço reajustado pelo custo atual (desconto próprio): saiu a ${reais(precoAnterior)} e entrou de novo a ${reais(alvo)} (de ${reais(base)}, ${porcento(desconto)} off) · margem ${porcento(c.margem)} (meta ${porcento(minimo)}) · lucro ${reais(c.lucro)}.`,
+    };
+  }
   return {
     ...vazio,
     preco: alvo,

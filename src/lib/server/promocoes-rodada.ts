@@ -50,6 +50,8 @@ type Cursor = {
   propIdx?: number; // quantos já passaram
   revIdx?: number; // revisão das promoções em que o anúncio já está (custo atual): quantos anúncios já passaram
   revFeita?: boolean;
+  reajustados?: number; // preços reajustados pelo custo atual (promoção do ML ou desconto próprio)
+  sairam?: number; // anúncios que saíram de promoções por margem abaixo da mínima
 };
 
 const ATIVAS = ["na_fila", "rodando"];
@@ -454,6 +456,8 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
           const r = await revisarParticipacoes(admin, { token, mlUserId: conta, anuncio, produto, empresa: empresaDe(anuncio), cache, storeId: run.store_id, runId, origem: run.origem });
           cont.entraram += r.reajustados;
           cont.recusados += r.sairam;
+          c.reajustados = (c.reajustados ?? 0) + r.reajustados;
+          c.sairam = (c.sairam ?? 0) + r.sairam;
           cont.erros += r.erros;
           if (r.ultimoErro) ultimoErro = r.ultimoErro;
           if (r.reajustados) avisos.add("Preços de promoções reajustados pelo custo atual: veja o histórico.");
@@ -511,6 +515,7 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
           if (logErro) avisos.add(`Não consegui gravar o log (${logErro}): rode o SQL da automação no Supabase.`);
           cont.avaliados++;
           if (r.status === "criado") cont.entraram++;
+          if (r.mensagem.startsWith("Preço reajustado")) c.reajustados = (c.reajustados ?? 0) + 1;
           else if (r.status === "recusada") cont.recusados++;
           else if (r.status === "erro") {
             cont.erros++;

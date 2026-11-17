@@ -263,7 +263,7 @@ export default function AutomacaoPromocoes({
 
       {carregou && r && !ativa && (
         <p className="text-xs text-slate-500">
-          Última aplicação: {r.status === "concluida" ? "concluída" : r.status === "cancelada" ? "parada" : "com erro"} {quando(r.terminado_em || r.criado_em)} · {r.entraram} entraram · {r.recusados} de fora · {r.erros} erro{r.erros === 1 ? "" : "s"}
+          Última aplicação: {r.status === "concluida" ? "concluída" : r.status === "cancelada" ? "parada" : "com erro"} {quando(r.terminado_em || r.criado_em)} · {r.entraram} entraram{r.cursor?.reajustados ? ` (${r.cursor.reajustados} reajustados)` : ""} · {r.recusados} de fora{r.cursor?.sairam ? ` (${r.cursor.sairam} saíram)` : ""} · {r.erros} erro{r.erros === 1 ? "" : "s"}
         </p>
       )}
 
@@ -298,6 +298,12 @@ export default function AutomacaoPromocoes({
             <span>
               Ficaram de fora: <b>{r.recusados}</b>
             </span>
+            <span className="text-sky-700" title="Já estavam em promoção: saíram e entraram de novo no preço que dá a margem com o custo atual">
+              Reajustados: <b>{r.cursor?.reajustados ?? 0}</b>
+            </span>
+            <span className="text-amber-700" title="Saíram de promoções em que a margem ficou abaixo da mínima com o custo atual">
+              Saíram: <b>{r.cursor?.sairam ?? 0}</b>
+            </span>
             <span className={r.erros > 0 ? "text-red-700" : ""}>
               Erros: <b>{r.erros}</b>
             </span>
@@ -310,9 +316,18 @@ export default function AutomacaoPromocoes({
                 const a = porItem.get(f.item_id);
                 return (
                   <li key={f.id} className="flex flex-wrap items-start gap-x-2 gap-y-0.5 px-3 py-2">
-                    <span className={`badge ${f.status === "entrou" ? "bg-emerald-100 text-emerald-800" : f.status === "erro" ? "bg-red-100 text-red-700" : "bg-slate-200 text-slate-700"}`}>
-                      {f.status === "entrou" ? "Entrou" : f.status === "erro" ? "Erro" : "De fora"}
-                    </span>
+                    {(() => {
+                      const msg = f.message ?? "";
+                      const tipo = msg.startsWith("Preço reajustado") ? "reajustado" : msg.startsWith("Saiu da promoção") ? "saiu" : f.status;
+                      const estilo: Record<string, [string, string]> = {
+                        entrou: ["bg-emerald-100 text-emerald-800", "Entrou"],
+                        reajustado: ["bg-sky-100 text-sky-800", "Reajustado"],
+                        saiu: ["bg-amber-100 text-amber-800", "Saiu"],
+                        erro: ["bg-red-100 text-red-700", "Erro"],
+                      };
+                      const [cls, txt] = estilo[tipo] ?? ["bg-slate-200 text-slate-700", "De fora"];
+                      return <span className={`badge ${cls}`}>{txt}</span>;
+                    })()}
                     <span className="font-mono text-[11px] text-slate-500">{hora(f.updated_at)}</span>
                     <span className="min-w-0 flex-1">
                       {contas.length > 1 && f.ml_user_id && <span className="mr-1.5 rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-brand">{nomeConta(f.ml_user_id)}</span>}
