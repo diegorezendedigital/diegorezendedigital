@@ -299,6 +299,7 @@ export default function PedidosPage() {
   const [modalLojas, setModalLojas] = useState<null | "pedidos" | "custos">(null);
   const [reprocessandoCustos, setReprocessandoCustos] = useState(false);
   const [progresso, setProgresso] = useState("");
+  const [fracaoProg, setFracaoProg] = useState<number | null>(null);
   const [aviso, setAviso] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [custoManual, setCustoManual] = useState("");
@@ -311,7 +312,7 @@ export default function PedidosPage() {
     setReprocessando(true);
     try {
       const dias = Math.min(90, Math.max(1, Math.ceil((Date.now() - new Date(`${de}T00:00:00-03:00`).getTime()) / 86400000) + 1));
-      const r = await sincronizarVendas(dias, setProgresso, lojaIds);
+      const r = await sincronizarVendas(dias, (t, f) => { setProgresso(t); if (f != null) setFracaoProg(f); }, lojaIds);
       if (r.contas === 0) setErro("Nenhuma loja conectada (Mercado Livre ou Shopee). Conecte em Integrações.");
       else setAviso(`Pedidos reprocessados: ${r.vendas} vendas novas ou completadas. O custo de vendas que já tinham custo não foi alterado.`);
       await carregar();
@@ -320,6 +321,7 @@ export default function PedidosPage() {
     } finally {
       setReprocessando(false);
       setProgresso("");
+      setFracaoProg(null);
     }
   }
 
@@ -607,7 +609,19 @@ export default function PedidosPage() {
               {reprocessando ? "Reprocessando…" : "Reprocessar pedidos"}
             </button>
           </div>
-          {progresso && <span className="font-mono text-[11px] text-slate-500">{progresso}</span>}
+          {progresso && (
+            <div className="w-80 max-w-full">
+              {fracaoProg != null && (
+                <div className="mb-1 flex items-center gap-2">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(fracaoProg * 100)}>
+                    <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-500" style={{ width: `${Math.max(3, fracaoProg * 100)}%` }} />
+                  </div>
+                  <span className="w-9 text-right font-mono text-[11px] font-semibold text-slate-700">{Math.round(fracaoProg * 100)}%</span>
+                </div>
+              )}
+              <p className="truncate text-right font-mono text-[11px] text-slate-500">{progresso}</p>
+            </div>
+          )}
         </div>
       </div>
       {modalLojas && (
