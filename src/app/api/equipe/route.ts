@@ -65,20 +65,36 @@ export async function POST(req: Request) {
   const { error: e0 } = await admin.from("store_members").select("id").limit(1);
   if (e0) return NextResponse.json({ error: falta(e0.message) ? "Rode o SQL de usuários da loja no Supabase antes de convidar." : e0.message }, { status: 400 });
 
+  // 1) Registra o convite antes de criar o login: a trava de assinatura do cadastro libera e-mails convidados
+  await admin.from("store_members").delete().eq("store_id", user.id).eq("email", email).is("user_id", null);
+  const linha: Record<string, unknown> = { store_id: user.id, email, nome: nome || null, invited_by: user.authId };
+  if (permissoes) linha.permissoes = permissoes;
+  const { data: conv, error: eConv } = await admin.from("store_members").insert(linha).select("id").single();
+  if (eConv || !conv) {
+    const m = eConv?.message ?? "";
+    if (/duplicate|unique/i.test(m)) return NextResponse.json({ error: "Esse e-mail já é usuário da sua loja." }, { status: 400 });
+    return NextResponse.json({ error: m || "Não foi possível registrar o convite" }, { status: 500 });
+  }
+
+  // 2) Cria o login e manda o e-mail para a pessoa criar a senha
   const origem = req.headers.get("origin") || `https://${req.headers.get("host")}`;
   const r = await admin.auth.admin.inviteUserByEmail(email, { redirectTo: `${origem}/redefinir-senha`, data: { name: nome, convidado_por: user.id } });
   if (r.error || !r.data.user) {
+    await admin.from("store_members").delete().eq("id", conv.id);
     const msg = r.error?.message ?? "";
     if (/already|registered|exists/i.test(msg))
       return NextResponse.json({ error: "Esse e-mail já tem conta no sistema. Para evitar misturar lojas, use outro e-mail para o convidado." }, { status: 400 });
     if (/rate limit/i.test(msg)) return NextResponse.json({ error: "Limite de e-mails do Supabase atingido. Tente de novo em uma hora." }, { status: 429 });
+    if (/database error/i.test(msg))
+      return NextResponse.json({ error: "O banco recusou a criação do login. Rode no Supabase o SQL que libera convidados na trava de assinatura (20261208_convite_libera_cadastro.sql)." }, { status: 500 });
     return NextResponse.json({ error: `Não foi possível convidar: ${msg}` }, { status: 500 });
   }
-  const linha: Record<string, unknown> = { store_id: user.id, user_id: r.data.user.id, email, nome: nome || null, invited_by: user.authId };
-  if (permissoes) linha.permissoes = permissoes;
-  const { error } = await admin.from("store_members").insert(linha);
+
+  // 3) Liga o login ao convite
+  const { error } = await admin.from("store_members").update({ user_id: r.data.user.id }).eq("id", conv.id);
   if (error) {
     await admin.auth.admin.deleteUser(r.data.user.id).catch(() => {});
+    await admin.from("store_members").delete().eq("id", conv.id);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   return NextResponse.json({ ok: true });
