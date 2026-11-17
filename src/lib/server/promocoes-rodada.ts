@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Company, Listing, Product } from "@/lib/types";
 import { getAccessToken, mlGet } from "./ml";
 import { aplicarDescontoProprio, ID_DESCONTO_PROPRIO, NOME_DESCONTO_PROPRIO } from "./promocoes-desconto";
+import { revisarParticipacoes } from "./promocoes-revisao";
 import { decidirEEntrar, gravarAcao, margemMinimaDoSku, motivoNaoAutomatico, novoCache, paraVoceDecidir, type ItemPromoML, type PromoML } from "./promocoes-motor";
 
 // Rodadas da promoção automática em segundo plano. Cada rodada fica gravada em promo_runs com o progresso e um cursor;
@@ -47,6 +48,8 @@ type Cursor = {
   manuais?: PlanoPromo[]; // relâmpago e desconto por quantidade: não entram sozinhas, você decide na lista da promoção
   propTotal?: number; // anúncios que passam pela fase do desconto próprio (preço riscado)
   propIdx?: number; // quantos já passaram
+  revIdx?: number; // revisão das promoções em que o anúncio já está (custo atual): quantos anúncios já passaram
+  revFeita?: boolean;
 };
 
 const ATIVAS = ["na_fila", "rodando"];
@@ -195,8 +198,9 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
 
   const progresso = () => {
     const plano = c.plano ?? [];
-    const total = plano.reduce((s, p) => s + p.total, 0) + (c.propTotal ?? 0);
-    return { total, feitos: Math.min(total, (c.base ?? 0) + (c.vistos ?? 0) + (c.propIdx ?? 0)), promocoes_total: plano.length, promocoes_feitas: Math.min(plano.length, c.idx ?? 0) };
+    const total = plano.reduce((s, p) => s + p.total, 0) + (c.propTotal ?? 0) * 2;
+    const rev = c.revFeita ? (c.propTotal ?? 0) : (c.revIdx ?? 0);
+    return { total, feitos: Math.min(total, (c.base ?? 0) + (c.vistos ?? 0) + rev + (c.propIdx ?? 0)), promocoes_total: plano.length, promocoes_feitas: Math.min(plano.length, c.idx ?? 0) };
   };
   // Grava o andamento (e renova a trava). Devolve o status atual para perceber se a rodada foi parada pela tela.
   const salvar = async (extra: Record<string, unknown> = {}): Promise<string | null> => {
@@ -437,8 +441,38 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
       if ((await salvar()) === "cancelada") return { continuar: false };
     }
 
-    // 6) Desconto próprio (preço riscado) nos anúncios que não estão em nenhuma promoção do Mercado Livre
+    // 5b) Promoções em que o anúncio já está: confere a margem com o custo atual e reajusta o preço ou sai
     c.propTotal = anuncios.length;
+    while (!c.revFeita && (c.revIdx ?? 0) < anuncios.length) {
+      if (tempoAcabou()) return await pausar();
+      const anuncio = anuncios[c.revIdx ?? 0];
+      const conta = String(anuncio.ml_user_id);
+      const token = await tokenDe(conta);
+      const produto = anuncio.product_id ? produtos.get(anuncio.product_id) : undefined;
+      if (token) {
+        try {
+          const r = await revisarParticipacoes(admin, { token, mlUserId: conta, anuncio, produto, empresa: empresaDe(anuncio), cache, storeId: run.store_id, runId, origem: run.origem });
+          cont.entraram += r.reajustados;
+          cont.recusados += r.sairam;
+          cont.erros += r.erros;
+          if (r.ultimoErro) ultimoErro = r.ultimoErro;
+          if (r.reajustados) avisos.add("Preços de promoções reajustados pelo custo atual: veja o histórico.");
+          if (r.sairam) avisos.add("Anúncios saíram de promoções que ficaram abaixo da margem mínima com o custo atual.");
+          if (r.logErro) avisos.add(`Não consegui gravar o log (${r.logErro}): rode o SQL da automação no Supabase.`);
+          c.falhas = 0;
+        } catch {
+          // Falha passageira ao ler as promoções do anúncio: tenta de novo na próxima parte; depois de 3, segue
+          c.falhas = (c.falhas ?? 0) + 1;
+          if (c.falhas < 3) return await pausar();
+          c.falhas = 0;
+        }
+      }
+      c.revIdx = (c.revIdx ?? 0) + 1;
+      if ((await salvar()) === "cancelada") return { continuar: false };
+    }
+    c.revFeita = true;
+
+    // 6) Desconto próprio (preço riscado) nos anúncios que não estão em nenhuma promoção do Mercado Livre
     while ((c.propIdx ?? 0) < anuncios.length) {
       if (tempoAcabou()) return await pausar();
       const anuncio = anuncios[c.propIdx ?? 0];
