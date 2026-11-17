@@ -180,6 +180,7 @@ export default function PromocoesPage() {
   const [trabalhando, setTrabalhando] = useState("");
   const [confirmaLote, setConfirmaLote] = useState(false);
   const [historico, setHistorico] = useState<AcaoPromo[]>([]);
+  const [historicoCompleto, setHistoricoCompleto] = useState(false);
   const [erroLog, setErroLog] = useState("");
   const [busca, setBusca] = useState("");
   const [soBonus, setSoBonus] = useState(false);
@@ -254,8 +255,17 @@ export default function PromocoesPage() {
         supabase.from("marketplaces").select("*"),
         supabase.from("promo_actions").select("*").order("updated_at", { ascending: false }).limit(300),
       ]);
-      setHistorico((h.data ?? []) as AcaoPromo[]);
-      setErroLog(h.error ? h.error.message : "");
+      // Histórico completo (cada ação é uma linha); sem a tabela nova, usa o resumo por anúncio e promoção
+      const ev = await supabase.from("promo_action_events").select("*").order("created_at", { ascending: false }).limit(1000);
+      if (!ev.error) {
+        setHistorico(((ev.data ?? []) as (AcaoPromo & { created_at: string })[]).map((x) => ({ ...x, updated_at: x.created_at })));
+        setErroLog("");
+        setHistoricoCompleto(true);
+      } else {
+        setHistorico((h.data ?? []) as AcaoPromo[]);
+        setErroLog(h.error ? h.error.message : "");
+        setHistoricoCompleto(false);
+      }
       setContas(r.contas);
       setAnuncios((l.data ?? []) as Listing[]);
       setProdutos((p.data ?? []) as Product[]);
@@ -700,6 +710,9 @@ export default function PromocoesPage() {
               Log das promoções automáticas
               {!logAberto && <span className="text-sm font-normal text-slate-500">({historico.length})</span>}
             </button>
+            <span className="mt-0.5 block text-xs font-normal text-slate-500">
+              {historicoCompleto ? "Histórico completo: cada ação é uma linha, das mais recentes para as mais antigas." : "Mostrando a última ação de cada anúncio em cada promoção. Rode o SQL do histórico completo para ver todas."}
+            </span>
           </h2>
           <div className="flex flex-wrap items-center gap-2">
             {logAberto && (contas ?? []).length > 1 && (

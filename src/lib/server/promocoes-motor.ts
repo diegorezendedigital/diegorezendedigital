@@ -232,6 +232,9 @@ export type LinhaAcao = {
 
 // Grava no log. Se o banco ainda não tem as colunas novas (SQL pendente), grava sem elas.
 export async function gravarAcao(admin: SupabaseClient, linha: LinhaAcao): Promise<string | null> {
+  // Histórico completo (uma linha por ação). Se a tabela ainda não existe (SQL pendente), segue só com o resumo.
+  const { updated_at, ...ev } = linha;
+  await admin.from("promo_action_events").insert({ ...ev, created_at: updated_at });
   const { error } = await admin.from("promo_actions").upsert(linha, { onConflict: "store_id,item_id,promotion_id" });
   if (!error) return null;
   if (/run_id|origem/i.test(error.message || "")) {
