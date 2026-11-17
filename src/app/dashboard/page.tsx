@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch, supabase } from "@/lib/supabase/client";
 import { brl, pct } from "@/lib/types";
 import MarcaMP from "@/components/MarcaMP";
+import { lojaAtual } from "@/lib/loja";
 
 type Venda = {
   sold_at: string; sale_price: number; profit: number | null; cost_price: number | null; quantity: number | null;
@@ -225,6 +226,7 @@ export default function InicioPage() {
   const [shopee, setShopee] = useState<LojaShopee[] | null>(null);
   const [contasShopee, setContasShopee] = useState<ContaShopee[]>([]);
   const [nome, setNome] = useState("");
+  const [nomeLoja, setNomeLoja] = useState("");
   const [atualizado, setAtualizado] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -232,6 +234,8 @@ export default function InicioPage() {
       const { data } = await supabase.auth.getUser();
       const n = (data.user?.user_metadata?.name as string | undefined) || (data.user?.user_metadata?.full_name as string | undefined) || "";
       setNome(n.split(" ")[0]);
+      const lid = await lojaAtual();
+      if (lid) supabase.from("stores").select("name").eq("id", lid).maybeSingle().then(({ data: l }) => setNomeLoja((l?.name as string) ?? ""));
       // Do começo do mês anterior até agora (para comparar mês com mês e 7 dias com os 7 anteriores)
       const hoje = dia(new Date());
       const [a, m] = hoje.split("-").map(Number);
@@ -320,6 +324,35 @@ export default function InicioPage() {
   const vencendo = contasShopee.filter((c) => c.refresh_expires_at && new Date(c.refresh_expires_at).getTime() - Date.now() < 15 * 86400_000);
   const maxTop = Math.max(1, ...calc.top.map((t) => t.faturamento));
 
+  // Resumo do período em texto, para mandar pelo WhatsApp (abre o WhatsApp com a mensagem pronta)
+  function enviarWhatsApp() {
+    const quando = periodo === "hoje" ? "de hoje" : periodo === "ontem" ? "de ontem" : periodo === "7d" ? "dos últimos 7 dias" : "do mês";
+    const data = new Date().toLocaleDateString("pt-BR", { timeZone: TZ });
+    const linhas = [
+      `📊 *Resumo ${quando}${nomeLoja ? ` — ${nomeLoja}` : ""}*`,
+      `_${data}_`,
+      "",
+      `🛒 Pedidos: *${a.pedidos}* (${a.unidades} un.)`,
+      `💰 Faturamento: *${brl(a.faturamento)}*`,
+      `✅ Lucro: *${brl(a.lucro)}*`,
+      `📈 Margem: *${pct(a.margem)}* · ROI: *${pct(a.roi)}*`,
+      `🧾 Ticket médio: ${brl(a.ticket)}`,
+    ];
+    const mps = calc.porMp.filter((m) => m.faturamento > 0);
+    if (mps.length) {
+      linhas.push("", "*Por marketplace*");
+      mps.forEach((m) => linhas.push(`• ${MP[m.id].nome}: ${m.pedidos} pedidos · ${brl(m.faturamento)} · lucro ${brl(m.lucro)}`));
+    }
+    if (calc.top[0]) linhas.push("", `🏆 Mais vendido: ${calc.top[0].titulo.slice(0, 60)} (${brl(calc.top[0].faturamento)})`);
+    if (periodo !== "mes" && b.faturamento) {
+      const d = ((a.faturamento - b.faturamento) / Math.abs(b.faturamento)) * 100;
+      linhas.push(`${d >= 0 ? "⬆️" : "⬇️"} Faturamento ${d >= 0 ? "+" : ""}${d.toFixed(0)}% ${COMPARA[periodo]}`);
+    }
+    if (a.semCusto) linhas.push("", `⚠️ ${a.semCusto} ${a.semCusto === 1 ? "venda" : "vendas"} sem custo informado: o lucro real pode ser menor.`);
+    linhas.push("", "Detalhes: https://www.diegorezendedigital.com.br/dashboard");
+    window.open(`https://wa.me/?text=${encodeURIComponent(linhas.join("\n"))}`, "_blank", "noopener,noreferrer");
+  }
+
   const cards = [
     { k: "faturamento", t: "Faturamento", v: brl(a.faturamento), d: <Delta a={a.faturamento} b={b.faturamento} />, s: calc.ultimos7.map((x) => x.faturamento), cor: COR.faturamento },
     { k: "lucro", t: "Lucro", v: brl(a.lucro), d: <Delta a={a.lucro} b={b.lucro} />, s: calc.ultimos7.map((x) => x.lucro), cor: COR.lucro, destaque: a.lucro < 0 ? "text-red-600" : "text-emerald-700" },
@@ -353,6 +386,18 @@ export default function InicioPage() {
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              onClick={enviarWhatsApp}
+              disabled={carregando}
+              title="Abre o WhatsApp com o resumo do período escolhido já escrito"
+              className="inline-flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-1.5 text-sm font-semibold text-white shadow-[0_0_16px_rgba(37,211,102,0.55)] transition hover:shadow-[0_0_24px_rgba(37,211,102,0.9)] disabled:opacity-50"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.5L3 20.5l1.6-5.4A8.5 8.5 0 1 1 21 11.5z" />
+              </svg>
+              Enviar resumo no WhatsApp
+            </button>
             {atualizado && <span className="text-[11px] text-white/60">Atualizado às {atualizado.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · {COMPARA[periodo]}</span>}
           </div>
         </div>
