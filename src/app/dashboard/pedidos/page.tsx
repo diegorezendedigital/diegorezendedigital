@@ -4,6 +4,7 @@ import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useS
 import Link from "next/link";
 import { apiFetch, supabase } from "@/lib/supabase/client";
 import { sincronizarVendas } from "@/lib/sincronizar";
+import MarcaMP from "@/components/MarcaMP";
 import { CANAIS, faixaDoPreco } from "@/lib/taxas-publicas";
 import { Sale, brl, mensagemErro, pct } from "@/lib/types";
 
@@ -723,10 +724,7 @@ export default function PedidosPage() {
                       <tr className="border-b border-slate-100 align-top">
                         <td className="px-5 py-5">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {(() => {
-                              const e = MP_ESTILO[NOME_MP[l.mp] ?? "Mercado Livre"];
-                              return e ? <span title={NOME_MP[l.mp]} className={`inline-flex h-5 min-w-[24px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${e.cls}`}>{e.sigla}</span> : null;
-                            })()}
+                            <MarcaMP mp={l.mp} />
                             <span className="font-mono text-sm">{l.pedido}</span>
                             {lojas.length > 1 && nomeLoja(l.contaId) && <span className="rounded bg-brand-light px-1.5 py-0.5 text-[10px] font-semibold text-brand">{nomeLoja(l.contaId)}</span>}
                           </div>
