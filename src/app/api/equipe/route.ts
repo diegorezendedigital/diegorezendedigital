@@ -126,3 +126,22 @@ export async function PATCH(req: Request) {
   if (error) return NextResponse.json({ error: /permissoes/.test(error.message) ? "Rode o SQL das permissões (coluna permissoes) no Supabase." : error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
 }
+
+// PUT { id } → reenvia o e-mail para o convidado criar a senha (o link do convite vale pouco tempo e só uma vez)
+export async function PUT(req: Request) {
+  const user = await userFromRequest(req);
+  if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  const bloqueio = apenasMaster(user);
+  if (bloqueio) return bloqueio;
+  const b = await req.json().catch(() => ({}));
+  const admin = supabaseAdmin();
+  const { data: m } = await admin.from("store_members").select("id, email").eq("id", String(b.id ?? "")).eq("store_id", user.id).maybeSingle();
+  if (!m) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  const origem = req.headers.get("origin") || `https://${req.headers.get("host")}`;
+  const { error } = await admin.auth.resetPasswordForEmail(String(m.email), { redirectTo: `${origem}/redefinir-senha` });
+  if (error) {
+    if (/rate limit|seconds/i.test(error.message)) return NextResponse.json({ error: "Aguarde um minuto antes de reenviar de novo." }, { status: 429 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}

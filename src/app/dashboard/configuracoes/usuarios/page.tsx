@@ -97,6 +97,15 @@ export default function UsuariosPage() {
   const resumoAbas = (p?: string[] | null) =>
     !p || p.length === TODAS_AS_ABAS.length ? "Todas as abas" : p.map((id) => ABAS.find((a) => a.id === id)?.label ?? id).join(", ");
 
+  async function reenviar(m: Membro) {
+    try {
+      await apiFetch("/api/equipe", { method: "PUT", body: JSON.stringify({ id: m.id }) });
+      setMsg({ ok: true, t: `E-mail reenviado para ${m.email}. O link vale por pouco tempo e só pode ser usado uma vez.` });
+    } catch (err) {
+      setMsg({ ok: false, t: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   async function remover(m: Membro) {
     if (!confirm(`Remover ${m.nome || m.email} da loja? O login dessa pessoa será apagado e ela perde o acesso na hora.`)) return;
     try {
@@ -191,6 +200,7 @@ export default function UsuariosPage() {
                       </td>
                       <td className="td whitespace-nowrap text-right">
                         <button className="btn-ghost" onClick={() => setEditando(editando?.id === m.id ? null : { id: m.id, abas: m.permissoes?.length ? [...m.permissoes] : [...TODAS_AS_ABAS] })}>{editando?.id === m.id ? "Fechar" : "Editar acessos"}</button>
+                        {!m.ultimo_login && <button className="btn-ghost" onClick={() => reenviar(m)}>Reenviar convite</button>}
                         <button className="btn-ghost text-red-700" onClick={() => remover(m)}>Remover</button>
                       </td>
                     </tr>
