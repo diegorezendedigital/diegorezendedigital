@@ -235,6 +235,15 @@ export default function PedidosPage() {
   // Loja (conta do Mercado Livre) escolhida: "" = todas juntas. A escolha fica lembrada neste navegador.
   const [lojaSel, setLojaSel] = useState<string[]>([]);
   const [soSemCusto, setSoSemCusto] = useState(false);
+  const [soNegativos, setSoNegativos] = useState(false);
+  // Link da tela inicial: /dashboard/pedidos?negativos=1&de=AAAA-MM-DD&ate=AAAA-MM-DD
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const ok = (x: string | null) => !!x && /^\d{4}-\d{2}-\d{2}$/.test(x);
+    if (ok(q.get("de"))) setDe(q.get("de")!);
+    if (ok(q.get("ate"))) setAte(q.get("ate")!);
+    if (q.get("negativos") === "1") setSoNegativos(true);
+  }, []);
   // Lojas = contas do Mercado Livre conectadas (a tabela de conexões é protegida: vem pela API)
   useEffect(() => {
     // Mercado Livre e Shopee carregam juntas, para uma não apagar a outra
@@ -494,7 +503,19 @@ export default function PedidosPage() {
   }, [linhas, busca, lojaSel]);
   // Pedidos (um pedido pode ter vários itens) que ainda têm alguma venda sem custo
   const pedidosSemCusto = useMemo(() => new Set(baseFiltrada.filter((l) => l.custo === 0).map((l) => l.pack || l.pedido)).size, [baseFiltrada]);
-  const visiveis = useMemo(() => (soSemCusto ? baseFiltrada.filter((l) => l.custo === 0) : baseFiltrada), [baseFiltrada, soSemCusto]);
+  // Pedidos com prejuízo (soma do que sobrou de todos os itens do pedido abaixo de zero)
+  const negativos = useMemo(() => {
+    const soma = new Map<string, number>();
+    baseFiltrada.forEach((l) => { const k = l.pack || l.pedido; soma.set(k, (soma.get(k) ?? 0) + l.sobra); });
+    const chaves = new Set(Array.from(soma.entries()).filter(([, v]) => v < -0.004).map(([k]) => k));
+    let valor = 0;
+    chaves.forEach((k) => (valor += soma.get(k) ?? 0));
+    return { chaves, valor };
+  }, [baseFiltrada]);
+  const visiveis = useMemo(
+    () => (soNegativos ? baseFiltrada.filter((l) => negativos.chaves.has(l.pack || l.pedido)) : soSemCusto ? baseFiltrada.filter((l) => l.custo === 0) : baseFiltrada),
+    [baseFiltrada, soSemCusto, soNegativos, negativos]
+  );
 
   // Um pedido com vários produtos vira uma linha só (valores somados, produtos listados dentro dela).
   const grupos = useMemo(() => {
@@ -709,6 +730,24 @@ export default function PedidosPage() {
 
       {(
         <>
+          {(negativos.chaves.size > 0 || soNegativos) && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <p className="flex items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">!</span>
+                {negativos.chaves.size > 0 ? (
+                  <span>
+                    Você tem <b>{negativos.chaves.size} {negativos.chaves.size === 1 ? "pedido negativo" : "pedidos negativos"}</b> {de === ate ? `em ${de.split("-").reverse().join("/")}` : `de ${de.split("-").reverse().join("/")} a ${ate.split("-").reverse().join("/")}`}: prejuízo de <b>{brl(Math.abs(negativos.valor))}</b>.
+                  </span>
+                ) : (
+                  <span>Nenhum pedido negativo neste período.</span>
+                )}
+              </p>
+              <button className={soNegativos ? "btn" : "rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-700"} onClick={() => { setSoNegativos(!soNegativos); setSoSemCusto(false); }}>
+                {soNegativos ? "Mostrar todos os pedidos" : "Ver só pedidos negativos"}
+              </button>
+            </div>
+          )}
+
           {(pedidosSemCusto > 0 || soSemCusto) && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 p-3 text-sm text-amber-800">
               <p>
@@ -721,7 +760,7 @@ export default function PedidosPage() {
                   <>Nenhum pedido sem custo neste período.</>
                 )}
               </p>
-              <button className={soSemCusto ? "btn" : "btn-ghost"} onClick={() => setSoSemCusto(!soSemCusto)}>
+              <button className={soSemCusto ? "btn" : "btn-ghost"} onClick={() => { setSoSemCusto(!soSemCusto); setSoNegativos(false); }}>
                 {soSemCusto ? "Mostrar todos os pedidos" : "Ver só pedidos sem custo"}
               </button>
             </div>

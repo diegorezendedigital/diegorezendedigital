@@ -11,6 +11,7 @@ type Venda = {
   sold_at: string; sale_price: number; profit: number | null; cost_price: number | null; quantity: number | null;
   fees_total: number | null; shipping_cost: number | null; tax_amount: number | null;
   marketplace_id: string | null; order_number: string | null; external_id: string | null; title: string | null; ml_user_id: string | null;
+  pack_id?: string | null;
 };
 type ContaML = {
   ml_user_id: string; nickname: string | null; level_id?: string | null; power_seller_status?: string | null; ml_error?: string;
@@ -246,7 +247,7 @@ export default function InicioPage() {
         for (let i = 0; i < 100000; i += 1000) {
           const r = await supabase
             .from("sales")
-            .select("sold_at, sale_price, profit, cost_price, quantity, fees_total, shipping_cost, tax_amount, marketplace_id, order_number, external_id, title, ml_user_id")
+            .select("sold_at, sale_price, profit, cost_price, quantity, fees_total, shipping_cost, tax_amount, marketplace_id, order_number, external_id, title, ml_user_id, pack_id")
             .gte("sold_at", desde).order("sold_at").range(i, i + 999);
           if (r.error) throw new Error(r.error.message);
           todas.push(...((r.data ?? []) as Venda[]));
@@ -314,7 +315,14 @@ export default function InicioPage() {
     }
     const top = Array.from(prod.entries()).map(([t, l]) => ({ titulo: t, mp: l[0].marketplace_id || "mercado_livre", ...resumo(l) })).sort((x, y) => y.faturamento - x.faturamento).slice(0, 6);
 
-    return { atual: resumo(atual), antes: resumo(vs.filter((v) => anterior[periodo](v.d))), pontos, ultimos7, porMp, top };
+    // Pedidos com prejuízo no período (pacote com vários itens conta como um pedido)
+    const porPedido = new Map<string, number>();
+    atual.forEach((v) => { const k = v.pack_id || v.order_number || (v.external_id ?? "").split(":")[0]; porPedido.set(k, (porPedido.get(k) ?? 0) + (Number(v.profit) || 0)); });
+    const negs = Array.from(porPedido.values()).filter((x) => x < -0.004);
+    const negativos = { qtd: negs.length, valor: negs.reduce((t, x) => t + x, 0) };
+    const intervalo: Record<Periodo, [string, string]> = { hoje: [hoje, hoje], ontem: [ontem, ontem], "7d": [somaDias(-6), hoje], mes: [`${mes}-01`, hoje] };
+
+    return { atual: resumo(atual), antes: resumo(vs.filter((v) => anterior[periodo](v.d))), pontos, ultimos7, porMp, top, negativos, intervalo: intervalo[periodo] };
   }, [vendas, periodo]);
 
   const ROTULO: Record<Periodo, string> = { hoje: "Hoje", ontem: "Ontem", "7d": "7 dias", mes: "Este mês" };
@@ -404,6 +412,21 @@ export default function InicioPage() {
       </div>
 
       {erro && <div className="card text-sm text-red-700">{erro}</div>}
+
+      {!carregando && calc.negativos.qtd > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">!</span>
+            <span>
+              Você tem <b>{calc.negativos.qtd} {calc.negativos.qtd === 1 ? "pedido negativo" : "pedidos negativos"}</b>{" "}
+              {periodo === "hoje" ? "hoje" : periodo === "ontem" ? "ontem" : periodo === "7d" ? "nos últimos 7 dias" : "neste mês"}: prejuízo de <b>{brl(Math.abs(calc.negativos.valor))}</b>.
+            </span>
+          </p>
+          <Link href={`/dashboard/pedidos?negativos=1&de=${calc.intervalo[0]}&ate=${calc.intervalo[1]}`} className="rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
+            Ver pedidos negativos
+          </Link>
+        </div>
+      )}
 
       {/* Indicadores */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
