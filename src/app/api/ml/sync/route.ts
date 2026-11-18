@@ -88,6 +88,7 @@ export async function POST(req: Request) {
     type Anuncio = { id: string; product_id: string | null; company_id: string | null; units: number };
     let anunciosCriados = 0;
     const anuncios = new Map<string, Anuncio>();
+    const prodPorItem = new Map<string, string>(); // produto do armazém com o mesmo SKU do item
     const produtos = new Map<string, Product>();
     const empresas = new Map<string, Company>();
     let empresaPadrao: Company | null = null;
@@ -121,6 +122,7 @@ export async function POST(req: Request) {
           }
         }
       }
+      itemIds.forEach((id) => { const pid = porSku.get(normSku(skuDoItem.get(id) || "")); if (pid) prodPorItem.set(id, pid); });
       // Anúncios que já existiam sem produto ligado: liga pelo SKU (assim a venda pega o custo do armazém)
       for (const [id, an] of Array.from(anuncios.entries())) {
         if (an.product_id) continue;
@@ -156,7 +158,7 @@ export async function POST(req: Request) {
         anunciosCriados = criados?.length ?? 0;
       }
 
-      const prodIds = Array.from(new Set(Array.from(anuncios.values()).map((a) => a.product_id).filter(Boolean))) as string[];
+      const prodIds = Array.from(new Set([...Array.from(anuncios.values()).map((a) => a.product_id), ...Array.from(prodPorItem.values())].filter(Boolean))) as string[];
       if (prodIds.length) {
         const { data: prods } = await admin.from("products").select("*").in("id", prodIds);
         ((prods ?? []) as Product[]).forEach((p) => produtos.set(p.id, p));
@@ -233,9 +235,16 @@ export async function POST(req: Request) {
       o.order_items.map((oi, idx) => {
         const q = Number(oi.quantity) || 1;
         const an = anuncios.get(oi.item.id);
-        const prod = an?.product_id ? produtos.get(an.product_id) : undefined;
-        const unidades = (an?.units ?? 1) * q;
-        const hist = prod ? custoEm(prod, o.date_created) : { custo: 0, credito: 0 };
+        const prodAn = an?.product_id ? produtos.get(an.product_id) : undefined;
+        const histAn = prodAn ? custoEm(prodAn, o.date_created) : { custo: 0, credito: 0 };
+        const prodSkuId = prodPorItem.get(oi.item.id);
+        const prodSku = prodSkuId && prodSkuId !== prodAn?.id ? produtos.get(prodSkuId) : undefined;
+        const histSku = prodSku ? custoEm(prodSku, o.date_created) : { custo: 0, credito: 0 };
+        // Usa o produto ligado ao anúncio; se ele não tem custo (ou não existe mais), usa o produto com o mesmo SKU
+        const usaSku = !(histAn.custo > 0) && histSku.custo > 0;
+        const prod = usaSku ? prodSku : prodAn;
+        const unidades = (usaSku ? 1 : an?.units ?? 1) * q;
+        const hist = usaSku ? histSku : histAn;
         const custo = hist.custo * unidades;
         const credito = hist.credito * unidades;
         const empresa = (an?.company_id && empresas.get(an.company_id)) || (empresaPadrao as Company | null);

@@ -154,6 +154,10 @@ export async function POST(req: Request) {
       if (!error) an.product_id = pid;
     }
 
+    // Produto do armazém com o mesmo SKU de cada item (reserva quando o anúncio está ligado a um produto sem custo ou que não existe mais)
+    const prodPorChave = new Map<string, string>();
+    chaves.forEach((c) => { const pid = porSku.get(normSku(skuDe(itens.get(c)!))); if (pid) prodPorChave.set(c, pid); });
+
     let anunciosCriados = 0;
     const faltam = chaves.filter((c) => !anuncios.has(c));
     if (faltam.length) {
@@ -179,7 +183,7 @@ export async function POST(req: Request) {
     }
 
     const produtos = new Map<string, Product>();
-    const prodIds = Array.from(new Set(Array.from(anuncios.values()).map((a) => a.product_id).filter(Boolean))) as string[];
+    const prodIds = Array.from(new Set([...Array.from(anuncios.values()).map((a) => a.product_id), ...Array.from(prodPorChave.values())].filter(Boolean))) as string[];
     if (prodIds.length) {
       const { data: prods } = await admin.from("products").select("*").in("id", prodIds);
       ((prods ?? []) as Product[]).forEach((p) => produtos.set(p.id, p));
@@ -216,9 +220,16 @@ export async function POST(req: Request) {
         const q = n(it.model_quantity_purchased) || 1;
         const preco = valores[idx];
         const an = anuncios.get(chaveAnuncio(it));
-        const prod = an?.product_id ? produtos.get(an.product_id) : undefined;
-        const unidades = (an?.units ?? 1) * q;
-        const hist = prod ? custoEm(prod, soldAt) : { custo: 0, credito: 0 };
+        const prodAn = an?.product_id ? produtos.get(an.product_id) : undefined;
+        const histAn = prodAn ? custoEm(prodAn, soldAt) : { custo: 0, credito: 0 };
+        const prodSkuId = prodPorChave.get(chaveAnuncio(it));
+        const prodSku = prodSkuId && prodSkuId !== prodAn?.id ? produtos.get(prodSkuId) : undefined;
+        const histSku = prodSku ? custoEm(prodSku, soldAt) : { custo: 0, credito: 0 };
+        // Usa o produto ligado ao anúncio; se ele não tem custo (ou não existe mais), usa o produto com o mesmo SKU
+        const usaSku = !(histAn.custo > 0) && histSku.custo > 0;
+        const prod = usaSku ? prodSku : prodAn;
+        const unidades = (usaSku ? 1 : an?.units ?? 1) * q;
+        const hist = usaSku ? histSku : histAn;
         const custo = hist.custo * unidades;
         const credito = hist.credito * unidades;
         const empresa = (an?.company_id && empresas.get(an.company_id)) || (empresaPadrao as Company | null);

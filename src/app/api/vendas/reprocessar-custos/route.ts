@@ -27,11 +27,11 @@ export async function POST(req: Request) {
     const admin = supabaseAdmin();
     const storeId = user.id;
 
-    const vendas: { id: string; product_id: string | null; listing_id: string | null; quantity: number; sale_price: number; fees_total: number; shipping_cost: number; cost_price: number; cost_manual: boolean; sold_at: string }[] = [];
+    const vendas: { id: string; product_id: string | null; listing_id: string | null; sku: string | null; quantity: number; sale_price: number; fees_total: number; shipping_cost: number; cost_price: number; cost_manual: boolean; sold_at: string }[] = [];
     for (let i = 0; i < 20000; i += 1000) {
       let q = admin
         .from("sales")
-        .select("id, product_id, listing_id, quantity, sale_price, fees_total, shipping_cost, cost_price, cost_manual, sold_at")
+        .select("id, product_id, listing_id, sku, quantity, sale_price, fees_total, shipping_cost, cost_price, cost_manual, sold_at")
         .eq("store_id", storeId)
         .gte("sold_at", de.toISOString())
         .lte("sold_at", ate.toISOString());
@@ -49,13 +49,43 @@ export async function POST(req: Request) {
     const empresas = new Map(((emps ?? []) as Company[]).map((c) => [c.id, c]));
     const padrao = ((emps ?? []) as Company[]).find((c) => c.is_default) ?? null;
 
-    const produtoDe = (v: (typeof vendas)[number]) => v.product_id ?? (v.listing_id ? anuncio.get(v.listing_id)?.product_id : null) ?? null;
-    const prodIds = Array.from(new Set(vendas.map(produtoDe).filter(Boolean) as string[]));
+    // Produtos do armazém (para o custo atual e para achar o produto pelo SKU da venda)
+    type Prod = { id: string; sku: string | null; cost_price: number | null; icms_credit: number | null; pis_credit: number | null; cofins_credit: number | null };
+    const produtos = new Map<string, Prod>();
+    const porSku = new Map<string, string>();
+    const normSku = (x: string) => x.trim().toLowerCase();
+    for (let i = 0; ; i += 1000) {
+      const { data } = await admin.from("products").select("id, sku, cost_price, icms_credit, pis_credit, cofins_credit").eq("store_id", storeId).range(i, i + 999);
+      ((data ?? []) as Prod[]).forEach((p) => {
+        produtos.set(p.id, p);
+        const k = normSku(p.sku ?? "");
+        if (k && !porSku.has(k)) porSku.set(k, p.id);
+      });
+      if (!data || data.length < 1000) break;
+    }
+
+    const produtoLigado = (v: (typeof vendas)[number]) => v.product_id ?? (v.listing_id ? anuncio.get(v.listing_id)?.product_id : null) ?? null;
+    const produtoSku = (v: (typeof vendas)[number]) => (v.sku ? porSku.get(normSku(v.sku)) ?? null : null);
+    const prodIds = Array.from(new Set(vendas.flatMap((v) => [produtoLigado(v), produtoSku(v)]).filter(Boolean) as string[]));
     const historico = new Map<string, Custo[]>();
     for (let i = 0; i < prodIds.length; i += 200) {
       const { data } = await admin.from("product_costs").select("*").in("product_id", prodIds.slice(i, i + 200)).gt("cost_price", 0).order("valid_from");
       ((data ?? []) as Custo[]).forEach((h) => historico.set(h.product_id, [...(historico.get(h.product_id) ?? []), h]));
     }
+    // Custo do produto na data da venda: histórico; sem histórico, o custo cadastrado no produto
+    const custoNaData = (pid: string | null, v: (typeof vendas)[number]): Custo | undefined => {
+      if (!pid) return undefined;
+      const lista = historico.get(pid) ?? [];
+      const t = new Date(v.sold_at).getTime();
+      const vigente = [...lista].reverse().find((h) => new Date(h.valid_from).getTime() <= t);
+      if (vigente) return vigente;
+      if (Number(v.cost_price) !== 0) return undefined; // venda com custo: só muda se houver histórico vigente
+      if (lista[0]) return lista[0];
+      const p = produtos.get(pid);
+      return p && Number(p.cost_price) > 0
+        ? { product_id: pid, cost_price: Number(p.cost_price), icms_credit: Number(p.icms_credit) || 0, pis_credit: Number(p.pis_credit) || 0, cofins_credit: Number(p.cofins_credit) || 0, valid_from: v.sold_at }
+        : undefined;
+    };
 
     const r = { analisadas: vendas.length, reprocessadas: 0, mantidas: 0, manuais: 0, semCusto: 0 };
     const mudancas: { id: string; dados: Record<string, unknown> }[] = [];
@@ -65,18 +95,24 @@ export async function POST(req: Request) {
         r.manuais++;
         continue;
       }
-      const pid = produtoDe(v);
-      const lista = pid ? historico.get(pid) ?? [] : [];
-      const t = new Date(v.sold_at).getTime();
-      const vigente = [...lista].reverse().find((h) => new Date(h.valid_from).getTime() <= t);
-      const escolhido = vigente ?? (Number(v.cost_price) === 0 ? lista[0] : undefined);
+      const ligado = produtoLigado(v);
+      let pid = ligado;
+      let escolhido = custoNaData(ligado, v);
+      let viaSku = false;
+      if (!escolhido) {
+        const outro = produtoSku(v);
+        if (outro && outro !== ligado) {
+          escolhido = custoNaData(outro, v);
+          if (escolhido) { pid = outro; viaSku = true; }
+        }
+      }
       if (!escolhido || !pid) {
         if (Number(v.cost_price) === 0) r.semCusto++;
         else r.mantidas++;
         continue;
       }
       const a = v.listing_id ? anuncio.get(v.listing_id) : undefined;
-      const unidades = (Number(a?.units) || 1) * (Number(v.quantity) || 1);
+      const unidades = (viaSku ? 1 : Number(a?.units) || 1) * (Number(v.quantity) || 1);
       const custo = Math.round(Number(escolhido.cost_price) * unidades * 100) / 100;
       const credito = (Number(escolhido.icms_credit) + Number(escolhido.pis_credit) + Number(escolhido.cofins_credit)) * unidades;
       const empresa = (a?.company_id && empresas.get(a.company_id)) || padrao;
