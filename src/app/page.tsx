@@ -35,7 +35,7 @@ export default function LandingPage() {
         <div className="grid md:grid-cols-2 gap-16 items-center">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.2em] text-clay mb-6">
-              Gestão de marketplace · Aulas · Ferramentas
+              Conteúdo gratuito para e-commerce · Aulas · Ferramentas
             </p>
             <h1 className="font-display text-5xl md:text-6xl font-semibold leading-[1.05] tracking-tight">
               Cada venda tem um preço.
@@ -43,8 +43,8 @@ export default function LandingPage() {
               Poucas têm <span className="text-gold">margem real.</span>
             </h1>
             <p className="mt-6 text-lg text-ink/70 max-w-md leading-relaxed">
-              Sou o Diego. Trabalho com marketplace e ensino, no YouTube e aqui, como vender
-              online olhando para o número que importa: quanto sobra de verdade em cada venda.
+              Sou o Diego. Compartilho de graça, no YouTube e aqui, como vender online olhando
+              para o número que importa: quanto sobra de verdade em cada venda.
             </p>
             <div className="mt-10 flex items-center gap-4">
               <Link
@@ -103,15 +103,16 @@ export default function LandingPage() {
           </div>
           <div className="md:col-span-3 space-y-5 text-ink/75 text-lg leading-relaxed">
             <p>
-              Fui gestor de várias empresas, criei processos e levei para o marketplace negócios que ainda não vendiam
-              online. Passei por sistemas, ERPs e integradores do dia a dia do vendedor, como Bling, Olist e Upseller.
+              Aprendi na prática a vender em marketplace: criei processos e coloquei para vender online negócios que
+              nunca tinham vendido. Passei por sistemas, ERPs e integradores do dia a dia do vendedor, como Bling, Olist
+              e Upseller.
             </p>
             <p>
-              O Diego Rezende Digital nasceu para juntar isso em um lugar só: conteúdo para quem quer aprender e uma
-              gestão próxima para quem quer resultado.
+              O Diego Rezende Digital nasceu para transformar essa experiência em conteúdo gratuito para quem vende
+              online: aulas, ferramentas e materiais para você aplicar na sua loja.
             </p>
             <div className="flex flex-wrap gap-2 pt-2">
-              {["Gestão de marketplace", "Processos", "ERP e integradores", "Bling", "Olist", "Upseller"].map((t) => (
+              {["Mercado Livre", "Shopee", "TikTok Shop", "Precificação", "Processos", "ERP e integradores"].map((t) => (
                 <span key={t} className="rounded-full border border-line bg-paper px-4 py-1.5 text-sm text-ink/80">
                   {t}
                 </span>
@@ -126,7 +127,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl px-6 py-20">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-clay mb-4">Canal no YouTube</p>
           <h2 className="font-display text-3xl md:text-4xl font-semibold mb-3">Videoaulas gratuitas</h2>
-          <p className="text-ink/60 mb-10 max-w-2xl">Conteúdo direto sobre vender melhor em marketplace.</p>
+          <p className="text-ink/60 mb-10 max-w-2xl">Conteúdo gratuito e direto sobre vender melhor no e-commerce e nos marketplaces.</p>
           <div className="grid lg:grid-cols-3 gap-8 items-start">
             <div className="lg:col-span-2 overflow-hidden rounded-2xl bg-inkdeep shadow-xl">
               <div className="aspect-video">
@@ -166,7 +167,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl px-6 py-20 text-center">
           <h2 className="font-display text-3xl md:text-4xl font-semibold mb-3">Pare de vender no escuro.</h2>
           <p className="text-paper/70 mb-8 max-w-xl mx-auto">
-            Comece pela calculadora grátis ou fale comigo sobre a gestão da sua loja.
+            Comece pela calculadora grátis e acompanhe as aulas gratuitas no canal.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
             <Link
@@ -175,21 +176,18 @@ export default function LandingPage() {
             >
               Usar a calculadora grátis
             </Link>
-            <a
-              href="mailto:contato@diegorezendedigital.com.br?subject=Quero%20conversar%20sobre%20gest%C3%A3o%20de%20marketplace"
+            <Link
+              href="#videos"
               className="inline-block rounded-full border border-paper/40 px-8 py-4 font-medium hover:bg-paper hover:text-inkdeep transition-colors"
             >
-              Falar com o Diego
-            </a>
-            <Link href="/login" className="text-paper/60 hover:text-paper underline underline-offset-4">
-              Já sou cliente
+              Assistir às aulas
             </Link>
           </div>
         </div>
       </section>
 
       <footer className="mx-auto max-w-6xl px-6 py-10 text-sm text-ink/50">
-        © {new Date().getFullYear()} Diego Rezende Digital · Assessoria Marketplace.
+        © {new Date().getFullYear()} Diego Rezende Digital · Conteúdo gratuito para e-commerce.
         <RodapeLegal />
       </footer>
     </main>

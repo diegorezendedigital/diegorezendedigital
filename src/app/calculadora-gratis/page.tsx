@@ -68,7 +68,7 @@ export default function CalculadoraGratisPage() {
       </section>
 
       <footer className="mx-auto max-w-6xl px-6 py-10 text-sm text-ink/50">
-        © {new Date().getFullYear()} Diego Rezende Digital · Assessoria Marketplace. Valores de referência, sujeitos a mudança pelos marketplaces.
+        © {new Date().getFullYear()} Diego Rezende Digital · Conteúdo gratuito para e-commerce. Valores de referência, sujeitos a mudança pelos marketplaces.
         <RodapeLegal />
       </footer>
     </main>

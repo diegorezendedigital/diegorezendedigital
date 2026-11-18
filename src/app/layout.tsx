@@ -2,8 +2,8 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Diego Rezende Digital — Assessoria Marketplace",
-  description: "Centralize seus produtos, calcule taxas de cada marketplace e acompanhe o lucro real das suas vendas.",
+  title: "Diego Rezende Digital — Conteúdo gratuito para e-commerce",
+  description: "Conteúdo gratuito para quem vende online: videoaulas e calculadora de lucro para Mercado Livre, Shopee e TikTok Shop.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
