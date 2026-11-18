@@ -5,7 +5,7 @@ type SyncResp = { processed: number; imported: number; listings_created: number;
 
 // Importa/reprocessa as vendas de todas as contas, página por página. Vendas que já têm custo gravado não mudam de custo.
 // onProgresso recebe o texto e a fração do total (0 a 1), para a barra de progresso.
-export async function sincronizarVendas(dias: number, onProgresso: (texto: string, fracao?: number) => void, lojaIds: string[] = []): Promise<{ vendas: number; anuncios: number; contas: number }> {
+export async function sincronizarVendas(dias: number, onProgresso: (texto: string, fracao?: number) => void, lojaIds: string[] = []): Promise<{ vendas: number; anuncios: number; contas: number; lojas: { nome: string; mp: "mercado_livre" | "shopee"; vendas: number }[] }> {
   const todas = await apiFetch<{ accounts: ContaML[] }>("/api/ml/accounts");
   const sh = await apiFetch<{ accounts: { shop_id: string; shop_name: string | null; store_name?: string | null }[] }>("/api/shopee/accounts").catch(() => ({ accounts: [] }));
   const lojasSh = (sh.accounts ?? []).filter((x) => !lojaIds.length || lojaIds.includes(String(x.shop_id)));
@@ -13,6 +13,7 @@ export async function sincronizarVendas(dias: number, onProgresso: (texto: strin
   const accounts = lojaIds.length ? todas.accounts.filter((c) => lojaIds.includes(String(c.ml_user_id))) : todas.accounts;
   let vendas = 0;
   let anuncios = 0;
+  const lojas: { nome: string; mp: "mercado_livre" | "shopee"; vendas: number }[] = [];
   const totalLojas = Math.max(accounts.length + lojasSh.length, 1);
   let feitas = 0;
   const fracao = (parcial: number) => Math.min(1, (feitas + Math.min(Math.max(parcial, 0), 1)) / totalLojas);
@@ -20,12 +21,15 @@ export async function sincronizarVendas(dias: number, onProgresso: (texto: strin
   for (const c of accounts) {
     let offset = 0;
     const nome = c.store_name || c.nickname || c.ml_user_id;
+    const daLoja = { nome: String(nome), mp: "mercado_livre" as const, vendas: 0 };
+    lojas.push(daLoja);
     for (;;) {
       const r = await apiFetch<SyncResp>("/api/ml/sync", {
         method: "POST",
         body: JSON.stringify({ days: dias, offset, ml_user_id: c.ml_user_id }),
       });
       vendas += r.imported;
+      daLoja.vendas += r.imported;
       anuncios += r.listings_created;
       offset = r.next_offset;
       onProgresso(`${nome}: ${Math.min(offset, r.total)} de ${r.total} pedidos…`, fracao(r.total ? offset / r.total : 1));
@@ -39,6 +43,8 @@ export async function sincronizarVendas(dias: number, onProgresso: (texto: strin
     for (const c of lojasSh) {
       lojasShopee++;
       const nome = c.store_name || c.shop_name || c.shop_id;
+      const daLoja = { nome: String(nome), mp: "shopee" as const, vendas: 0 };
+      lojas.push(daLoja);
       let janela = 0;
       let cursor = "";
       for (;;) {
@@ -47,6 +53,7 @@ export async function sincronizarVendas(dias: number, onProgresso: (texto: strin
           body: JSON.stringify({ days: dias, shop_id: c.shop_id, janela, cursor }),
         });
         vendas += r.imported;
+        daLoja.vendas += r.imported;
         anuncios += r.listings_created;
         janela = r.janela;
         cursor = r.cursor;
@@ -59,5 +66,5 @@ export async function sincronizarVendas(dias: number, onProgresso: (texto: strin
     if (lojasShopee > 0) throw e;
     /* sem lojas da Shopee conectadas */
   }
-  return { vendas, anuncios, contas: accounts.length + lojasShopee };
+  return { vendas, anuncios, contas: accounts.length + lojasShopee, lojas };
 }

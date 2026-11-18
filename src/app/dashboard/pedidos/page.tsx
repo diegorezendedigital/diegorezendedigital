@@ -314,7 +314,15 @@ export default function PedidosPage() {
       const dias = Math.min(90, Math.max(1, Math.ceil((Date.now() - new Date(`${de}T00:00:00-03:00`).getTime()) / 86400000) + 1));
       const r = await sincronizarVendas(dias, (t, f) => { setProgresso(t); if (f != null) setFracaoProg(f); }, lojaIds);
       if (r.contas === 0) setErro("Nenhuma loja conectada (Mercado Livre ou Shopee). Conecte em Integrações.");
-      else setAviso(`Pedidos reprocessados: ${r.vendas} vendas novas ou completadas. O custo de vendas que já tinham custo não foi alterado.`);
+      else {
+        const fmt = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+        const inicio = fmt(new Date(Date.now() - (dias - 1) * 86400000));
+        const fim = fmt(new Date());
+        const periodo = inicio === fim ? `de ${fim}` : `de ${inicio} a ${fim}`;
+        const MPN = { mercado_livre: "Mercado Livre", shopee: "Shopee" } as const;
+        const porLoja = r.lojas.map((l) => `${l.nome} (${MPN[l.mp]}): ${l.vendas}`).join(" · ");
+        setAviso(`Pedidos reprocessados ${periodo} · ${r.vendas} vendas novas ou completadas${porLoja ? ` — ${porLoja}` : ""}. O custo de vendas que já tinham custo não foi alterado.`);
+      }
       await carregar();
     } catch (e) {
       setErro(mensagemErro(e));
