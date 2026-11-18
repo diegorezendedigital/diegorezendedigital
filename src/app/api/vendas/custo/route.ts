@@ -4,7 +4,7 @@ import { conferirSenha } from "@/lib/server/senha";
 
 export const dynamic = "force-dynamic";
 
-// Informa à mão o custo de uma venda que está sem custo. Exige a senha master.
+// Informa (ou corrige) à mão o custo de uma venda. Exige a senha master.
 // body: { sale_id, custo (total da venda, R$), senha }
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
@@ -22,10 +22,12 @@ export async function POST(req: Request) {
     const admin = supabaseAdmin();
     const { data: venda } = await admin.from("sales").select("id, cost_price, quantity, product_id, listing_id, sku").eq("id", String(body.sale_id)).eq("store_id", user.id).maybeSingle();
     if (!venda) return NextResponse.json({ error: "Venda não encontrada." }, { status: 404 });
-    if (Number(venda.cost_price) > 0) return NextResponse.json({ error: "Esta venda já tem custo." }, { status: 400 });
+    const editado = Number(venda.cost_price) > 0;
 
     const { error } = await admin.from("sales").update({ cost_price: Math.round(custo * 100) / 100, cost_manual: true }).eq("id", venda.id);
     if (error) throw new Error(error.message);
+    // Correção de um custo que já existia: muda só a venda, não mexe no produto do armazém.
+    if (editado) return NextResponse.json({ ok: true, editado: true, produto: "ja_tinha_custo", sku: venda.sku ?? null });
 
     // Atualiza também o produto do armazém (custo unitário = custo da venda ÷ quantidade).
     // Só preenche se o produto estiver sem custo: um custo já cadastrado não é sobrescrito por uma venda.

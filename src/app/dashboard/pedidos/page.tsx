@@ -361,14 +361,16 @@ export default function PedidosPage() {
     setErro("");
     const v = Number(custoManual.replace(/\./g, "").replace(",", "."));
     if (!(v > 0)) {
-      setErro("Informe o custo total desta venda (maior que zero).");
+      setErro("Informe o custo total deste item (maior que zero).");
       return;
     }
     setSalvando(true);
     try {
-      const r = await apiFetch<{ produto?: string; sku?: string | null }>("/api/vendas/custo", { method: "POST", body: JSON.stringify({ sale_id: l.id, custo: v, senha }) });
+      const r = await apiFetch<{ produto?: string; sku?: string | null; editado?: boolean }>("/api/vendas/custo", { method: "POST", body: JSON.stringify({ sale_id: l.id, custo: v, senha }) });
       setAviso(
-        r.produto === "sim"
+        r.editado
+          ? "Custo da venda alterado. O custo do produto no armazém não foi mexido."
+          : r.produto === "sim"
           ? `Custo salvo na venda e também no produto ${r.sku ?? ""} do armazém.`
           : r.produto === "ja_tinha_custo"
           ? `Custo salvo na venda. O produto ${r.sku ?? ""} já tinha custo no armazém, então ele não foi alterado.`
@@ -849,27 +851,51 @@ export default function PedidosPage() {
                               </td>
                               <td className="px-4 py-5 text-right">
                                 {l.custo > 0 && (
-                                  <Tip titulo="Custo do produto" linhas={[["Custo total da venda", brl(l.custo)], ["% da venda", f(l.custo) ?? "—"]]} nota={l.manual ? "Informado manualmente com a senha master." : "Custo cadastrado no Armazém na data da venda × unidades. Mudar o custo depois não altera esta venda."}>
+                                  <Tip titulo="Custo do produto" linhas={[...(l.itens.length > 1 ? l.itens.map((i) => [`${i.qtd}x ${i.sku || i.produto.slice(0, 24)}`, i.custo > 0 ? brl(i.custo) : "sem custo"] as [string, string]) : []), ["Custo total da venda", brl(l.custo)], ["% da venda", f(l.custo) ?? "—"]]} nota={l.manual ? "Algum custo foi informado manualmente com a senha master." : "Custo cadastrado no Armazém na data da venda × unidades. Mudar o custo depois não altera esta venda."}>
                                     {brl(l.custo)}
                                     <Pc v={f(l.custo)} />
-                                    {l.manual && <div className="text-[11px] text-slate-500">manual</div>}
+                                    {l.manual && l.itens.length === 1 && <div className="text-[11px] text-slate-500">manual</div>}
                                   </Tip>
                                 )}
-                                {l.pendente && editId === l.pendente.id && (
-                                  <div className="ml-auto flex w-40 flex-col gap-1.5 text-left" onKeyDown={(e) => { if (e.key === "Enter") salvarCusto(l.pendente!); if (e.key === "Escape") setEditId(null); }}>
-                                    <input autoFocus className="input py-1 text-right text-[13px]" inputMode="decimal" placeholder="Custo total (R$)" title="Custo total desta venda (custo × quantidade)" value={custoManual} onChange={(e) => setCustoManual(e.target.value)} />
-                                    <input type="password" className="input py-1 text-[13px]" placeholder="Senha master" autoComplete="off" value={senha} onChange={(e) => setSenha(e.target.value)} />
-                                    <div className="flex gap-1.5">
-                                      <button className="btn flex-1 !px-2 !py-1 text-xs" onClick={() => salvarCusto(l.pendente!)} disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
-                                      <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setEditId(null)}>Cancelar</button>
+                                <div className={l.itens.length > 1 ? "mt-2 space-y-1 border-t border-slate-100 pt-2" : "mt-0.5"}>
+                                  {l.itens.map((i) => (
+                                    <div key={i.id}>
+                                      {editId === i.id ? (
+                                        <div className="ml-auto flex w-44 flex-col gap-1.5 text-left" onKeyDown={(e) => { if (e.key === "Enter") salvarCusto(i); if (e.key === "Escape") setEditId(null); }}>
+                                          {l.itens.length > 1 && <div className="truncate font-mono text-[10px] text-slate-500" title={i.produto}>{i.qtd}x {i.sku || i.produto}</div>}
+                                          <input autoFocus className="input py-1 text-right text-[13px]" inputMode="decimal" placeholder={`Custo total (${i.qtd} un.)`} title={`Custo total deste item (custo unitário × ${i.qtd})`} value={custoManual} onChange={(e) => setCustoManual(e.target.value)} />
+                                          <input type="password" className="input py-1 text-[13px]" placeholder="Senha master" autoComplete="off" value={senha} onChange={(e) => setSenha(e.target.value)} />
+                                          <div className="flex gap-1.5">
+                                            <button className="btn flex-1 !px-2 !py-1 text-xs" onClick={() => salvarCusto(i)} disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
+                                            <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setEditId(null)}>Cancelar</button>
+                                          </div>
+                                        </div>
+                                      ) : l.itens.length > 1 ? (
+                                        <button
+                                          className="flex w-full items-baseline justify-end gap-1.5 text-[11px] hover:text-indigo-700"
+                                          title={`${i.produto} · clique para ${i.custo > 0 ? "editar" : "informar"} o custo (senha master)`}
+                                          onClick={() => { setEditId(i.id); setCustoManual(i.custo > 0 ? String(i.custo).replace(".", ",") : ""); setSenha(""); }}
+                                        >
+                                          <span className="max-w-[110px] truncate font-mono text-slate-400">{i.qtd}x {i.sku || i.produto}</span>
+                                          {i.custo > 0 ? (
+                                            <span className="tabular-nums text-slate-600">{brl(i.custo)}{i.manual ? "*" : ""}</span>
+                                          ) : (
+                                            <span className="text-amber-700 underline">informar</span>
+                                          )}
+                                        </button>
+                                      ) : i.custo > 0 ? (
+                                        <button className="text-[11px] text-slate-400 underline hover:text-indigo-700" title="Editar o custo desta venda (senha master)" onClick={() => { setEditId(i.id); setCustoManual(String(i.custo).replace(".", ",")); setSenha(""); }}>
+                                          editar
+                                        </button>
+                                      ) : (
+                                        <button className="block w-full text-right text-amber-700 underline" onClick={() => { setEditId(i.id); setCustoManual(""); setSenha(""); }}>
+                                          sem custo · informar
+                                        </button>
+                                      )}
                                     </div>
-                                  </div>
-                                )}
-                                {l.pendente && editId !== l.pendente.id && (
-                                  <button className="block w-full text-right text-amber-700 underline" onClick={() => { const id = l.pendente!.id; setEditId(editId === id ? null : id); setCustoManual(""); setSenha(""); }}>
-                                    {l.itens.length > 1 ? "item sem custo · informar" : "sem custo · informar"}
-                                  </button>
-                                )}
+                                  ))}
+                                  {l.itens.length > 1 && l.itens.some((i) => i.manual) && <div className="text-[10px] text-slate-400">* informado manualmente</div>}
+                                </div>
                               </td>
                               <td className={`px-4 py-5 text-right font-semibold ${cor(l.sobra)}`}>
                                 <Tip titulo="Sobrou (lucro da venda)" linhas={[["Venda", brl(l.preco)], ["− Comissão", brl(l.comissao)], ["− Frete", brl(l.frete)], ["− Impostos", brl(l.impostos)], ["− Custo", brl(l.custo)], ["= Sobrou", brl(l.sobra)]]}>
