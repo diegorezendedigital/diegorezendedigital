@@ -778,7 +778,7 @@ export default function PedidosPage() {
                           {l.itens.map((i) => (
                             <div key={i.id} className={`flex items-start gap-2 ${l.itens.length > 1 ? "mb-1.5 last:mb-0" : ""}`}>
                               <span
-                                className={`mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${i.qtd > 1 ? "bg-amber-100 text-amber-800 ring-1 ring-amber-300" : "bg-slate-100 text-slate-600"}`}
+                                className={`shrink-0 font-bold tabular-nums ${i.qtd > 1 ? "text-amber-600" : "text-slate-500"}`}
                                 title={`Quantidade comprada: ${i.qtd} ${i.qtd > 1 ? "unidades" : "unidade"}`}
                               >
                                 {i.qtd}x
