@@ -78,7 +78,15 @@ export async function POST(req: Request) {
 
   // 2) Cria o login e manda o e-mail para a pessoa criar a senha
   const origem = req.headers.get("origin") || `https://${req.headers.get("host")}`;
-  const r = await admin.auth.admin.inviteUserByEmail(email, { redirectTo: `${origem}/redefinir-senha`, data: { name: nome, convidado_por: user.id } });
+  const senhaNova = String(b.senha ?? "");
+  if (senhaNova && senhaNova.length < 8) {
+    await admin.from("store_members").delete().eq("id", conv.id);
+    return NextResponse.json({ error: "A senha precisa ter pelo menos 8 caracteres." }, { status: 400 });
+  }
+  // Com senha: cria o login já confirmado, sem e-mail. Sem senha: manda o convite por e-mail.
+  const r = senhaNova
+    ? await admin.auth.admin.createUser({ email, password: senhaNova, email_confirm: true, user_metadata: { name: nome, convidado_por: user.id } })
+    : await admin.auth.admin.inviteUserByEmail(email, { redirectTo: `${origem}/redefinir-senha`, data: { name: nome, convidado_por: user.id } });
   if (r.error || !r.data.user) {
     await admin.from("store_members").delete().eq("id", conv.id);
     const msg = r.error?.message ?? "";
@@ -128,6 +136,7 @@ export async function PATCH(req: Request) {
 }
 
 // PUT { id } → reenvia o e-mail para o convidado criar a senha (o link do convite vale pouco tempo e só uma vez)
+// PUT { id, senha } → o master define a senha do convidado direto, sem e-mail
 export async function PUT(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
@@ -135,8 +144,16 @@ export async function PUT(req: Request) {
   if (bloqueio) return bloqueio;
   const b = await req.json().catch(() => ({}));
   const admin = supabaseAdmin();
-  const { data: m } = await admin.from("store_members").select("id, email").eq("id", String(b.id ?? "")).eq("store_id", user.id).maybeSingle();
+  const { data: m } = await admin.from("store_members").select("id, email, user_id").eq("id", String(b.id ?? "")).eq("store_id", user.id).maybeSingle();
   if (!m) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  if (b.senha !== undefined) {
+    const senha = String(b.senha);
+    if (senha.length < 8) return NextResponse.json({ error: "A senha precisa ter pelo menos 8 caracteres." }, { status: 400 });
+    if (!m.user_id) return NextResponse.json({ error: "Esse convite não tem login criado. Remova e crie o usuário de novo com senha." }, { status: 400 });
+    const { error } = await admin.auth.admin.updateUserById(m.user_id as string, { password: senha, email_confirm: true });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
   const origem = req.headers.get("origin") || `https://${req.headers.get("host")}`;
   const { error } = await admin.auth.resetPasswordForEmail(String(m.email), { redirectTo: `${origem}/redefinir-senha` });
   if (error) {

@@ -53,6 +53,7 @@ export default function UsuariosPage() {
   const [r, setR] = useState<Resp | null>(null);
   const [email, setEmail] = useState("");
   const [nome, setNome] = useState("");
+  const [senhaNovo, setSenhaNovo] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [abasNovo, setAbasNovo] = useState<string[]>([...TODAS_AS_ABAS]);
   const [editando, setEditando] = useState<{ id: string; abas: string[] } | null>(null);
@@ -68,10 +69,16 @@ export default function UsuariosPage() {
     setEnviando(true);
     setMsg(null);
     try {
-      await apiFetch("/api/equipe", { method: "POST", body: JSON.stringify({ email, nome, permissoes: abasNovo }) });
-      setMsg({ ok: true, t: `Convite enviado para ${email}. A pessoa recebe um e-mail para criar a senha e já entra na sua loja.` });
+      await apiFetch("/api/equipe", { method: "POST", body: JSON.stringify({ email, nome, permissoes: abasNovo, ...(senhaNovo ? { senha: senhaNovo } : {}) }) });
+      setMsg({
+        ok: true,
+        t: senhaNovo
+          ? `Usuário ${email} criado. Ele já pode entrar em diegorezendedigital.com.br/login com esse e-mail e a senha que você definiu.`
+          : `Convite enviado para ${email}. A pessoa recebe um e-mail para criar a senha e já entra na sua loja.`,
+      });
       setEmail("");
       setNome("");
+      setSenhaNovo("");
       setAbasNovo([...TODAS_AS_ABAS]);
       carregar();
     } catch (err) {
@@ -101,6 +108,17 @@ export default function UsuariosPage() {
     try {
       await apiFetch("/api/equipe", { method: "PUT", body: JSON.stringify({ id: m.id }) });
       setMsg({ ok: true, t: `E-mail reenviado para ${m.email}. O link vale por pouco tempo e só pode ser usado uma vez.` });
+    } catch (err) {
+      setMsg({ ok: false, t: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  async function definirSenha(m: Membro) {
+    const senha = window.prompt(`Nova senha para ${m.email} (mínimo 8 caracteres):`);
+    if (senha === null) return;
+    try {
+      await apiFetch("/api/equipe", { method: "PUT", body: JSON.stringify({ id: m.id, senha }) });
+      setMsg({ ok: true, t: `Senha definida. ${m.email} já pode entrar em diegorezendedigital.com.br/login com essa senha.` });
     } catch (err) {
       setMsg({ ok: false, t: err instanceof Error ? err.message : String(err) });
     }
@@ -163,17 +181,18 @@ export default function UsuariosPage() {
       ) : (
         <>
           <form onSubmit={convidar} className="card space-y-3">
-            <p className="font-semibold">Convidar usuário</p>
-            <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+            <p className="font-semibold">Adicionar usuário</p>
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
               <div><label className="label">Nome</label><input className="input" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="ex.: Maria (expedição)" /></div>
               <div><label className="label">E-mail</label><input type="email" required className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="maria@email.com" /></div>
-              <button className="btn" disabled={enviando || abasNovo.length === 0}>{enviando ? "Enviando…" : "Enviar convite"}</button>
+              <div><label className="label">Senha (opcional)</label><input type="text" className="input" autoComplete="new-password" minLength={8} value={senhaNovo} onChange={(e) => setSenhaNovo(e.target.value)} placeholder="deixe vazio para mandar convite" /></div>
+              <button className="btn" disabled={enviando || abasNovo.length === 0}>{enviando ? "Salvando…" : senhaNovo ? "Criar usuário" : "Enviar convite"}</button>
             </div>
             <div>
               <p className="label mb-2">Abas que essa pessoa pode acessar</p>
               <EscolherAbas valor={abasNovo} onChange={setAbasNovo} />
             </div>
-            <p className="text-xs text-slate-500">Use um e-mail que ainda não tenha conta no sistema. A pessoa recebe o link para criar a senha.</p>
+            <p className="text-xs text-slate-500">Use um e-mail que ainda não tenha conta no sistema. Com senha: o usuário é criado na hora e você passa o e-mail e a senha para a pessoa. Sem senha: ela recebe um link por e-mail para criar a senha.</p>
             {msg && <p className={`text-sm ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>{msg.t}</p>}
           </form>
 
@@ -200,6 +219,7 @@ export default function UsuariosPage() {
                       </td>
                       <td className="td whitespace-nowrap text-right">
                         <button className="btn-ghost" onClick={() => setEditando(editando?.id === m.id ? null : { id: m.id, abas: m.permissoes?.length ? [...m.permissoes] : [...TODAS_AS_ABAS] })}>{editando?.id === m.id ? "Fechar" : "Editar acessos"}</button>
+                        <button className="btn-ghost" onClick={() => definirSenha(m)}>Definir senha</button>
                         {!m.ultimo_login && <button className="btn-ghost" onClick={() => reenviar(m)}>Reenviar convite</button>}
                         <button className="btn-ghost text-red-700" onClick={() => remover(m)}>Remover</button>
                       </td>
