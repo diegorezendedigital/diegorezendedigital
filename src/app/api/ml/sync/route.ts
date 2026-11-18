@@ -108,14 +108,30 @@ export async function POST(req: Request) {
         anuncios.set(l.external_id as string, { id: l.id, product_id: l.product_id, company_id: l.company_id, units: Number(l.units) || 1 })
       );
 
+      // Produtos do armazém por SKU (sem diferenciar maiúsculas/minúsculas nem espaços)
+      const normSku = (x: string) => x.trim().toLowerCase();
+      const porSku = new Map<string, string>();
+      {
+        const skusPedido = Array.from(new Set(itemIds.map((id) => normSku(skuDoItem.get(id) || "")).filter(Boolean)));
+        if (skusPedido.length) {
+          for (let de = 0; ; de += 1000) {
+            const { data: prods } = await admin.from("products").select("id, sku").eq("store_id", storeId).not("sku", "is", null).range(de, de + 999);
+            (prods ?? []).forEach((p) => { const k = normSku(String(p.sku ?? "")); if (k && skusPedido.includes(k) && !porSku.has(k)) porSku.set(k, p.id as string); });
+            if (!prods || prods.length < 1000) break;
+          }
+        }
+      }
+      // Anúncios que já existiam sem produto ligado: liga pelo SKU (assim a venda pega o custo do armazém)
+      for (const [id, an] of Array.from(anuncios.entries())) {
+        if (an.product_id) continue;
+        const pid = porSku.get(normSku(skuDoItem.get(id) || ""));
+        if (!pid) continue;
+        const { error } = await admin.from("listings").update({ product_id: pid }).eq("id", an.id).is("product_id", null);
+        if (!error) an.product_id = pid;
+      }
+
       const faltam = itemIds.filter((id) => !anuncios.has(id));
       if (faltam.length) {
-        const skus = faltam.map((id) => skuDoItem.get(id) || "").filter(Boolean);
-        const porSku = new Map<string, string>();
-        if (skus.length) {
-          const { data: prods } = await admin.from("products").select("id, sku").eq("store_id", storeId).in("sku", skus);
-          (prods ?? []).forEach((p) => porSku.set(p.sku as string, p.id as string));
-        }
         const novos = faltam.map((id) => {
           const oi = itens.get(id) as OrderItem;
           return {
@@ -125,7 +141,7 @@ export async function POST(req: Request) {
             ml_user_id: conn.ml_user_id,
             title: oi.item.title || id,
             price: Number(oi.unit_price) || 0,
-            product_id: (skuDoItem.get(oi.item.id) && porSku.get(skuDoItem.get(oi.item.id) as string)) || null,
+            product_id: porSku.get(normSku(skuDoItem.get(oi.item.id) || "")) || null,
             company_id: conn.company_id ?? (empresaPadrao as Company | null)?.id ?? null,
           };
         });
