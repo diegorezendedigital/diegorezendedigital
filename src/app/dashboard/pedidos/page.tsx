@@ -14,6 +14,7 @@ type Linha = {
   pedido: string;
   pack: string;
   produto: string;
+  qtd: number;
   sku: string;
   uf: string;
   contaId: string;
@@ -425,6 +426,7 @@ export default function PedidosPage() {
             pack: s.pack_id || "",
             pedido: s.order_number || (s.external_id ?? "").split(":")[0] || "—",
             produto: s.title || (s.listing_id && titulos.get(s.listing_id)) || "—",
+            qtd: Math.max(Number(s.quantity) || 1, 1),
             sku: s.sku || (s.product_id && skus.get(s.product_id)) || "",
             uf: s.buyer_state || "—",
             contaId: s.ml_user_id || (s.listing_id && contaDoAnuncio.get(s.listing_id)) || "",
@@ -774,9 +776,17 @@ export default function PedidosPage() {
                         </td>
                         <td className="max-w-[340px] px-4 py-5 leading-snug">
                           {l.itens.map((i) => (
-                            <div key={i.id} className={l.itens.length > 1 ? "mb-1.5 last:mb-0" : ""}>
+                            <div key={i.id} className={`flex items-start gap-2 ${l.itens.length > 1 ? "mb-1.5 last:mb-0" : ""}`}>
+                              <span
+                                className={`mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${i.qtd > 1 ? "bg-amber-100 text-amber-800 ring-1 ring-amber-300" : "bg-slate-100 text-slate-600"}`}
+                                title={`Quantidade comprada: ${i.qtd} ${i.qtd > 1 ? "unidades" : "unidade"}`}
+                              >
+                                {i.qtd}x
+                              </span>
+                              <span>
                               {i.produto}
                               {l.itens.length > 1 && i.sku && <span className="ml-2 font-mono text-[11px] text-slate-500">{i.sku}</span>}
+                              </span>
                             </div>
                           ))}
                         </td>
