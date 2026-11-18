@@ -793,7 +793,14 @@ export default function PedidosPage() {
                           ))}
                         </td>
                         <td className="px-4 py-5 font-mono text-xs">
-                          {l.itens.length > 1 ? `${l.itens.length} itens` : l.sku || "—"}
+                          {l.itens.length > 1 ? (
+                            <>
+                              <div className="font-semibold text-slate-700">{l.itens.reduce((t, i) => t + i.qtd, 0)} itens</div>
+                              <div className="mt-0.5 text-[11px] text-slate-500">{l.itens.length} {l.itens.length === 1 ? "variação" : "variações"}</div>
+                            </>
+                          ) : (
+                            l.sku || "—"
+                          )}
                         </td>
                         <td className="px-4 py-5">{l.uf}</td>
                         {(() => {
@@ -903,9 +910,29 @@ export default function PedidosPage() {
                                 </Tip>
                               </td>
                               <td className={`px-4 py-5 text-right ${cor(l.margem)}`}>
-                                <Tip titulo="Margem de contribuição" linhas={[["Sobrou", brl(l.sobra)], ["÷ Venda", brl(l.preco)], ["= Margem", pct(l.margem)]]} nota="Quanto de cada R$ 100 vendidos virou lucro.">
-                                  {pct(l.margem)}
+                                <Tip
+                                  titulo="Margem de contribuição"
+                                  linhas={[
+                                    ...(l.itens.length > 1 ? l.itens.map((i) => [`${i.qtd}x ${i.sku || i.produto.slice(0, 24)}`, `${brl(i.sobra)} · ${pct(i.margem)}`] as [string, string]) : []),
+                                    ["Sobrou", brl(l.sobra)],
+                                    ["÷ Venda", brl(l.preco)],
+                                    ["= Margem total", pct(l.margem)],
+                                  ]}
+                                  nota={l.itens.length > 1 ? "Margem de cada item = o que sobrou do item ÷ preço do item. O frete do pacote entra no primeiro item." : "Quanto de cada R$ 100 vendidos virou lucro."}
+                                >
+                                  <span className="font-semibold">{pct(l.margem)}</span>
+                                  {l.itens.length > 1 && <div className="text-[10px] uppercase tracking-wide text-slate-400">total</div>}
                                 </Tip>
+                                {l.itens.length > 1 && (
+                                  <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                                    {l.itens.map((i) => (
+                                      <div key={i.id} className="flex items-baseline justify-end gap-1.5 text-[11px]" title={`${i.produto} · sobrou ${brl(i.sobra)} de ${brl(i.preco)}`}>
+                                        <span className="max-w-[110px] truncate font-mono text-slate-400">{i.qtd}x {i.sku || i.produto}</span>
+                                        <span className={`tabular-nums ${cor(i.margem)}`}>{pct(i.margem)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </td>
                               <td className={`px-5 py-5 text-right ${l.roi == null ? "" : cor(l.roi)}`}>
                                 <Tip titulo="ROI: retorno sobre o investimento" linhas={[["Sobrou", brl(l.sobra)], ["÷ Custo do produto", brl(l.custo)], ["= ROI", l.roi == null ? "—" : pct(l.roi)]]} nota="Quanto você ganhou para cada R$ 100 investidos no produto. Sem custo cadastrado, não dá para calcular.">
