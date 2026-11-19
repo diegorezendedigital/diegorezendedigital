@@ -98,30 +98,67 @@ async function adsMercadoLivre(token: string, de: string, ate: string) {
   return { ...tot, dias: Array.from(porDia.entries()).map(([data, v]) => ({ data, ...v })) };
 }
 
-type DiaShopee = { date?: string; expense?: number; broad_gmv?: number; broad_order?: number; clicks?: number; impression?: number };
+type LinhaShopee = { date?: string; hour?: number; expense?: number; broad_gmv?: number; broad_order?: number; clicks?: number; impression?: number };
+
+// Acha a lista de métricas na resposta, seja qual for o formato (response: [...], response.list, response.data…)
+function listaDe(r: unknown): LinhaShopee[] {
+  const visitar = (x: unknown, prof: number): LinhaShopee[] | null => {
+    if (prof > 4 || x == null) return null;
+    if (Array.isArray(x)) return x.length === 0 || (typeof x[0] === "object" && x[0] && ("expense" in x[0] || "impression" in x[0] || "clicks" in x[0])) ? (x as LinhaShopee[]) : null;
+    if (typeof x === "object") {
+      const o = x as Record<string, unknown>;
+      if ("expense" in o && !Array.isArray(o)) return [o as LinhaShopee];
+      for (const v of Object.values(o)) { const a = visitar(v, prof + 1); if (a) return a; }
+    }
+    return null;
+  };
+  return visitar((r as { response?: unknown })?.response ?? r, 0) ?? [];
+}
+
+function erroShopee(e: unknown) {
+  const msg = (e instanceof Error ? e.message : String(e)).replace(/^Shopee:\s*/, "");
+  if (/no_permission|permission|not authorized|access_denied|invalid_access/i.test(msg))
+    return new Error(`Sem permissão de Ads na Shopee (${msg}). No Shopee Open Platform, o app precisa ter a permissão "Ads" liberada; depois autorize a loja de novo em Integrações.`);
+  return new Error(`Shopee: ${msg}`);
+}
 
 async function adsShopee(token: string, shopId: string, de: string, ate: string) {
   const tot = { gasto: 0, vendasAds: 0, pedidosAds: 0, cliques: 0, impressoes: 0 };
   const dias: { data: string; gasto: number; vendasAds: number }[] = [];
   const br = (d: string) => d.split("-").reverse().join("-"); // AAAA-MM-DD → DD-MM-AAAA
-  for (const [d1, d2] of pedacos(de, ate, 30)) {
-    let r: { response?: DiaShopee[] | { list?: DiaShopee[] } };
-    try {
-      r = await shopeeGet(token, shopId, "/api/v2/ads/get_all_cpc_ads_daily_performance", { start_date: br(d1), end_date: br(d2) });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/permission|no_permission|not authorized|access/i.test(msg)) throw new Error("O aplicativo não tem permissão de Ads nesta loja Shopee. Ative a permissão de Ads no app da Shopee e autorize a loja de novo em Integrações.");
-      throw new Error(msg);
+  const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+  const somar = (data: string, l: LinhaShopee[]) => {
+    const dia = { gasto: 0, vendasAds: 0 };
+    for (const d of l) {
+      tot.gasto += n(d.expense); tot.vendasAds += n(d.broad_gmv); tot.pedidosAds += n(d.broad_order); tot.cliques += n(d.clicks); tot.impressoes += n(d.impression);
+      dia.gasto += n(d.expense); dia.vendasAds += n(d.broad_gmv);
     }
-    const lista = Array.isArray(r.response) ? r.response : r.response?.list ?? [];
-    for (const d of lista) {
-      tot.gasto += n(d.expense);
-      tot.vendasAds += n(d.broad_gmv);
-      tot.pedidosAds += n(d.broad_order);
-      tot.cliques += n(d.clicks);
-      tot.impressoes += n(d.impression);
-      const data = String(d.date ?? "");
-      if (data) dias.push({ data: /^\d{2}-\d{2}-\d{4}$/.test(data) ? data.split("-").reverse().join("-") : data, gasto: n(d.expense), vendasAds: n(d.broad_gmv) });
+    dias.push({ data, ...dia });
+  };
+
+  // Dias fechados: relatório diário (até 30 dias por chamada). O dia de hoje vem do relatório por hora.
+  const fimDiario = ate >= hoje ? new Date(new Date(`${hoje}T12:00:00Z`).getTime() - DIA).toISOString().slice(0, 10) : ate;
+  if (de <= fimDiario) {
+    for (const [d1, d2] of pedacos(de, fimDiario, 30)) {
+      let r: unknown;
+      try {
+        r = await shopeeGet(token, shopId, "/api/v2/ads/get_all_cpc_ads_daily_performance", { start_date: br(d1), end_date: br(d2) });
+      } catch (e) {
+        throw erroShopee(e);
+      }
+      for (const d of listaDe(r)) {
+        const data = String(d.date ?? "");
+        somar(/^\d{2}-\d{2}-\d{4}$/.test(data) ? data.split("-").reverse().join("-") : data, [d]);
+      }
+    }
+  }
+  if (ate >= hoje && de <= hoje) {
+    try {
+      const r = await shopeeGet(token, shopId, "/api/v2/ads/get_all_cpc_ads_hourly_performance", { performance_date: br(hoje) });
+      somar(hoje, listaDe(r));
+    } catch (e) {
+      // Sem os dados de hoje ainda: segue com os dias fechados
+      if (de === hoje) throw erroShopee(e);
     }
   }
   return { ...tot, dias };

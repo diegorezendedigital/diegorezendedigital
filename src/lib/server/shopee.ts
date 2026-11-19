@@ -61,7 +61,7 @@ async function chamar<T extends RespostaShopee>(url: string, init?: RequestInit)
     throw new Error("A Shopee não respondeu em 15 s");
   }
   const j = (await r.json().catch(() => ({}))) as T;
-  if (!r.ok || (j.error && String(j.error).length > 0)) throw new Error(`Shopee: ${j.message || j.error || r.status}`);
+  if (!r.ok || (j.error && String(j.error).length > 0)) throw new Error(`Shopee: ${j.message || j.error || r.status}${j.error && j.message ? ` [${j.error}]` : ""}`);
   return j;
 }
 
