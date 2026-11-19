@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { apiFetch } from "@/lib/supabase/client";
 import { brl, pct } from "@/lib/types";
 import MarcaMP from "@/components/MarcaMP";
-import { CORES, GraficoDiarioSvg, MARGEM, type PontoGrafico } from "@/components/ads/GraficoDiario";
+import { GraficoLinhasSvg, MARGEM_L, type SerieLinha } from "@/components/ads/GraficoLinhas";
 
 type Conta = {
   mp: "mercado_livre" | "shopee";
@@ -43,23 +43,40 @@ const ATALHOS: { id: string; label: string; faixa: () => [string, string] }[] = 
   },
 ];
 
+// Período de comparação: mês anterior inteiro quando o período começa no dia 1; senão, o mesmo número de dias logo antes
+function periodoAnterior(de: string, ate: string): [string, string] {
+  if (de.endsWith("-01") && de.slice(0, 7) === ate.slice(0, 7)) {
+    const fim = somaDias(de, -1);
+    return [`${fim.slice(0, 7)}-01`, fim];
+  }
+  const dias = Math.round((new Date(`${ate}T12:00:00Z`).getTime() - new Date(`${de}T12:00:00Z`).getTime()) / DIA) + 1;
+  return [somaDias(de, -dias), somaDias(de, -1)];
+}
+const ultimoDiaDoMes = (d: string) => somaDias(`${somaDias(`${d.slice(0, 7)}-28`, 4).slice(0, 7)}-01`, -1);
+
 const NOME_MP: Record<string, string> = { mercado_livre: "Mercado Livre", shopee: "Shopee" };
 
-export default function AdsPage() {
-  const [atalho, setAtalho] = useState("7d");
-  const [de, setDe] = useState(() => somaDias(hojeSP(), -6));
+export default function PublicidadePage() {
+  const [atalho, setAtalho] = useState("mes");
+  const [de, setDe] = useState(() => `${hojeSP().slice(0, 7)}-01`);
   const [ate, setAte] = useState(hojeSP);
   const [contas, setContas] = useState<Conta[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
+  const [contasAnt, setContasAnt] = useState<Conta[]>([]);
   const [filtroMp, setFiltroMp] = useState<"todos" | "mercado_livre" | "shopee">("todos");
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro(null);
     try {
-      const r = await apiFetch<{ contas: Conta[] }>(`/api/ads?de=${de}&ate=${ate}`);
+      const [a1, a2] = periodoAnterior(de, ate);
+      const [r, ra] = await Promise.all([
+        apiFetch<{ contas: Conta[] }>(`/api/ads?de=${de}&ate=${ate}`),
+        apiFetch<{ contas: Conta[] }>(`/api/ads?de=${a1}&ate=${a2}`).catch(() => ({ contas: [] as Conta[] })),
+      ]);
       setContas(r.contas);
+      setContasAnt(ra.contas);
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e));
     } finally {
@@ -98,21 +115,7 @@ export default function AdsPage() {
     [ok]
   );
 
-  // Série diária por marketplace (somando as contas de cada um)
-  const serie = useMemo(() => {
-    const m = new Map<string, { ml: number; sh: number; vml: number; vsh: number }>();
-    for (let d = de; d <= ate; d = somaDias(d, 1)) m.set(d, { ml: 0, sh: 0, vml: 0, vsh: 0 });
-    ok.forEach((c) =>
-      c.dias.forEach((d) => {
-        const a = m.get(d.data);
-        if (!a) return;
-        if (c.mp === "mercado_livre") { a.ml += d.gasto; a.vml += d.vendasAds; } else { a.sh += d.gasto; a.vsh += d.vendasAds; }
-      })
-    );
-    return Array.from(m.entries()).map(([data, v]) => ({ data, ...v, gasto: v.ml + v.sh, vendas: v.vml + v.vsh }));
-  }, [ok, de, ate]);
-  const temSerie = serie.length > 1 && serie.some((d) => d.gasto > 0 || d.vendas > 0);
-  // Contas que trouxeram total mas não o detalhe por dia (o gráfico fica incompleto para elas)
+  const okAnt = contasAnt.filter((c) => !c.erro && (filtroMp === "todos" || c.mp === filtroMp));
   const semDiario = ok.filter((c) => c.gasto > 0 && c.dias.length === 0).map((c) => c.nome);
 
   const roas = (gasto: number, vendas: number) => (gasto > 0 ? (vendas / gasto).toFixed(2).replace(".", ",") : "—");
@@ -120,8 +123,8 @@ export default function AdsPage() {
   const tacos = (gasto: number, fat: number) => (fat > 0 ? pct((gasto / fat) * 100) : "—");
 
   const kpis = [
-    { t: "Investido em ads", v: brl(tot.gasto), s: `${br(de)}${de !== ate ? ` a ${br(ate)}` : ""}`, destaque: true },
-    { t: "Vendas pelos ads", v: brl(tot.vendasAds), s: `${int(tot.pedidosAds)} vendas atribuídas` },
+    { t: "Investido em publicidade", v: brl(tot.gasto), s: `${br(de)}${de !== ate ? ` a ${br(ate)}` : ""}`, destaque: true },
+    { t: "Vendas pela publicidade", v: brl(tot.vendasAds), s: `${int(tot.pedidosAds)} vendas atribuídas` },
     { t: "ROAS", v: roas(tot.gasto, tot.vendasAds), s: "vendas pelos ads ÷ investido" },
     { t: "ACOS", v: acos(tot.gasto, tot.vendasAds), s: "investido ÷ vendas pelos ads" },
     { t: "TACOS", v: tacos(tot.gasto, tot.faturamento), s: `investido ÷ faturamento total (${brl(tot.faturamento)})` },
@@ -132,7 +135,7 @@ export default function AdsPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Ads</h1>
+          <h1 className="text-2xl font-bold">Publicidade</h1>
           <p className="text-sm text-slate-600">Quanto cada conta investiu em publicidade no Mercado Livre e na Shopee, e o retorno disso.</p>
         </div>
         <button className="btn-ghost" onClick={carregar} disabled={carregando}>{carregando ? "Atualizando…" : "Atualizar"}</button>
@@ -180,7 +183,7 @@ export default function AdsPage() {
         ))}
       </div>
 
-      {temSerie && <GraficoAds serie={serie} semDiario={semDiario} />}
+      {ok.length > 0 && <GraficosPublicidade contas={ok} contasAnt={okAnt} de={de} ate={ate} semDiario={semDiario} />}
 
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
@@ -188,7 +191,7 @@ export default function AdsPage() {
             <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-500">
               <th className="px-5 py-3">Conta</th>
               <th className="px-4 py-3 text-right">Investido</th>
-              <th className="px-4 py-3 text-right">Vendas pelos ads</th>
+              <th className="px-4 py-3 text-right">Vendas pela publicidade</th>
               <th className="px-4 py-3 text-right">ROAS</th>
               <th className="px-4 py-3 text-right">ACOS</th>
               <th className="px-4 py-3 text-right">Faturamento total</th>
@@ -199,7 +202,7 @@ export default function AdsPage() {
           </thead>
           <tbody>
             {carregando && contas.length === 0 && (
-              <tr><td colSpan={9} className="px-5 py-8 text-center text-slate-500">Buscando os dados de ads de cada conta…</td></tr>
+              <tr><td colSpan={9} className="px-5 py-8 text-center text-slate-500">Buscando os dados de publicidade de cada conta…</td></tr>
             )}
             {!carregando && visiveis.length === 0 && (
               <tr><td colSpan={9} className="px-5 py-8 text-center text-slate-500">Nenhuma conta do Mercado Livre ou Shopee conectada.</td></tr>
@@ -256,21 +259,41 @@ export default function AdsPage() {
   );
 }
 
-/* ---------- Gráfico diário ---------- */
-type PontoAds = { data: string; ml: number; sh: number; vml: number; vsh: number; gasto: number; vendas: number };
+/* ---------- Gráficos da publicidade ---------- */
 type Metrica = "gasto" | "vendas" | "roas";
+const COR_MET: Record<Metrica, string> = { gasto: "#6250d6", vendas: "#1baf7a", roas: "#d55181" };
+const COR_ML = "#2a78d6";
+const COR_SH = "#eb6834";
+const COR_ANT = "#94a3b8";
 
 const rotuloReais = (v: number) =>
   v >= 1000 ? `R$ ${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil` : `R$ ${Math.round(v).toLocaleString("pt-BR")}`;
-const rotuloRoas = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const rotuloRoas = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+const ddmm = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
-function GraficoAds({ serie, semDiario }: { serie: PontoAds[]; semDiario: string[] }) {
-  const [metrica, setMetrica] = useState<Metrica>("gasto");
+function CartaoLinhas({
+  titulo,
+  subtitulo,
+  datas,
+  datasAnt,
+  series,
+  fmt,
+  marcaX,
+  extra,
+}: {
+  titulo: string;
+  subtitulo: string;
+  datas: string[];
+  datasAnt: string[];
+  series: SerieLinha[];
+  fmt: (v: number) => string;
+  marcaX?: { indice: number; texto: string } | null;
+  extra?: React.ReactNode;
+}) {
   const [sobre, setSobre] = useState<number | null>(null);
   const [largura, setLargura] = useState(900);
   const caixa = useRef<HTMLDivElement | null>(null);
   const ALTURA = 300;
-
   useEffect(() => {
     const el = caixa.current;
     if (!el) return;
@@ -278,119 +301,210 @@ function GraficoAds({ serie, semDiario }: { serie: PontoAds[]; semDiario: string
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-
-  const n = serie.length;
-  const pontos: PontoGrafico[] = serie.map((d) =>
-    metrica === "gasto" ? { data: d.data, a: d.ml, b: d.sh } : metrica === "vendas" ? { data: d.data, a: d.vml, b: d.vsh } : { data: d.data, a: d.gasto > 0 ? d.vendas / d.gasto : 0, b: 0 }
-  );
-  const totA = pontos.reduce((t, p) => t + p.a, 0);
-  const totB = pontos.reduce((t, p) => t + p.b, 0);
-  const somaGasto = serie.reduce((t, d) => t + d.gasto, 0);
-  const somaVendas = serie.reduce((t, d) => t + d.vendas, 0);
-  const diasComAds = serie.filter((d) => d.gasto > 0).length;
-  const media = metrica === "roas" ? (somaGasto > 0 ? somaVendas / somaGasto : 0) : (totA + totB) / Math.max(1, n);
-  const pico = pontos.reduce((m, p, i) => (p.a + p.b > pontos[m].a + pontos[m].b ? i : m), 0);
-  const fmt = metrica === "roas" ? rotuloRoas : rotuloReais;
-  const fmtCheio = (v: number) => (metrica === "roas" ? rotuloRoas(v) : brl(v));
-
-  const resumo =
-    metrica === "roas"
-      ? [
-          { t: "ROAS do período", v: rotuloRoas(media), cor: CORES.linha },
-          { t: "Melhor dia", v: n ? `${rotuloRoas(pontos[pico].a)} · ${br(serie[pico].data).slice(0, 5)}` : "—" },
-          { t: "Dias com ads", v: `${diasComAds} de ${n}` },
-        ]
-      : [
-          { t: metrica === "gasto" ? "Total investido" : "Total vendido pelos ads", v: brl(totA + totB) },
-          { t: "Mercado Livre", v: brl(totA), cor: CORES.a },
-          { t: "Shopee", v: brl(totB), cor: CORES.b },
-          { t: "Média por dia", v: brl(media) },
-          { t: "Maior dia", v: n ? `${brl(pontos[pico].a + pontos[pico].b)} · ${br(serie[pico].data).slice(0, 5)}` : "—" },
-        ];
-
+  const n = datas.length;
+  const pw = largura - MARGEM_L.esq - MARGEM_L.dir;
   function mover(e: React.MouseEvent<HTMLDivElement>) {
     const r = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - r.left - MARGEM.esq;
-    const pw = largura - MARGEM.esq - MARGEM.dir;
-    if (x < 0 || x > pw) return setSobre(null);
-    setSobre(Math.min(n - 1, Math.max(0, Math.floor((x / pw) * n))));
+    const xx = e.clientX - r.left - MARGEM_L.esq;
+    if (xx < -10 || xx > pw + 10) return setSobre(null);
+    setSobre(Math.min(n - 1, Math.max(0, Math.round((xx / pw) * (n - 1)))));
   }
-
-  const d = sobre != null ? serie[sobre] : null;
-  const xFoco = sobre != null ? MARGEM.esq + ((largura - MARGEM.esq - MARGEM.dir) / n) * (sobre + 0.5) : 0;
-  const tipDireita = xFoco < largura * 0.62;
+  const xFoco = sobre != null ? MARGEM_L.esq + (n <= 1 ? pw / 2 : (pw * sobre) / (n - 1)) : 0;
+  const direita = xFoco < largura * 0.6;
 
   return (
     <div className="card">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-base font-semibold text-slate-900">Desempenho diário</p>
-          <p className="text-[12px] text-slate-500">{br(serie[0].data)} a {br(serie[n - 1].data)} · todas as contas filtradas</p>
+          <p className="text-base font-semibold text-slate-900">{titulo}</p>
+          <p className="text-[12px] text-slate-500">{subtitulo}</p>
         </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-600">
+          {series.map((s) => (
+            <span key={s.id} className="flex items-center gap-1.5">
+              <svg width="22" height="8" aria-hidden>
+                <line x1="1" x2="21" y1="4" y2="4" stroke={s.cor} strokeWidth={s.espessura ?? 2.5} strokeLinecap="round" strokeDasharray={s.estilo === "tracejada" ? "6 4" : s.estilo === "pontilhada" ? "1 4" : undefined} />
+              </svg>
+              {s.nome}
+            </span>
+          ))}
+        </div>
+      </div>
+      {extra}
+      <div ref={caixa} className="relative mt-4 select-none" onMouseMove={mover} onMouseLeave={() => setSobre(null)}>
+        <GraficoLinhasSvg rotulosX={datas.map(ddmm)} series={series} largura={largura} altura={ALTURA} sobre={sobre} rotuloEixo={fmt} marcaX={marcaX} />
+        {sobre != null && series.some((s) => s.valores[sobre] != null) && (
+          <div
+            className="pointer-events-none absolute z-10 w-60 rounded-xl border border-slate-200 bg-white/95 p-3 text-[12px] shadow-xl backdrop-blur"
+            style={{ top: MARGEM_L.topo, ...(direita ? { left: xFoco + 16 } : { right: largura - xFoco + 16 }) }}
+          >
+            <p className="mb-2 font-semibold capitalize text-slate-900">
+              {new Date(`${datas[sobre]}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" })}
+            </p>
+            {series.map((s) => {
+              const v = s.valores[sobre];
+              if (v == null || !Number.isFinite(v)) return null;
+              const ant = s.id.startsWith("ant") && datasAnt[sobre] ? ` (${ddmm(datasAnt[sobre])})` : "";
+              return (
+                <p key={s.id} className="mt-1 flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-1.5 text-slate-500"><span className="h-2 w-2 rounded-full" style={{ background: s.cor }} />{s.nome}{ant}</span>
+                  <b className="tabular-nums text-slate-900">{fmt === rotuloRoas ? rotuloRoas(v) : brl(v)}</b>
+                </p>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GraficosPublicidade({ contas, contasAnt, de, ate, semDiario }: { contas: Conta[]; contasAnt: Conta[]; de: string; ate: string; semDiario: string[] }) {
+  const [metrica, setMetrica] = useState<Metrica>("gasto");
+  const hoje = hojeSP();
+  const fimDado = ate < hoje ? ate : hoje;
+  // Mês corrente: o eixo vai até o fim do mês para mostrar a projeção
+  const mesCorrente = de.endsWith("-01") && de.slice(0, 7) === hoje.slice(0, 7) && ate >= hoje;
+  const fimEixo = mesCorrente ? ultimoDiaDoMes(de) : ate;
+  const datas: string[] = [];
+  for (let d = de; d <= fimEixo; d = somaDias(d, 1)) datas.push(d);
+  const [a1, a2] = periodoAnterior(de, ate);
+  const datasAnt: string[] = [];
+  for (let d = a1; d <= a2; d = somaDias(d, 1)) datasAnt.push(d);
+  const idxFim = datas.indexOf(fimDado);
+
+  const somar = (cs: Conta[], ds: string[]) => {
+    const pos = new Map(ds.map((d, i) => [d, i]));
+    const z = () => ds.map(() => 0);
+    const r = { ml: z(), sh: z(), vml: z(), vsh: z() };
+    cs.forEach((c) =>
+      c.dias.forEach((d) => {
+        const i = pos.get(d.data);
+        if (i == null) return;
+        if (c.mp === "mercado_livre") { r.ml[i] += d.gasto; r.vml[i] += d.vendasAds; } else { r.sh[i] += d.gasto; r.vsh[i] += d.vendasAds; }
+      })
+    );
+    return r;
+  };
+  const cur = somar(contas, datas);
+  const ant = somar(contasAnt, datasAnt);
+  const gasto = datas.map((_, i) => cur.ml[i] + cur.sh[i]);
+  const vendas = datas.map((_, i) => cur.vml[i] + cur.vsh[i]);
+  const gastoAnt = datasAnt.map((_, i) => ant.ml[i] + ant.sh[i]);
+  const vendasAnt = datasAnt.map((_, i) => ant.vml[i] + ant.vsh[i]);
+
+  const acumular = (v: number[], ate: number) => { let t = 0; return v.map((x, i) => (i <= ate ? (t += x) : null)); };
+  const ateIdx = idxFim < 0 ? datas.length - 1 : idxFim;
+  const cG = acumular(gasto, ateIdx), cV = acumular(vendas, ateIdx);
+  const aG = acumular(gastoAnt, gastoAnt.length - 1), aV = acumular(vendasAnt, vendasAnt.length - 1);
+  const alinhar = (v: (number | null)[]) => datas.map((_, i) => (i < v.length ? v[i] : null));
+
+  const acum = metrica === "gasto" ? cG : metrica === "vendas" ? cV : cG.map((g, i) => (g && cV[i] != null ? (cV[i] as number) / g : null));
+  const acumAnt = alinhar(metrica === "gasto" ? aG : metrica === "vendas" ? aV : aG.map((g, i) => (g ? (aV[i] as number) / g : null)));
+  const atual = acum[ateIdx] ?? 0;
+  const mediaDia = metrica === "roas" ? null : atual / (ateIdx + 1);
+  const projecao: (number | null)[] =
+    mesCorrente && metrica !== "roas" && ateIdx < datas.length - 1 ? datas.map((_, i) => (i < ateIdx ? null : atual + (mediaDia ?? 0) * (i - ateIdx))) : [];
+  const projFim = projecao.length ? (projecao[projecao.length - 1] as number) : null;
+  const antMesmoPonto = acumAnt[ateIdx];
+  const antTotal = metrica === "gasto" ? aG[aG.length - 1] : metrica === "vendas" ? aV[aV.length - 1] : null;
+  const variacao = antMesmoPonto && antMesmoPonto > 0 ? ((atual - antMesmoPonto) / antMesmoPonto) * 100 : null;
+  const cor = COR_MET[metrica];
+  const fmt = metrica === "roas" ? rotuloRoas : rotuloReais;
+  const fmtCheio = (v: number) => (metrica === "roas" ? rotuloRoas(v) : brl(v));
+  const nomeMet = metrica === "gasto" ? "Investido" : metrica === "vendas" ? "Vendas pela publicidade" : "ROAS";
+  const nomeAnt = de.endsWith("-01") && de.slice(0, 7) === ate.slice(0, 7) ? "Mês anterior" : "Período anterior";
+  // Para investido, subir é custo (neutro/alerta); para vendas e ROAS, subir é bom
+  const corVar = variacao == null ? "text-slate-500" : metrica === "gasto" ? (variacao > 0 ? "text-amber-600" : "text-emerald-600") : variacao >= 0 ? "text-emerald-600" : "text-red-600";
+
+  const seriesAcum: SerieLinha[] = [
+    { id: "ant", nome: nomeAnt, cor: COR_ANT, valores: acumAnt, estilo: "tracejada", espessura: 2 },
+    ...(projecao.length ? [{ id: "proj", nome: "Projeção", cor, valores: projecao, estilo: "pontilhada" as const, espessura: 3, pontoFinal: true }] : []),
+    { id: "atual", nome: `${nomeMet} acumulado`, cor, valores: acum, area: true, espessura: 3, pontoFinal: true },
+  ];
+
+  // Por dia: Mercado Livre, Shopee, total e o total do período anterior
+  const diaML = metrica === "gasto" ? cur.ml : metrica === "vendas" ? cur.vml : cur.ml.map((g, i) => (g > 0 ? cur.vml[i] / g : null));
+  const diaSH = metrica === "gasto" ? cur.sh : metrica === "vendas" ? cur.vsh : cur.sh.map((g, i) => (g > 0 ? cur.vsh[i] / g : null));
+  const diaTot = metrica === "gasto" ? gasto : metrica === "vendas" ? vendas : gasto.map((g, i) => (g > 0 ? vendas[i] / g : null));
+  const diaAnt = metrica === "gasto" ? gastoAnt : metrica === "vendas" ? vendasAnt : gastoAnt.map((g, i) => (g > 0 ? vendasAnt[i] / g : null));
+  const corta = (v: (number | null)[]) => datas.map((_, i) => (i <= ateIdx ? v[i] ?? null : null));
+  const temML = cur.ml.some((x) => x > 0), temSH = cur.sh.some((x) => x > 0);
+  const seriesDia: SerieLinha[] = [
+    { id: "ant-dia", nome: `${nomeAnt} (total)`, cor: COR_ANT, valores: alinhar(diaAnt), estilo: "tracejada", espessura: 2 },
+    ...(temML ? [{ id: "ml", nome: "Mercado Livre", cor: COR_ML, valores: corta(diaML), espessura: 2.5 }] : []),
+    ...(temSH ? [{ id: "sh", nome: "Shopee", cor: COR_SH, valores: corta(diaSH), espessura: 2.5 }] : []),
+    ...(temML && temSH ? [{ id: "tot", nome: "Total", cor, valores: corta(diaTot), espessura: 3, area: true }] : []),
+  ];
+
+  const blocos = [
+    { t: `${nomeMet} até ${ddmm(datas[ateIdx])}`, v: fmtCheio(atual), cor, sub: mediaDia != null ? `média de ${brl(mediaDia)} por dia` : "retorno acumulado no período" },
+    ...(projFim != null ? [{ t: `Projeção até ${ddmm(datas[datas.length - 1])}`, v: fmtCheio(projFim), cor, sub: "se mantiver a média por dia", tracejado: true }] : []),
+    {
+      t: `${nomeAnt} no mesmo ponto`,
+      v: antMesmoPonto != null ? fmtCheio(antMesmoPonto) : "—",
+      cor: COR_ANT,
+      sub: variacao != null ? <span className={`font-semibold ${corVar}`}>{variacao >= 0 ? "▲" : "▼"} {Math.abs(variacao).toFixed(0)}% este período</span> : "sem dados para comparar",
+    },
+    ...(antTotal != null ? [{ t: `${nomeAnt} fechado`, v: fmtCheio(antTotal), cor: COR_ANT, sub: `${ddmm(a1)} a ${ddmm(a2)}` }] : []),
+  ];
+
+  const resumo = (
+    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {blocos.map((b) => (
+        <div key={b.t} className="relative overflow-hidden rounded-xl border border-slate-100 px-4 py-3" style={{ background: `linear-gradient(135deg, ${b.cor}14, ${b.cor}05)` }}>
+          <span className="absolute inset-y-0 left-0 w-1" style={{ background: b.cor, opacity: "tracejado" in b ? 0.5 : 1 }} />
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{b.t}</p>
+          <p className="mt-0.5 text-xl font-bold tabular-nums text-slate-900">{b.v}</p>
+          <p className="text-[11px] text-slate-500">{b.sub}</p>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-500">
+          Comparando com {nomeAnt.toLowerCase()} ({ddmm(a1)} a {ddmm(a2)}).
+        </p>
         <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[13px]">
-          {([["gasto", "Investido"], ["vendas", "Vendas pelos ads"], ["roas", "ROAS"]] as [Metrica, string][]).map(([id, t]) => (
+          {([["gasto", "Investido"], ["vendas", "Vendas pela publicidade"], ["roas", "ROAS"]] as [Metrica, string][]).map(([id, t]) => (
             <button
               key={id}
               onClick={() => setMetrica(id)}
-              className={`rounded-md px-3.5 py-1.5 font-medium transition-colors ${metrica === id ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-800"}`}
+              className={`flex items-center gap-1.5 rounded-md px-3.5 py-1.5 font-medium transition-colors ${metrica === id ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-800"}`}
             >
+              <span className="h-2 w-2 rounded-full" style={{ background: COR_MET[id] }} />
               {t}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-100 bg-slate-100 sm:grid-cols-3 lg:grid-cols-5">
-        {resumo.map((k) => (
-          <div key={k.t} className="bg-white px-4 py-3">
-            <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-              {k.cor && <span className="h-2 w-2 rounded-full" style={{ background: k.cor }} />}
-              {k.t}
-            </p>
-            <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">{k.v}</p>
-          </div>
-        ))}
-      </div>
+      <CartaoLinhas
+        titulo={`Evolução ${metrica === "roas" ? "do ROAS" : "acumulada"}`}
+        subtitulo={mesCorrente ? "Linha cheia: até hoje · pontilhada: projeção até o fim do mês · tracejada: mês anterior" : `Linha cheia: ${br(de)} a ${br(ate)} · tracejada: ${nomeAnt.toLowerCase()}`}
+        datas={datas}
+        datasAnt={datasAnt}
+        series={seriesAcum}
+        fmt={fmt}
+        marcaX={mesCorrente && ateIdx < datas.length - 1 ? { indice: ateIdx, texto: "hoje" } : null}
+        extra={resumo}
+      />
 
-      <div ref={caixa} className="relative mt-5 select-none" onMouseMove={mover} onMouseLeave={() => setSobre(null)}>
-        <GraficoDiarioSvg serie={pontos} modo={metrica === "roas" ? "linha" : "barras"} largura={largura} altura={ALTURA} sobre={sobre} rotuloEixo={fmt} media={media} />
-
-        {d && sobre != null && (
-          <div
-            className="pointer-events-none absolute z-10 w-56 rounded-xl border border-slate-200 bg-white p-3 text-[12px] shadow-xl"
-            style={{ top: MARGEM.topo, ...(tipDireita ? { left: xFoco + 18 } : { right: largura - xFoco + 18 }) }}
-          >
-            <p className="mb-2 font-semibold capitalize text-slate-900">
-              {new Date(`${d.data}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" })}
-            </p>
-            {metrica === "roas" ? (
-              <p className="flex items-baseline justify-between"><span className="flex items-center gap-1.5 text-slate-500"><span className="h-2 w-2 rounded-full" style={{ background: CORES.linha }} />ROAS</span><b className="text-base tabular-nums text-slate-900">{d.gasto > 0 ? rotuloRoas(d.vendas / d.gasto) : "—"}</b></p>
-            ) : (
-              <>
-                <p className="flex justify-between"><span className="flex items-center gap-1.5 text-slate-500"><span className="h-2 w-2 rounded-sm" style={{ background: CORES.a }} />Mercado Livre</span><span className="tabular-nums text-slate-800">{fmtCheio(pontos[sobre].a)}</span></p>
-                <p className="mt-1 flex justify-between"><span className="flex items-center gap-1.5 text-slate-500"><span className="h-2 w-2 rounded-sm" style={{ background: CORES.b }} />Shopee</span><span className="tabular-nums text-slate-800">{fmtCheio(pontos[sobre].b)}</span></p>
-                <p className="mt-2 flex justify-between border-t border-slate-100 pt-2"><span className="text-slate-500">Total</span><b className="tabular-nums text-slate-900">{fmtCheio(pontos[sobre].a + pontos[sobre].b)}</b></p>
-              </>
-            )}
-            <div className="mt-2 space-y-0.5 border-t border-slate-100 pt-2 text-[11px] text-slate-500">
-              {metrica !== "gasto" && <p className="flex justify-between"><span>Investido</span><span className="tabular-nums">{brl(d.gasto)}</span></p>}
-              {metrica !== "vendas" && <p className="flex justify-between"><span>Vendas pelos ads</span><span className="tabular-nums">{brl(d.vendas)}</span></p>}
-              {metrica !== "roas" && <p className="flex justify-between"><span>ROAS</span><span className="tabular-nums">{d.gasto > 0 ? rotuloRoas(d.vendas / d.gasto) : "—"}</span></p>}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {metrica !== "roas" && (
-        <div className="mt-2 flex items-center justify-center gap-5 text-[12px] text-slate-600">
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: CORES.a }} />Mercado Livre</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: CORES.b }} />Shopee</span>
-          <span className="flex items-center gap-1.5"><span className="w-4 border-t border-dashed border-slate-500" />Média por dia</span>
-        </div>
-      )}
+      <CartaoLinhas
+        titulo="Dia a dia"
+        subtitulo="Como cada marketplace sobe e desce por dia, comparado com o período anterior"
+        datas={datas}
+        datasAnt={datasAnt}
+        series={seriesDia}
+        fmt={fmt}
+        marcaX={mesCorrente && ateIdx < datas.length - 1 ? { indice: ateIdx, texto: "hoje" } : null}
+      />
 
       {semDiario.length > 0 && (
-        <p className="mt-3 text-[11px] text-amber-700">{semDiario.join(", ")}: a plataforma mandou só o total do período, sem o detalhe por dia, então não aparece no gráfico.</p>
+        <p className="text-[11px] text-amber-700">{semDiario.join(", ")}: a plataforma mandou só o total do período, sem o detalhe por dia, então não aparece nos gráficos.</p>
       )}
     </div>
   );

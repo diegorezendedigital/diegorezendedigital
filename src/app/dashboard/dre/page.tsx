@@ -49,7 +49,7 @@ function Cascata({ l }: { l: Linha }) {
     { nome: "Frete", valor: -l.frete, cor: COR.frete, tipo: "menos" as const },
     { nome: "Impostos", valor: -l.impostos, cor: COR.impostos, tipo: "menos" as const },
     { nome: "Lucro das vendas", valor: l.lucroVendas, cor: COR.lucro, tipo: "total" as const },
-    ...(l.ads > 0 ? [{ nome: "Ads", valor: -l.ads, cor: COR.ads, tipo: "menos" as const }] : []),
+    ...(l.ads > 0 ? [{ nome: "Publicidade", valor: -l.ads, cor: COR.ads, tipo: "menos" as const }] : []),
     { nome: "Despesas", valor: -l.despesas, cor: COR.despesas, tipo: "menos" as const },
     { nome: "Resultado", valor: l.resultado, cor: l.resultado < 0 ? "#dc2626" : COR.resultado, tipo: "total" as const },
   ];
@@ -253,7 +253,7 @@ export default function DrePage() {
     { t: "Frete", v: l.frete, ant: p.frete, menos: true, inverso: true, cor: COR.frete },
     { t: "Impostos", v: l.impostos, ant: p.impostos, menos: true, inverso: true, cor: COR.impostos },
     { t: "Lucro das vendas (margem de contribuição)", v: l.lucroVendas, ant: p.lucroVendas, forte: true, cor: COR.lucro },
-    { t: "Ads (Mercado Livre e Shopee) · automático", v: l.ads, ant: p.ads, menos: true, inverso: true, cor: COR.ads },
+    { t: "Publicidade (Mercado Livre e Shopee) · automático", v: l.ads, ant: p.ads, menos: true, inverso: true, cor: COR.ads },
     { t: "Despesas do mês", v: l.despesas, ant: p.despesas, menos: true, inverso: true, cor: COR.despesas },
     { t: "Resultado líquido", v: l.resultado, ant: p.resultado, forte: true, cor: COR.resultado },
   ];
@@ -284,10 +284,10 @@ export default function DrePage() {
       {erro && <div className="card text-sm text-red-700">{erro}</div>}
       {(carregandoAds || (ads[mes]?.erros.length ?? 0) > 0 || despMes.some((d) => d.category === "marketing")) && (
         <div className="rounded-md border border-cyan-200 bg-cyan-50 p-3 text-[13px] text-cyan-900">
-          {carregandoAds && <p>Buscando o investimento em ads do Mercado Livre e da Shopee…</p>}
-          {(ads[mes]?.erros ?? []).map((e) => <p key={e}>Ads não incluído de {e}</p>)}
+          {carregandoAds && <p>Buscando o investimento em publicidade do Mercado Livre e da Shopee…</p>}
+          {(ads[mes]?.erros ?? []).map((e) => <p key={e}>Publicidade não incluída de {e}</p>)}
           {despMes.some((d) => d.category === "marketing") && (
-            <p>O investimento em ads já entra automático. Se a despesa em &quot;Marketing e anúncios&quot; for o mesmo ads, apague-a para não contar duas vezes.</p>
+            <p>O investimento em publicidade já entra automático. Se a despesa em &quot;Marketing e anúncios&quot; for a mesma publicidade, apague-a para não contar duas vezes.</p>
           )}
         </div>
       )}

@@ -30,7 +30,7 @@ const menus: Menu[] = [
       { label: "TikTok Shop", href: "/dashboard/promocoes/tiktok" },
     ],
   },
-  { label: "Ads", href: "/dashboard/ads" },
+  { label: "Publicidade", href: "/dashboard/ads" },
   { label: "Calculadora", href: "/dashboard/calculadora" },
   { label: "Relatórios", href: "/dashboard/relatorios" },
   { label: "DRE", href: "/dashboard/dre" },
