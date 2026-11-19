@@ -56,6 +56,8 @@ export default function CalculadoraCanal({ canal, publico = false }: { canal: Ca
   const [roas, setRoas] = useState("10");
   const [acos, setAcos] = useState("10");
   const [afiliado, setAfiliado] = useState(CFG[canal].afiliadoSeparado ? "0" : "2");
+  // TikTok: afiliado sem ads (padrão 8%). Com ads ligado ele fica em 0 e vale o afiliado do bloco de ads (padrão 2%).
+  const [afiliadoSemAds, setAfiliadoSemAds] = useState("8");
 
   const [margemAlvo, setMargemAlvo] = useState("15");
   const [sobraAlvo, setSobraAlvo] = useState("");
@@ -141,6 +143,7 @@ export default function CalculadoraCanal({ canal, publico = false }: { canal: Ca
         setRoas(String(cfg.roas ?? "10"));
         setAcos(String(cfg.acos ?? "10"));
         setAfiliado(String(cfg.afiliado ?? (cfgCanal.afiliadoSeparado ? "0" : "2")));
+        setAfiliadoSemAds(String(cfg.afiliadoSemAds ?? "8"));
       }
       setMargemAlvo(campo(Number(margemSalva)));
       setBase("pct");
@@ -175,7 +178,7 @@ export default function CalculadoraCanal({ canal, publico = false }: { canal: Ca
     const dados = {
       [cfgCanal.margemKey]: margemSalva,
       [cfgCanal.precoKey]: precoN,
-      [cfgCanal.configKey]: { imposto, freteGratis, extra, frete, comissao, cpf, usarAds, roas, acos, afiliado },
+      [cfgCanal.configKey]: { imposto, freteGratis, extra, frete, comissao, cpf, usarAds, roas, acos, afiliado, afiliadoSemAds },
       ...(cfgCanal.fretePago
         ? {
             peso_kg: peso.trim() ? num(peso) : null,
@@ -230,7 +233,7 @@ export default function CalculadoraCanal({ canal, publico = false }: { canal: Ca
   const margemN = num(margemAlvo);
   const adsPct = usarAds ? num(acos) : 0;
   // Na Shopee o afiliado vale com ou sem publicidade; nos outros canais ele faz parte do bloco de ads.
-  const afiliadoPct = cfgCanal.afiliadoSeparado || usarAds ? num(afiliado) : 0;
+  const afiliadoPct = cfgCanal.afiliadoSeparado || usarAds ? num(afiliado) : num(afiliadoSemAds);
 
   // Comissão e tarifa da faixa do preço (a tabela de cada canal está em taxas-publicas).
   // "metade" (Mercado Livre abaixo de R$ 12,50): a taxa fixa é metade do preço, tratada como +50% de comissão.
@@ -481,6 +484,19 @@ export default function CalculadoraCanal({ canal, publico = false }: { canal: Ca
                 <label className="label">Frete grátis (%)</label>
                 <input className="input" inputMode="decimal" value={freteGratis} onChange={(e) => setFreteGratis(e.target.value)} />
                 <p className="mt-1 text-[11px] text-slate-500">Nas 2 faixas de preço</p>
+              </div>
+            )}
+            {!cfgCanal.afiliadoSeparado && (
+              <div>
+                <label className="label">Comissão do afiliado (%)</label>
+                <input
+                  className="input disabled:bg-slate-100 disabled:text-slate-400"
+                  inputMode="decimal"
+                  disabled={usarAds}
+                  value={usarAds ? "0" : afiliadoSemAds}
+                  onChange={(e) => setAfiliadoSemAds(e.target.value)}
+                />
+                <p className="mt-1 text-[11px] text-slate-500">{usarAds ? "Com ads ligado vale o afiliado do bloco de ads" : "Sem ads"}</p>
               </div>
             )}
             {cfgCanal.afiliadoSeparado && (
