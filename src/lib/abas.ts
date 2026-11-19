@@ -1,6 +1,6 @@
 // Abas que o usuário master pode liberar para cada colaborador.
 // Integrações e Configurações ficam sempre só com o master.
-export type AbaId = "inicio" | "armazem" | "anuncios" | "pedidos" | "promo_ml" | "promo_shopee" | "promo_tiktok" | "calculadora" | "relatorios" | "dre";
+export type AbaId = "inicio" | "armazem" | "anuncios" | "pedidos" | "promo_ml" | "promo_shopee" | "promo_tiktok" | "ads" | "calculadora" | "relatorios" | "dre";
 
 export const ABAS: { id: AbaId; label: string; grupo: string; exato?: string[]; prefixo?: string[] }[] = [
   { id: "inicio", label: "Início (painel)", grupo: "Geral", exato: ["/dashboard"] },
@@ -10,6 +10,7 @@ export const ABAS: { id: AbaId; label: string; grupo: string; exato?: string[]; 
   { id: "promo_ml", label: "Promoções Mercado Livre", grupo: "Promoções", exato: ["/dashboard/promocoes"] },
   { id: "promo_shopee", label: "Promoções Shopee", grupo: "Promoções", prefixo: ["/dashboard/promocoes/shopee"] },
   { id: "promo_tiktok", label: "Promoções TikTok Shop", grupo: "Promoções", prefixo: ["/dashboard/promocoes/tiktok"] },
+  { id: "ads", label: "Ads (investimento em publicidade)", grupo: "Análises", prefixo: ["/dashboard/ads"] },
   { id: "calculadora", label: "Calculadora", grupo: "Análises", prefixo: ["/dashboard/calculadora"] },
   { id: "relatorios", label: "Relatórios", grupo: "Análises", prefixo: ["/dashboard/relatorios"] },
   { id: "dre", label: "DRE", grupo: "Análises", prefixo: ["/dashboard/dre"] },
