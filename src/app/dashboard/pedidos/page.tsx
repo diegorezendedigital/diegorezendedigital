@@ -21,6 +21,7 @@ type Linha = {
   preco: number;
   comissao: number;
   comissaoPadrao: number; // comissão percentual padrão da faixa de preço (Shopee)
+  afiliado: number; // comissão de afiliado (Shopee AMS), já incluída na comissão
   taxaFixa: number; // parte fixa (R$) da tarifa, quando o marketplace informa (Shopee)
   mp: string;
   frete: number;
@@ -235,7 +236,7 @@ export default function PedidosPage() {
   // Loja (conta do Mercado Livre) escolhida: "" = todas juntas. A escolha fica lembrada neste navegador.
   const [lojaSel, setLojaSel] = useState<string[]>([]);
   // Filtro de status do pedido: todos, com custo, sem custo ou negativos (prejuízo)
-  const [filtroCusto, setFiltroCusto] = useState<"todos" | "com" | "sem" | "negativos">("todos");
+  const [filtroCusto, setFiltroCusto] = useState<"todos" | "com" | "sem" | "negativos" | "afiliado">("todos");
   const soSemCusto = filtroCusto === "sem";
   const soNegativos = filtroCusto === "negativos";
   const setSoSemCusto = (v: boolean) => setFiltroCusto(v ? "sem" : "todos");
@@ -448,6 +449,7 @@ export default function PedidosPage() {
             preco,
             comissao: Number(s.fees_total) || 0,
             taxaFixa: Number(s.fees_fixed) || 0,
+            afiliado: Number((s as { fees_affiliate?: number }).fees_affiliate) || 0,
             comissaoPadrao: s.marketplace_id === "shopee" ? comissaoPadraoShopee(preco, Number(s.quantity) || 1) : 0,
             mp: s.marketplace_id || "mercado_livre",
             frete: Number(s.shipping_cost) || 0,
@@ -520,6 +522,10 @@ export default function PedidosPage() {
     () => {
       if (filtroCusto === "todos") return baseFiltrada;
       if (filtroCusto === "negativos") return baseFiltrada.filter((l) => negativos.chaves.has(l.pack || l.pedido));
+      if (filtroCusto === "afiliado") {
+        const comAfiliado = new Set(baseFiltrada.filter((l) => l.afiliado > 0).map((l) => l.pack || l.pedido));
+        return baseFiltrada.filter((l) => comAfiliado.has(l.pack || l.pedido));
+      }
       // Pedido "sem custo" = algum item do pedido está sem custo; "com custo" = todos os itens têm custo
       const semCusto = new Set(baseFiltrada.filter((l) => l.custo === 0).map((l) => l.pack || l.pedido));
       return baseFiltrada.filter((l) => semCusto.has(l.pack || l.pedido) === (filtroCusto === "sem"));
@@ -546,6 +552,7 @@ export default function PedidosPage() {
         sobra,
         comissao: soma(itens, "comissao"),
         taxaFixa: itens.reduce((t, i) => t + i.taxaFixa, 0),
+        afiliado: itens.reduce((t, i) => t + i.afiliado, 0),
         comissaoPadrao: itens.reduce((t, i) => t + i.comissaoPadrao, 0),
         frete: soma(itens, "frete"),
         freteComprador: soma(itens, "freteComprador"),
@@ -708,12 +715,13 @@ export default function PedidosPage() {
         </div>
         {lojas.length > 0 && <SeletorLoja lojas={lojas} valor={lojaSel} onChange={escolherLoja} />}
         <div>
-          <label className="label">Custo</label>
+          <label className="label">Filtro</label>
           <select className={`input ${filtroCusto !== "todos" ? "!border-brand !text-brand" : ""}`} value={filtroCusto} onChange={(e) => setFiltroCusto(e.target.value as typeof filtroCusto)}>
             <option value="todos">Todos os pedidos</option>
             <option value="com">Com custo</option>
             <option value="sem">Sem custo</option>
             <option value="negativos">Negativos (prejuízo)</option>
+            <option value="afiliado">Com afiliado (Shopee)</option>
           </select>
         </div>
         <div className="min-w-[240px] flex-1">
@@ -827,6 +835,11 @@ export default function PedidosPage() {
                             <MarcaMP mp={l.mp} />
                             <span className="font-mono text-sm">{l.pedido}</span>
                             {lojas.length > 1 && nomeLoja(l.contaId) && <span className="rounded bg-brand-light px-1.5 py-0.5 text-[10px] font-semibold text-brand">{nomeLoja(l.contaId)}</span>}
+                            {l.afiliado > 0 && (
+                              <span className="rounded bg-pink-100 px-1.5 py-0.5 text-[10px] font-semibold text-pink-700 ring-1 ring-pink-200" title={`Venda feita pelo link de um afiliado. Comissão do afiliado: ${brl(l.afiliado)}`}>
+                                Afiliado
+                              </span>
+                            )}
                           </div>
                           <div className="mt-0.5 text-xs text-slate-500">
                             {new Date(l.data).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
@@ -885,16 +898,18 @@ export default function PedidosPage() {
                                       ? [
                                           ["Comissão padrão", `${brl(l.comissaoPadrao)} · ${f(l.comissaoPadrao) ?? "—"}`],
                                           ["Taxa fixa", `${brl(l.taxaFixa)} · ${f(l.taxaFixa) ?? "—"}`],
-                                          ["Demais taxas", `${brl(Math.max(0, l.comissao - l.comissaoPadrao - l.taxaFixa))} · ${f(Math.max(0, l.comissao - l.comissaoPadrao - l.taxaFixa)) ?? "—"}`],
+                                          ...(l.afiliado > 0 ? [["Comissão de afiliado", `${brl(l.afiliado)} · ${f(l.afiliado) ?? "—"}`] as [string, string]] : []),
+                                          ["Demais taxas", `${brl(Math.max(0, l.comissao - l.comissaoPadrao - l.taxaFixa - l.afiliado))} · ${f(Math.max(0, l.comissao - l.comissaoPadrao - l.taxaFixa - l.afiliado)) ?? "—"}`],
                                           ["Total cobrado", `${brl(l.comissao)} · ${f(l.comissao) ?? "—"}`],
                                         ]
                                       : [[`Cobrado ${l.mp === "shopee" ? "pela" : "pelo"} ${NOME_MP[l.mp] ?? "marketplace"}`, brl(l.comissao)], ["% da venda", f(l.comissao) ?? "—"]]
                                   }
-                                  nota={l.mp === "shopee" ? "Tarifa da Shopee: comissão padrão (por faixa de preço) + taxa fixa por item + demais taxas do extrato (serviço adicional, transação…)." : "Tarifa de venda do Mercado Livre (percentual + valor fixo por unidade, quando houver)."}
+                                  nota={l.mp === "shopee" ? "Tarifa da Shopee: comissão padrão (por faixa de preço) + taxa fixa por item + comissão de afiliado (quando a venda veio de um afiliado) + demais taxas do extrato (serviço adicional, transação…)." : "Tarifa de venda do Mercado Livre (percentual + valor fixo por unidade, quando houver)."}
                                 >
                                   {brl(l.comissao)}
                                   <Pc v={f(l.comissao)} />
-                                  {l.taxaFixa > 0 && <div className="text-[11px] text-slate-500">fixa {brl(l.taxaFixa)} · demais {brl(Math.max(0, l.comissao - l.comissaoPadrao - l.taxaFixa))}</div>}
+                                  {l.taxaFixa > 0 && <div className="text-[11px] text-slate-500">fixa {brl(l.taxaFixa)} · demais {brl(Math.max(0, l.comissao - l.comissaoPadrao - l.taxaFixa - l.afiliado))}</div>}
+                                  {l.afiliado > 0 && <div className="text-[11px] font-medium text-pink-700">afiliado {brl(l.afiliado)}</div>}
                                 </Tip>
                               </td>
                               <td className="px-4 py-5 text-right">

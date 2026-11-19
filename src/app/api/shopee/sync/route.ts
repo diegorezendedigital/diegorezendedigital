@@ -37,6 +37,7 @@ type Renda = {
   seller_transaction_fee?: number;
   credit_card_transaction_fee?: number;
   voucher_from_seller?: number;
+  order_ams_commission_fee?: number; // comissão de afiliado (AMS)
   actual_shipping_fee?: number;
   shopee_shipping_rebate?: number;
   buyer_paid_shipping_fee?: number;
@@ -206,6 +207,7 @@ export async function POST(req: Request) {
     const canal = CANAIS.find((c) => c.id === "shopee")!;
     // A parte fixa da taxa só é gravada se a coluna já existir no banco (migração 20261203)
     const temColunaFixa = !(await admin.from("sales").select("fees_fixed").limit(1)).error;
+    const temColunaAfiliado = !(await admin.from("sales").select("fees_affiliate").limit(1)).error;
     const vendas = pedidos.flatMap((p) => {
       const itensP = p.item_list!;
       const soldAt = new Date(n(p.create_time) * 1000).toISOString();
@@ -213,7 +215,8 @@ export async function POST(req: Request) {
       const totalPedido = valores.reduce((a, b) => a + b, 0) || 1;
       const r = renda.get(p.order_sn);
       // Taxas do pedido: do extrato quando existe; senão, pela tabela de taxas por faixa de preço (por item)
-      const taxasExtrato = r ? n(r.commission_fee) + n(r.service_fee) + n(r.seller_transaction_fee) + n(r.credit_card_transaction_fee) + n(r.voucher_from_seller) : null;
+      const taxasExtrato = r ? n(r.commission_fee) + n(r.service_fee) + n(r.seller_transaction_fee) + n(r.credit_card_transaction_fee) + n(r.voucher_from_seller) + n(r.order_ams_commission_fee) : null;
+      const afiliadoPedido = r ? n(r.order_ams_commission_fee) : 0;
       const freteLiquido = r ? Math.max(0, n(r.actual_shipping_fee) - n(r.shopee_shipping_rebate) - n(r.buyer_paid_shipping_fee)) : 0;
       const freteComprador = r ? n(r.buyer_paid_shipping_fee) : 0;
       return itensP.map((it, idx) => {
@@ -252,6 +255,7 @@ export async function POST(req: Request) {
           cost_price: custo,
           fees_total: Math.round(taxa * 100) / 100,
           ...(temColunaFixa ? { fees_fixed: Math.round(taxaFixa * 100) / 100 } : {}),
+          ...(temColunaAfiliado ? { fees_affiliate: Math.round(((afiliadoPedido * preco) / totalPedido) * 100) / 100 } : {}),
           shipping_cost: freteVenda,
           tax_amount: Math.round(imposto * 100) / 100,
           sold_at: soldAt,
@@ -298,6 +302,7 @@ export async function POST(req: Request) {
               listing_id: v.listing_id,
               fees_total: v.fees_total,
               ...(temColunaFixa ? { fees_fixed: (v as { fees_fixed?: number }).fees_fixed ?? 0 } : {}),
+              ...(temColunaAfiliado ? { fees_affiliate: (v as { fees_affiliate?: number }).fees_affiliate ?? 0 } : {}),
               shipping_cost: v.shipping_cost,
               ...(jaMap.get(v.external_id)?.cost_manual ? {} : { tax_amount: v.tax_amount }),
             })
