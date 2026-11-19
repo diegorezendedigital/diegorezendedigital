@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase/client";
+import { apiFetch, supabase } from "@/lib/supabase/client";
 import { lojaAtual } from "@/lib/loja";
 import { CATEGORIAS_DESPESA, Expense, brl, intervaloDoMes, mesAtual, num, pct } from "@/lib/types";
 
 type VendaDre = { sold_at: string; sale_price: number; cost_price: number | null; fees_total: number | null; shipping_cost: number | null; tax_amount: number | null };
-type Linha = { receita: number; custo: number; taxas: number; frete: number; impostos: number; lucroVendas: number; despesas: number; resultado: number; margem: number };
+type Linha = { receita: number; custo: number; taxas: number; frete: number; impostos: number; lucroVendas: number; ads: number; despesas: number; resultado: number; margem: number };
 
 // Cores por papel (paleta validada; os valores sempre aparecem escritos ao lado)
-const COR = { receita: "#5B3DF5", custo: "#2a78d6", taxas: "#eb6834", frete: "#6250d6", impostos: "#eda100", lucro: "#1baf7a", despesas: "#e87ba4", resultado: "#0f766e" };
+const COR = { ads: "#0891b2", receita: "#5B3DF5", custo: "#2a78d6", taxas: "#eb6834", frete: "#6250d6", impostos: "#eda100", lucro: "#1baf7a", despesas: "#e87ba4", resultado: "#0f766e" };
 
 const n = (x: number | null | undefined) => Number(x) || 0;
 const nomeMes = (m: string, curto = false) =>
@@ -21,15 +21,15 @@ const somarMes = (m: string, d: number) => {
 };
 const rotuloCat = (c: string) => CATEGORIAS_DESPESA.find((x) => x.id === c)?.label ?? c;
 
-function calcular(vs: VendaDre[], despesas: number): Linha {
+function calcular(vs: VendaDre[], despesas: number, ads = 0): Linha {
   const receita = vs.reduce((t, v) => t + n(v.sale_price), 0);
   const custo = vs.reduce((t, v) => t + n(v.cost_price), 0);
   const taxas = vs.reduce((t, v) => t + n(v.fees_total), 0);
   const frete = vs.reduce((t, v) => t + n(v.shipping_cost), 0);
   const impostos = vs.reduce((t, v) => t + n(v.tax_amount), 0);
   const lucroVendas = receita - custo - taxas - frete - impostos;
-  const resultado = lucroVendas - despesas;
-  return { receita, custo, taxas, frete, impostos, lucroVendas, despesas, resultado, margem: receita > 0 ? (resultado / receita) * 100 : 0 };
+  const resultado = lucroVendas - ads - despesas;
+  return { receita, custo, taxas, frete, impostos, lucroVendas, ads, despesas, resultado, margem: receita > 0 ? (resultado / receita) * 100 : 0 };
 }
 
 function Delta({ a, b, inverso = false }: { a: number; b: number; inverso?: boolean }) {
@@ -49,6 +49,7 @@ function Cascata({ l }: { l: Linha }) {
     { nome: "Frete", valor: -l.frete, cor: COR.frete, tipo: "menos" as const },
     { nome: "Impostos", valor: -l.impostos, cor: COR.impostos, tipo: "menos" as const },
     { nome: "Lucro das vendas", valor: l.lucroVendas, cor: COR.lucro, tipo: "total" as const },
+    ...(l.ads > 0 ? [{ nome: "Ads", valor: -l.ads, cor: COR.ads, tipo: "menos" as const }] : []),
     { nome: "Despesas", valor: -l.despesas, cor: COR.despesas, tipo: "menos" as const },
     { nome: "Resultado", valor: l.resultado, cor: l.resultado < 0 ? "#dc2626" : COR.resultado, tipo: "total" as const },
   ];
@@ -127,6 +128,9 @@ export default function DrePage() {
   const [despesas, setDespesas] = useState<Expense[]>([]);
   const [todasCats, setTodasCats] = useState<string[]>([]);
   const [erro, setErro] = useState("");
+  // Investimento em ads (Mercado Livre e Shopee) de cada mês, puxado automático das plataformas
+  const [ads, setAds] = useState<Record<string, { valor: number; erros: string[] }>>({});
+  const [carregandoAds, setCarregandoAds] = useState(false);
   const [msg, setMsg] = useState("");
   const [form, setForm] = useState({ category: "aluguel", nova: "", description: "", amount: "" });
   const [editando, setEditando] = useState<{ id: string; valor: string } | null>(null);
@@ -154,21 +158,46 @@ export default function DrePage() {
   }, [mes]);
   useEffect(() => { carregar(); }, [carregar]);
 
+  useEffect(() => {
+    let vivo = true;
+    const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+    const meses = Array.from({ length: 6 }, (_, i) => somarMes(mes, i - 5)).filter((m) => `${m}-01` <= hoje && !(m in ads));
+    if (!meses.length) return;
+    setCarregandoAds(true);
+    Promise.all(
+      meses.map(async (m) => {
+        const ultimo = new Date(new Date(`${intervaloDoMes(m).fim}T12:00:00Z`).getTime() - 86_400_000).toISOString().slice(0, 10);
+        try {
+          const r = await apiFetch<{ contas: { nome: string; gasto: number; erro?: string }[] }>(`/api/ads?de=${m}-01&ate=${ultimo < hoje ? ultimo : hoje}`);
+          return [m, { valor: r.contas.reduce((t, c) => t + (c.erro ? 0 : Number(c.gasto) || 0), 0), erros: r.contas.filter((c) => c.erro).map((c) => `${c.nome}: ${c.erro}`) }] as const;
+        } catch (e) {
+          return [m, { valor: 0, erros: [e instanceof Error ? e.message : String(e)] }] as const;
+        }
+      })
+    ).then((res) => {
+      if (!vivo) return;
+      setAds((a) => ({ ...a, ...Object.fromEntries(res) }));
+      setCarregandoAds(false);
+    });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mes]);
+
   const mesDe = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 7);
   const despMes = useMemo(() => despesas.filter((d) => d.month_ref.slice(0, 7) === mes), [despesas, mes]);
   const calc = useMemo(() => {
     const vs = vendas ?? [];
     const meses = Array.from({ length: 6 }, (_, i) => somarMes(mes, i - 5)).map((m) => ({
       mes: m,
-      l: calcular(vs.filter((v) => mesDe(v.sold_at) === m), despesas.filter((d) => d.month_ref.slice(0, 7) === m).reduce((t, d) => t + n(d.amount), 0)),
+      l: calcular(vs.filter((v) => mesDe(v.sold_at) === m), despesas.filter((d) => d.month_ref.slice(0, 7) === m).reduce((t, d) => t + n(d.amount), 0), ads[m]?.valor ?? 0),
     }));
     return { atual: meses[5].l, anterior: meses[4].l, meses };
-  }, [vendas, despesas, mes]);
+  }, [vendas, despesas, mes, ads]);
   const l = calc.atual, p = calc.anterior;
 
   // Ponto de equilíbrio: faturamento que paga as despesas fixas com a margem de contribuição atual
   const mc = l.receita > 0 ? l.lucroVendas / l.receita : 0;
-  const equilibrio = mc > 0 ? l.despesas / mc : null;
+  const equilibrio = mc > 0 ? (l.despesas + l.ads) / mc : null;
 
   const categorias = useMemo(() => {
     const prontas = CATEGORIAS_DESPESA.map((c) => ({ id: c.id, label: c.label }));
@@ -224,6 +253,7 @@ export default function DrePage() {
     { t: "Frete", v: l.frete, ant: p.frete, menos: true, inverso: true, cor: COR.frete },
     { t: "Impostos", v: l.impostos, ant: p.impostos, menos: true, inverso: true, cor: COR.impostos },
     { t: "Lucro das vendas (margem de contribuição)", v: l.lucroVendas, ant: p.lucroVendas, forte: true, cor: COR.lucro },
+    { t: "Ads (Mercado Livre e Shopee) · automático", v: l.ads, ant: p.ads, menos: true, inverso: true, cor: COR.ads },
     { t: "Despesas do mês", v: l.despesas, ant: p.despesas, menos: true, inverso: true, cor: COR.despesas },
     { t: "Resultado líquido", v: l.resultado, ant: p.resultado, forte: true, cor: COR.resultado },
   ];
@@ -252,6 +282,15 @@ export default function DrePage() {
       </div>
 
       {erro && <div className="card text-sm text-red-700">{erro}</div>}
+      {(carregandoAds || (ads[mes]?.erros.length ?? 0) > 0 || despMes.some((d) => d.category === "marketing")) && (
+        <div className="rounded-md border border-cyan-200 bg-cyan-50 p-3 text-[13px] text-cyan-900">
+          {carregandoAds && <p>Buscando o investimento em ads do Mercado Livre e da Shopee…</p>}
+          {(ads[mes]?.erros ?? []).map((e) => <p key={e}>Ads não incluído de {e}</p>)}
+          {despMes.some((d) => d.category === "marketing") && (
+            <p>O investimento em ads já entra automático. Se a despesa em &quot;Marketing e anúncios&quot; for o mesmo ads, apague-a para não contar duas vezes.</p>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {kpis.map((k) => (
