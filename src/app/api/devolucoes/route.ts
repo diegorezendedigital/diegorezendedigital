@@ -80,7 +80,9 @@ const STATUS_DEV_ML: Record<string, string> = {
   return_to_buyer: "Voltando para o comprador",
 };
 
-async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: string }, de: string, ate: string, vendas: (pedidos: string[]) => Promise<Map<string, Venda>>): Promise<Devolucao[]> {
+type Conhecidas = Map<string, Devolucao>; // chave "mp:id" → caso já salvo e encerrado
+
+async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: string }, de: string, ate: string, vendas: (pedidos: string[]) => Promise<Map<string, Venda>>, conhecidas: Conhecidas): Promise<Devolucao[]> {
   const token = await getAccessToken(storeId, conta.ml_user_id);
   if (!token) throw new Error("Conta sem acesso. Reconecte em Integrações.");
   const faixa = `date_created:after:${de}T00:00:00.000-03:00,before:${ate}T23:59:59.999-03:00`;
@@ -96,8 +98,10 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
   const mapa = await vendas(doPedido.map((c) => String(c.resource_id)));
   const nomes = new Map<string, string>();
 
-  return emLotes(doPedido.slice(0, 150), 5, async (c): Promise<Devolucao> => {
+  return emLotes(doPedido.slice(0, 300), 5, async (c): Promise<Devolucao> => {
     const id = String(c.id);
+    const salva = conhecidas.get(`mercado_livre:${id}`);
+    if (salva && String(c.status) === "closed") return salva; // encerrada e já salva: não consulta de novo
     const pedido = String(c.resource_id ?? "");
     const v = mapa.get(pedido);
     const codigo = String(c.reason_id ?? "");
@@ -212,7 +216,7 @@ const MOTIVO_SHOPEE: Record<string, string> = {
   FUNCTIONAL_DMG: "Defeito de funcionamento",
 };
 
-async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: string }, de: string, ate: string, vendas: (pedidos: string[]) => Promise<Map<string, Venda>>): Promise<Devolucao[]> {
+async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: string }, de: string, ate: string, vendas: (pedidos: string[]) => Promise<Map<string, Venda>>, conhecidas: Conhecidas): Promise<Devolucao[]> {
   const token = await tokenShopee(storeId, loja.shop_id);
   if (!token) throw new Error("Loja sem acesso. Autorize de novo em Integrações.");
   const lista: RetornoShopee[] = [];
@@ -235,7 +239,9 @@ async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: 
   }
   const mapa = await vendas(lista.map((x) => String(x.order_sn ?? "")));
 
-  return emLotes(lista.slice(0, 150), 5, async (x): Promise<Devolucao> => {
+  return emLotes(lista.slice(0, 300), 5, async (x): Promise<Devolucao> => {
+    const salva = conhecidas.get(`shopee:${String(x.return_sn ?? "")}`);
+    if (salva && ["CLOSED", "CANCELLED", "REFUND_PAID"].includes(String(x.status ?? ""))) return salva;
     const pedido = String(x.order_sn ?? "");
     const v = mapa.get(pedido);
     // Frete de volta cobrado do vendedor vem do extrato do pedido
@@ -284,22 +290,77 @@ async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: 
   });
 }
 
-// GET /api/devolucoes?de=AAAA-MM-DD&ate=AAAA-MM-DD → reclamações e devoluções de todas as contas, com custo estimado
+// Período pedido na URL ou no corpo
+function periodo(de0: string | null, ate0: string | null) {
+  const ok = (x: string | null) => !!x && /^\d{4}-\d{2}-\d{2}$/.test(x);
+  const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+  const de = ok(de0) ? de0! : `${hoje.slice(0, 7)}-01`;
+  const ate = ok(ate0) ? ate0! : hoje;
+  return { de, ate };
+}
+
+async function totalDePedidos(storeId: string, de: string, ate: string) {
+  const { count } = await supabaseAdmin()
+    .from("sales")
+    .select("id", { count: "exact", head: true })
+    .eq("store_id", storeId)
+    .gte("sold_at", `${de}T00:00:00-03:00`)
+    .lte("sold_at", `${ate}T23:59:59.999-03:00`);
+  return count ?? 0;
+}
+
+async function salvas(storeId: string, de: string, ate: string): Promise<{ itens: Devolucao[]; ultima: string | null } | null> {
+  const r = await supabaseAdmin()
+    .from("devolucoes")
+    .select("dados, atualizado_em")
+    .eq("store_id", storeId)
+    .gte("data", `${de}T00:00:00-03:00`)
+    .lte("data", `${ate}T23:59:59.999-03:00`)
+    .order("data", { ascending: false })
+    .limit(2000);
+  if (r.error) return null; // tabela ainda não criada
+  const linhas = (r.data ?? []) as { dados: Devolucao; atualizado_em: string }[];
+  const ultima = linhas.reduce<string | null>((m, l) => (!m || l.atualizado_em > m ? l.atualizado_em : m), null);
+  return { itens: linhas.map((l) => l.dados), ultima };
+}
+
+// GET /api/devolucoes?de&ate → o que já está salvo (rápido). Sem a tabela, busca ao vivo.
 export async function GET(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   const bloqueio = exigirAba(user, ["devolucoes", "pedidos"]);
   if (bloqueio) return bloqueio;
-
   const u = new URL(req.url);
-  const ok = (x: string | null) => !!x && /^\d{4}-\d{2}-\d{2}$/.test(x);
-  const hoje = new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
-  const de = ok(u.searchParams.get("de")) ? u.searchParams.get("de")! : `${hoje.slice(0, 7)}-01`;
-  const ate = ok(u.searchParams.get("ate")) ? u.searchParams.get("ate")! : hoje;
+  const { de, ate } = periodo(u.searchParams.get("de"), u.searchParams.get("ate"));
+  const s = await salvas(user.id, de, ate);
+  if (s) return NextResponse.json({ de, ate, itens: s.itens, erros: [], totalPedidos: await totalDePedidos(user.id, de, ate), ultima: s.ultima, salvo: true });
+  return sincronizar(user.id, de, ate, false);
+}
+
+// POST /api/devolucoes { de, ate } → busca nos marketplaces só o que é novo ou ainda está aberto, e salva
+export async function POST(req: Request) {
+  const user = await userFromRequest(req);
+  if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+  const bloqueio = exigirAba(user, ["devolucoes", "pedidos"]);
+  if (bloqueio) return bloqueio;
+  const b = await req.json().catch(() => ({}));
+  const { de, ate } = periodo(b.de ?? null, b.ate ?? null);
+  return sincronizar(user.id, de, ate, true);
+}
+
+async function sincronizar(storeId: string, de: string, ate: string, salvar: boolean) {
+  const user = { id: storeId };
+
   if (de > ate) return NextResponse.json({ error: "Data inicial depois da final" }, { status: 400 });
   if (new Date(ate).getTime() - new Date(de).getTime() > 92 * DIA) return NextResponse.json({ error: "Escolha um período de até 3 meses" }, { status: 400 });
 
   const admin = supabaseAdmin();
+  // Casos encerrados já salvos não são consultados de novo
+  const conhecidas: Map<string, Devolucao> = new Map();
+  if (salvar) {
+    const { data: ant } = await admin.from("devolucoes").select("mp, id, dados").eq("store_id", storeId).eq("aberta", false).gte("data", `${de}T00:00:00-03:00`).lte("data", `${ate}T23:59:59.999-03:00`);
+    (ant ?? []).forEach((x) => conhecidas.set(`${x.mp}:${x.id}`, x.dados as Devolucao));
+  }
   // Busca as vendas dos pedidos (por número do pedido ou do pacote)
   const vendas = async (pedidos: string[]) => {
     const m = new Map<string, Venda>();
@@ -336,13 +397,13 @@ export async function GET(req: Request) {
   const erros: string[] = [];
   const partes = await Promise.all([
     ...contasML.map((c) =>
-      devolucoesML(user.id, { ml_user_id: c.ml_user_id, nome: c.store_name || c.nickname || c.ml_user_id }, de, ate, vendas).catch((e) => {
+      devolucoesML(user.id, { ml_user_id: c.ml_user_id, nome: c.store_name || c.nickname || c.ml_user_id }, de, ate, vendas, conhecidas).catch((e) => {
         erros.push(`${c.store_name || c.nickname || "Mercado Livre"}: ${e instanceof Error ? e.message : String(e)}`);
         return [] as Devolucao[];
       })
     ),
     ...(lojasShopee ?? []).map((l) =>
-      devolucoesShopee(user.id, { shop_id: String(l.shop_id), nome: String(l.store_name || l.shop_name || l.shop_id) }, de, ate, vendas).catch((e) => {
+      devolucoesShopee(user.id, { shop_id: String(l.shop_id), nome: String(l.store_name || l.shop_name || l.shop_id) }, de, ate, vendas, conhecidas).catch((e) => {
         erros.push(`${l.store_name || l.shop_name || "Shopee"}: ${e instanceof Error ? e.message : String(e)}`);
         return [] as Devolucao[];
       })
@@ -350,13 +411,12 @@ export async function GET(req: Request) {
   ]);
   const itens = partes.flat().sort((a, b) => (a.data < b.data ? 1 : -1));
 
-  // Total de pedidos do período, para a taxa de reclamação
-  const { count } = await admin
-    .from("sales")
-    .select("id", { count: "exact", head: true })
-    .eq("store_id", user.id)
-    .gte("sold_at", `${de}T00:00:00-03:00`)
-    .lte("sold_at", `${ate}T23:59:59.999-03:00`);
-
-  return NextResponse.json({ de, ate, itens, erros, totalPedidos: count ?? 0 });
+  // Salva tudo (novos e atualizados)
+  const agora = new Date().toISOString();
+  if (salvar && itens.length) {
+    const linhas = itens.map((d) => ({ store_id: storeId, mp: d.mp, id: d.id, conta: d.conta, pedido: d.pedido, data: d.data || null, aberta: d.aberta, dados: d, atualizado_em: agora }));
+    for (let i = 0; i < linhas.length; i += 200) await admin.from("devolucoes").upsert(linhas.slice(i, i + 200), { onConflict: "store_id,mp,id" });
+  }
+  const novas = itens.filter((d) => !conhecidas.has(`${d.mp}:${d.id}`)).length;
+  return NextResponse.json({ de, ate, itens, erros, totalPedidos: await totalDePedidos(storeId, de, ate), ultima: salvar ? agora : null, salvo: salvar, novas });
 }

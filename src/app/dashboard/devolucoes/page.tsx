@@ -68,21 +68,49 @@ export default function DevolucoesPage() {
   const [filtroMp, setFiltroMp] = useState<"todos" | "mercado_livre" | "shopee">("todos");
   const [filtroRes, setFiltroRes] = useState<"todos" | Devolucao["resultado"]>("todos");
   const [busca, setBusca] = useState("");
+  const [sincronizando, setSincronizando] = useState(false);
+  const [ultima, setUltima] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
 
+  type Resp = { itens: Devolucao[]; erros: string[]; totalPedidos: number; ultima?: string | null; salvo?: boolean; novas?: number };
+  const aplicar = (r: Resp) => {
+    setItens(r.itens);
+    setErros(r.erros);
+    setTotalPedidos(r.totalPedidos);
+    if (r.ultima) setUltima(r.ultima);
+  };
+
+  // Busca nos marketplaces só o que é novo ou ainda está aberto, e salva
+  const sincronizar = useCallback(async () => {
+    setSincronizando(true);
+    setAviso(null);
+    try {
+      const r = await apiFetch<Resp>("/api/devolucoes", { method: "POST", body: JSON.stringify({ de, ate }) });
+      aplicar(r);
+      setAviso(r.novas ? `${r.novas} ${r.novas === 1 ? "caso novo ou atualizado" : "casos novos ou atualizados"}.` : "Nenhuma novidade.");
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSincronizando(false);
+    }
+  }, [de, ate]);
+
+  // Abre na hora com o que já está salvo; depois busca novidades em segundo plano
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro(null);
+    let salvo = false;
     try {
-      const r = await apiFetch<{ itens: Devolucao[]; erros: string[]; totalPedidos: number }>(`/api/devolucoes?de=${de}&ate=${ate}`);
-      setItens(r.itens);
-      setErros(r.erros);
-      setTotalPedidos(r.totalPedidos);
+      const r = await apiFetch<Resp>(`/api/devolucoes?de=${de}&ate=${ate}`);
+      aplicar(r);
+      salvo = !!r.salvo;
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e));
     } finally {
       setCarregando(false);
     }
-  }, [de, ate]);
+    if (salvo) sincronizar();
+  }, [de, ate, sincronizar]);
 
   useEffect(() => {
     carregar();
@@ -167,7 +195,19 @@ export default function DevolucoesPage() {
           <h1 className="text-2xl font-bold">Devoluções e reclamações</h1>
           <p className="text-sm text-slate-600">Todos os pedidos com reclamação ou devolução no Mercado Livre e na Shopee, e quanto cada um custou para você.</p>
         </div>
-        <button className="btn-ghost" onClick={carregar} disabled={carregando}>{carregando ? "Buscando…" : "Atualizar"}</button>
+        <div className="flex items-center gap-3">
+          <p className="text-right text-[12px] text-slate-500">
+            {sincronizando ? (
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 animate-pulse rounded-full bg-brand" />Buscando novidades…</span>
+            ) : (
+              <>
+                {ultima && <>Atualizado em {new Date(ultima).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</>}
+                {aviso && <span className="block">{aviso}</span>}
+              </>
+            )}
+          </p>
+          <button className="btn-ghost" onClick={sincronizar} disabled={carregando || sincronizando}>Buscar novidades</button>
+        </div>
       </div>
 
       <div className="card flex flex-wrap items-end gap-3">
