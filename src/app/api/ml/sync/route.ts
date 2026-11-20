@@ -31,7 +31,7 @@ type Order = {
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-  { const semAcesso = exigirAba(user, ["pedidos", "anuncios", "inicio"]); if (semAcesso) return semAcesso; }
+  { const semAcesso = exigirAba(user, ["pedidos", "anuncios", "inicio", "integracoes"]); if (semAcesso) return semAcesso; }
 
   try {
     const storeId = user.id;

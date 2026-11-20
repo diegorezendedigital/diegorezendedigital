@@ -3,10 +3,13 @@ import { apenasMaster, supabaseAdmin, userFromRequest } from "@/lib/server/supab
 import { TODAS_AS_ABAS } from "@/lib/abas";
 
 // Só aceita abas conhecidas; lista vazia ou com todas = acesso total (null)
+// "integracoes" é uma permissão extra; quando marcada, a lista é gravada completa (nunca null)
 function limparAbas(x: unknown): string[] | null {
   if (!Array.isArray(x)) return null;
-  const v = x.map(String).filter((a) => (TODAS_AS_ABAS as string[]).includes(a));
-  return v.length === 0 || v.length === TODAS_AS_ABAS.length ? null : v;
+  const lista = x.map(String);
+  const v = lista.filter((a) => (TODAS_AS_ABAS as string[]).includes(a));
+  if (!lista.includes("integracoes")) return v.length === 0 || v.length === TODAS_AS_ABAS.length ? null : v;
+  return [...(v.length ? v : TODAS_AS_ABAS), "integracoes"];
 }
 
 export const dynamic = "force-dynamic";

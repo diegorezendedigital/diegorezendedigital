@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apenasMaster, userFromRequest } from "@/lib/server/supabase-admin";
+import { masterOuIntegracoes, userFromRequest } from "@/lib/server/supabase-admin";
 import { signState } from "@/lib/server/ml";
 import { urlAutorizacao } from "@/lib/server/tiktok";
 
@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   try {
     const user = await userFromRequest(req);
     if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-    const bloqueio = apenasMaster(user);
+    const bloqueio = masterOuIntegracoes(user);
     if (bloqueio) return bloqueio;
     return NextResponse.json({ url: urlAutorizacao(signState(user.id)) });
   } catch (e) {

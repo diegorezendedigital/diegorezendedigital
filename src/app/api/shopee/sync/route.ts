@@ -51,7 +51,7 @@ const chaveAnuncio = (i: ItemPedido) => (n(i.model_id) > 0 ? `${i.item_id}:${i.m
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-  { const semAcesso = exigirAba(user, ["pedidos", "anuncios", "inicio"]); if (semAcesso) return semAcesso; }
+  { const semAcesso = exigirAba(user, ["pedidos", "anuncios", "inicio", "integracoes"]); if (semAcesso) return semAcesso; }
   try {
     const storeId = user.id;
     const body = await req.json().catch(() => ({}));

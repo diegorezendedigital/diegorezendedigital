@@ -18,6 +18,13 @@ export const ABAS: { id: AbaId; label: string; grupo: string; exato?: string[]; 
 
 export const TODAS_AS_ABAS: AbaId[] = ABAS.map((a) => a.id);
 
+// Permissão extra (fora das abas): conectar e gerenciar contas em Integrações.
+// Só vale quando marcada explicitamente; "todas as abas" não inclui integrações.
+export const PERM_INTEGRACOES = "integracoes";
+export function podeIntegrar(convidado: boolean, permissoes: string[] | null | undefined): boolean {
+  return !convidado || !!permissoes?.includes(PERM_INTEGRACOES);
+}
+
 // Qual aba um endereço representa (null = página sem controle por aba)
 export function abaDoCaminho(caminho: string): AbaId | null {
   for (const a of ABAS) if (a.exato?.includes(caminho)) return a.id;

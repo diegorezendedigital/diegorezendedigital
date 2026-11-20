@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { apiFetch, supabase } from "@/lib/supabase/client";
 import { lojaAtual } from "@/lib/loja";
-import { abaDoCaminho, pode, primeiraAba } from "@/lib/abas";
+import { abaDoCaminho, pode, podeIntegrar, primeiraAba } from "@/lib/abas";
 
 type Item = { label: string; href: string };
 type Menu = { label: string; href?: string; base?: string; filhos?: Item[] };
@@ -131,8 +131,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <p className="p-8 text-sm text-slate-500">Carregando…</p>
     );
 
-  // Convidado não vê Integrações nem Configurações (conectar contas, CNPJ, senha master e usuários são do master)
-  const SO_MASTER = ["/dashboard/integracoes", "/dashboard/configuracoes"];
+  // Convidado não vê Configurações (CNPJ, senha master e usuários são do master).
+  // Integrações só com a permissão "integracoes" liberada pelo master.
+  const SO_MASTER = ["/dashboard/configuracoes", ...(podeIntegrar(convidado, permissoes) ? [] : ["/dashboard/integracoes"])];
   // Colaborador: só as abas que o master liberou
   const liberado = (href: string) => !convidado || pode(permissoes, abaDoCaminho(href));
   const base: Menu[] = convidado
@@ -158,7 +159,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="flex min-h-screen items-center justify-center p-6 text-center">
         <div className="card max-w-md">
           <p className="font-semibold">Área do usuário master</p>
-          <p className="mt-1 text-sm text-slate-600">Integrações, CNPJs, senha master e usuários da loja são gerenciados pelo dono da conta.</p>
+          <p className="mt-1 text-sm text-slate-600">Esta área é gerenciada pelo dono da conta. Peça a ele para liberar se precisar.</p>
           <Link href="/dashboard" className="btn mt-4">Voltar ao início</Link>
         </div>
       </div>

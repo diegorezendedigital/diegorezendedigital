@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/supabase/client";
-import { ABAS, TODAS_AS_ABAS } from "@/lib/abas";
+import { ABAS, PERM_INTEGRACOES, TODAS_AS_ABAS } from "@/lib/abas";
 
 type Membro = { id: string; email: string; nome: string | null; created_at: string; ultimo_login: string | null; permissoes?: string[] | null };
 type Resp = { papel: "master" | "convidado"; loja: { id: string; nome: string }; membros: Membro[]; precisaSQL?: boolean; precisaSQLPermissoes?: boolean };
@@ -13,14 +13,14 @@ function EscolherAbas({ valor, onChange }: { valor: string[]; onChange: (v: stri
   const alternar = (ids: string[], on: boolean) => {
     const n = new Set(valor);
     ids.forEach((i) => (on ? n.add(i) : n.delete(i)));
-    onChange(TODAS_AS_ABAS.filter((a) => n.has(a)));
+    onChange([...TODAS_AS_ABAS, PERM_INTEGRACOES].filter((a) => n.has(a)));
   };
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 text-xs">
-        <button type="button" className="font-medium text-brand hover:underline" onClick={() => onChange([...TODAS_AS_ABAS])}>Marcar todas</button>
-        <button type="button" className="text-slate-500 hover:underline" onClick={() => onChange([])}>Desmarcar todas</button>
-        <span className="text-slate-400">{valor.length} de {TODAS_AS_ABAS.length} abas</span>
+        <button type="button" className="font-medium text-brand hover:underline" onClick={() => onChange([...TODAS_AS_ABAS, ...(valor.includes(PERM_INTEGRACOES) ? [PERM_INTEGRACOES] : [])])}>Marcar todas</button>
+        <button type="button" className="text-slate-500 hover:underline" onClick={() => onChange(valor.includes(PERM_INTEGRACOES) ? [PERM_INTEGRACOES] : [])}>Desmarcar todas</button>
+        <span className="text-slate-400">{valor.filter((a) => a !== PERM_INTEGRACOES).length} de {TODAS_AS_ABAS.length} abas</span>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {grupos.map((g) => {
@@ -42,7 +42,13 @@ function EscolherAbas({ valor, onChange }: { valor: string[]; onChange: (v: stri
           );
         })}
       </div>
-      <p className="text-xs text-slate-500">Integrações e Configurações (contas, CNPJs, senha master e usuários) ficam sempre só com você.</p>
+      <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-slate-700">
+        <input type="checkbox" className="mt-0.5" checked={valor.includes(PERM_INTEGRACOES)} onChange={(e) => alternar([PERM_INTEGRACOES], e.target.checked)} />
+        <span>
+          <b>Integrações</b>: pode conectar, renomear e desconectar contas do Mercado Livre, Shopee e TikTok Shop.
+        </span>
+      </label>
+      <p className="text-xs text-slate-500">Configurações (CNPJs, senha master e usuários) ficam sempre só com você.</p>
     </div>
   );
 }
@@ -90,7 +96,7 @@ export default function UsuariosPage() {
 
   async function salvarAbas() {
     if (!editando) return;
-    if (!editando.abas.length) return setMsg({ ok: false, t: "Libere pelo menos uma aba." });
+    if (!editando.abas.some((a) => a !== PERM_INTEGRACOES)) return setMsg({ ok: false, t: "Libere pelo menos uma aba." });
     try {
       await apiFetch("/api/equipe", { method: "PATCH", body: JSON.stringify({ id: editando.id, permissoes: editando.abas }) });
       setMsg({ ok: true, t: "Acessos atualizados. Valem no próximo carregamento de página do colaborador." });
@@ -101,8 +107,11 @@ export default function UsuariosPage() {
     }
   }
 
-  const resumoAbas = (p?: string[] | null) =>
-    !p || p.length === TODAS_AS_ABAS.length ? "Todas as abas" : p.map((id) => ABAS.find((a) => a.id === id)?.label ?? id).join(", ");
+  const resumoAbas = (p?: string[] | null) => {
+    const abas = (p ?? []).filter((id) => id !== PERM_INTEGRACOES);
+    const txt = !p || abas.length === TODAS_AS_ABAS.length ? "Todas as abas" : abas.map((id) => ABAS.find((a) => a.id === id)?.label ?? id).join(", ");
+    return p?.includes(PERM_INTEGRACOES) ? `${txt} + Integrações` : txt;
+  };
 
   async function reenviar(m: Membro) {
     try {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apenasMaster, userFromRequest } from "@/lib/server/supabase-admin";
+import { masterOuIntegracoes, userFromRequest } from "@/lib/server/supabase-admin";
 import { authUrl, signState } from "@/lib/server/ml";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   try {
     const user = await userFromRequest(req);
     if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-    { const bloqueio = apenasMaster(user); if (bloqueio) return bloqueio; }
+    { const bloqueio = masterOuIntegracoes(user); if (bloqueio) return bloqueio; }
     return NextResponse.json({ url: authUrl(signState(user.id)) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erro" }, { status: 500 });

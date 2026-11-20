@@ -38,6 +38,12 @@ export function apenasMaster(u: UsuarioLoja): Response | null {
 }
 
 // Bloqueia o colaborador que não tem nenhuma das abas indicadas liberada.
+// Master ou colaborador com a permissão "integracoes"
+export function masterOuIntegracoes(u: UsuarioLoja): Response | null {
+  if (u.papel === "master" || u.permissoes?.includes("integracoes")) return null;
+  return Response.json({ error: "Você não tem acesso às integrações. Peça ao usuário master para liberar." }, { status: 403 });
+}
+
 export function exigirAba(u: UsuarioLoja, abas: string[]): Response | null {
   if (u.papel === "master" || !u.permissoes) return null;
   return abas.some((a) => u.permissoes!.includes(a)) ? null : Response.json({ error: "Você não tem acesso a esta área. Peça ao usuário master para liberar." }, { status: 403 });

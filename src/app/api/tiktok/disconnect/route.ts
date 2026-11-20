@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apenasMaster, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { masterOuIntegracoes, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-  const bloqueio = apenasMaster(user);
+  const bloqueio = masterOuIntegracoes(user);
   if (bloqueio) return bloqueio;
   const b = await req.json().catch(() => ({}));
   const { error } = await supabaseAdmin().from("tiktok_connections").delete().eq("store_id", user.id).eq("shop_id", String(b.shop_id));

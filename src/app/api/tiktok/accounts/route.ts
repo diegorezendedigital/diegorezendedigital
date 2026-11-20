@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apenasMaster, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
+import { masterOuIntegracoes, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,7 @@ export async function GET(req: Request) {
 export async function PATCH(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-  const bloqueio = apenasMaster(user);
+  const bloqueio = masterOuIntegracoes(user);
   if (bloqueio) return bloqueio;
   const b = await req.json().catch(() => ({}));
   const upd: Record<string, unknown> = {};
