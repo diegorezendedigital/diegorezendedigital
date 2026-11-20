@@ -28,7 +28,25 @@ type Devolucao = {
   produtoVoltou: boolean | null;
   custo: number;
   link?: string;
+  etapa?: Etapa;
+  rastreio?: string | null;
+  atualizado?: string | null;
 };
+
+type Etapa = "aguardando_postagem" | "a_caminho" | "recebido" | "em_analise" | "reembolsado" | "a_favor" | "cancelada";
+const ETAPAS: { id: Etapa; t: string; cor: string }[] = [
+  { id: "aguardando_postagem", t: "Aguardando postagem", cor: "#d97706" },
+  { id: "a_caminho", t: "A caminho", cor: "#2a78d6" },
+  { id: "recebido", t: "Recebido", cor: "#0d9488" },
+  { id: "em_analise", t: "Em análise", cor: "#7c3aed" },
+  { id: "reembolsado", t: "Reembolsado", cor: "#dc2626" },
+  { id: "a_favor", t: "A seu favor", cor: "#16a34a" },
+  { id: "cancelada", t: "Cancelada", cor: "#64748b" },
+];
+// Casos salvos antes das etapas existirem
+const etapaDe = (d: Devolucao): Etapa =>
+  d.etapa ??
+  (d.resultado === "comprador" ? "reembolsado" : d.resultado === "vendedor" ? "a_favor" : d.resultado === "cancelada" ? "cancelada" : d.produtoVoltou ? "recebido" : "em_analise");
 
 const DIA = 86_400_000;
 const hojeSP = () => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
@@ -49,6 +67,7 @@ const ATALHOS: { id: string; label: string; faixa: () => [string, string] }[] = 
   { id: "90d", label: "90 dias", faixa: () => [somaDias(hojeSP(), -89), hojeSP()] },
 ];
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const RESULTADO: Record<Devolucao["resultado"], { t: string; cls: string }> = {
   comprador: { t: "Reembolsado ao comprador", cls: "bg-red-50 text-red-700 ring-red-200" },
   vendedor: { t: "A seu favor", cls: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
@@ -66,7 +85,7 @@ export default function DevolucoesPage() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [filtroMp, setFiltroMp] = useState<"todos" | "mercado_livre" | "shopee">("todos");
-  const [filtroRes, setFiltroRes] = useState<"todos" | Devolucao["resultado"]>("todos");
+  const [filtroEtapa, setFiltroEtapa] = useState<"todos" | Etapa>("todos");
   const [busca, setBusca] = useState("");
   const [sincronizando, setSincronizando] = useState(false);
   const [ultima, setUltima] = useState<string | null>(null);
@@ -130,10 +149,23 @@ export default function DevolucoesPage() {
     return itens.filter(
       (d) =>
         (filtroMp === "todos" || d.mp === filtroMp) &&
-        (filtroRes === "todos" || d.resultado === filtroRes) &&
+        (filtroEtapa === "todos" || etapaDe(d) === filtroEtapa) &&
         (!q || `${d.pedido} ${d.produto} ${d.sku ?? ""} ${d.motivo} ${d.contaNome}`.toLowerCase().includes(q))
     );
-  }, [itens, filtroMp, filtroRes, busca]);
+  }, [itens, filtroMp, filtroEtapa, busca]);
+
+  // Contagem por etapa (respeita marketplace e busca, não a própria etapa)
+  const porEtapa = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    const m = new Map<string, number>();
+    itens
+      .filter((d) => (filtroMp === "todos" || d.mp === filtroMp) && (!q || `${d.pedido} ${d.produto} ${d.sku ?? ""} ${d.motivo} ${d.contaNome}`.toLowerCase().includes(q)))
+      .forEach((d) => {
+        m.set("todos", (m.get("todos") ?? 0) + 1);
+        m.set(etapaDe(d), (m.get(etapaDe(d)) ?? 0) + 1);
+      });
+    return m;
+  }, [itens, filtroMp, busca]);
 
   const tot = useMemo(
     () =>
@@ -234,20 +266,29 @@ export default function DevolucoesPage() {
             <option value="shopee">Shopee</option>
           </select>
         </div>
-        <div>
-          <label className="label">Resultado</label>
-          <select className="input" value={filtroRes} onChange={(e) => setFiltroRes(e.target.value as typeof filtroRes)}>
-            <option value="todos">Todos</option>
-            <option value="comprador">Reembolsado ao comprador</option>
-            <option value="vendedor">A seu favor</option>
-            <option value="andamento">Em andamento</option>
-            <option value="cancelada">Cancelada</option>
-          </select>
-        </div>
         <div className="min-w-[220px] flex-1">
           <label className="label">Buscar</label>
           <input className="input" placeholder="Pedido, produto, SKU ou motivo" value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-1 border-b border-slate-200">
+        {[{ id: "todos" as const, t: "Tudo", cor: "#5B3DF5" }, ...ETAPAS].map((e) => {
+          const ativo = filtroEtapa === e.id;
+          const qtd = porEtapa.get(e.id) ?? 0;
+          return (
+            <button
+              key={e.id}
+              onClick={() => setFiltroEtapa(e.id)}
+              className={`-mb-px flex items-center gap-1.5 border-b-2 px-3.5 py-2 text-sm transition-colors ${ativo ? "font-semibold text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800"}`}
+              style={ativo ? { borderColor: e.cor } : undefined}
+            >
+              {e.id !== "todos" && <span className="h-2 w-2 rounded-full" style={{ background: e.cor }} />}
+              {e.t}
+              <span className={`rounded-full px-1.5 text-[11px] tabular-nums ${ativo ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500"}`}>{qtd}</span>
+            </button>
+          );
+        })}
       </div>
 
       {erro && <div className="card text-sm text-red-700">{erro}</div>}
@@ -347,8 +388,18 @@ export default function DevolucoesPage() {
                   <p className="text-[11px] text-slate-500">{d.tipo}</p>
                 </td>
                 <td className="px-4 py-4">
-                  <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${RESULTADO[d.resultado].cls}`}>{RESULTADO[d.resultado].t}</span>
+                  {(() => {
+                    const e = ETAPAS.find((x) => x.id === etapaDe(d))!;
+                    return (
+                      <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1" style={{ color: e.cor, background: `${e.cor}12`, boxShadow: `inset 0 0 0 1px ${e.cor}40` }}>
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: e.cor }} />
+                        {e.t}
+                      </span>
+                    );
+                  })()}
                   <p className="mt-1 text-[11px] text-slate-500">{d.status}</p>
+                  {d.rastreio && <p className="font-mono text-[11px] text-slate-600">Rastreio {d.rastreio}</p>}
+                  {d.atualizado && <p className="text-[11px] text-slate-400">Atualizado {br(d.atualizado)}</p>}
                   {d.produtoVoltou === true && <p className="text-[11px] text-emerald-700">Produto voltou</p>}
                   {d.produtoVoltou === false && <p className="text-[11px] text-red-700">Produto não voltou</p>}
                 </td>

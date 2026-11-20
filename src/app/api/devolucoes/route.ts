@@ -33,7 +33,22 @@ export type Devolucao = {
   produtoVoltou: boolean | null;
   custo: number; // custo total estimado para o vendedor
   link?: string;
+  etapa: Etapa; // em que pé está (para as sub-abas)
+  rastreio?: string | null;
+  atualizado?: string | null; // última mudança no marketplace
 };
+
+export type Etapa = "aguardando_postagem" | "a_caminho" | "recebido" | "em_analise" | "reembolsado" | "a_favor" | "cancelada";
+
+function etapaDe(resultado: Devolucao["resultado"], logistica: "aguardando" | "transito" | "recebido" | null): Etapa {
+  if (resultado === "comprador") return "reembolsado";
+  if (resultado === "vendedor") return "a_favor";
+  if (resultado === "cancelada") return "cancelada";
+  if (logistica === "recebido") return "recebido";
+  if (logistica === "transito") return "a_caminho";
+  if (logistica === "aguardando") return "aguardando_postagem";
+  return "em_analise";
+}
 
 type Venda = { order_number: string; pack_id: string | null; title: string | null; sku: string | null; quantity: number | null; sale_price: number | null; shipping_cost: number | null; cost_price: number | null };
 
@@ -123,12 +138,16 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
     let freteVolta = 0;
     let produtoVoltou: boolean | null = null;
     let statusDev = "";
+    let rastreio: string | null = null;
+    let atualizadoDev: string | null = null;
     const temDevolucao = ((c.related_entities as string[]) ?? []).includes("return");
     if (temDevolucao) {
       try {
         const ret = await mlGetJson(token, `/post-purchase/v2/claims/${id}/returns`);
         statusDev = String(ret.status ?? "");
-        const envios = ((ret.shipments as { shipment_id?: number; status?: string }[]) ?? []).filter((s) => s.shipment_id);
+        const envios = ((ret.shipments as { shipment_id?: number; status?: string; tracking_number?: string }[]) ?? []).filter((s) => s.shipment_id);
+        rastreio = envios.find((s) => s.tracking_number)?.tracking_number ?? null;
+        atualizadoDev = String(ret.last_updated ?? "") || null;
         produtoVoltou = envios.some((s) => s.status === "delivered") || statusDev === "delivered" ? true : ["not_delivered", "expired", "failed"].includes(statusDev) ? false : null;
         for (const s of envios) {
           const custos = await mlGetJson(token, `/shipments/${s.shipment_id}/costs`, { "x-format-new": "true" }).catch(() => null);
@@ -173,6 +192,18 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
       produtoVoltou,
       custo: Math.round((freteIda + freteVolta + produtoPerdido) * 100) / 100,
       link: `https://www.mercadolivre.com.br/vendas/${pedido}/detalhe`,
+      etapa: etapaDe(
+        resultado,
+        produtoVoltou === true || statusDev === "delivered"
+          ? "recebido"
+          : statusDev === "shipped"
+          ? "transito"
+          : ["pending", "label_generated"].includes(statusDev)
+          ? "aguardando"
+          : null
+      ),
+      rastreio,
+      atualizado: atualizadoDev || String(c.last_updated ?? "") || null,
     };
   });
 }
@@ -197,6 +228,9 @@ type RetornoShopee = {
   refund_amount?: number;
   create_time?: number;
   needs_logistics?: boolean;
+  logistics_status?: string;
+  tracking_number?: string;
+  update_time?: number;
   item?: { name?: string; item_sku?: string; variation_sku?: string; amount?: number }[];
 };
 
@@ -264,6 +298,14 @@ async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: 
     const produtoPerdido = resultado === "comprador" && x.needs_logistics === false ? n(v?.cost_price) : 0;
     const freteIda = resultado === "comprador" ? freteIdaExtrato ?? n(v?.shipping_cost) : 0;
     const it = x.item?.[0];
+    const lg = String(x.logistics_status ?? "").toUpperCase();
+    const logistica: "aguardando" | "transito" | "recebido" | null = /DELIVERY_DONE|DELIVERED|RECEIVED/.test(lg)
+      ? "recebido"
+      : /PICKUP_DONE|IN_TRANSIT|SHIPPED|PICKUP_RETRY/.test(lg)
+      ? "transito"
+      : /PENDING|READY|REQUEST_CREATED|NOT_STARTED/.test(lg) || (st === "ACCEPTED" && x.needs_logistics !== false)
+      ? "aguardando"
+      : null;
     return {
       mp: "shopee",
       conta: loja.shop_id,
@@ -286,6 +328,9 @@ async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: 
       produtoPerdido,
       produtoVoltou,
       custo: Math.round((freteIda + freteVolta + produtoPerdido) * 100) / 100,
+      etapa: etapaDe(resultado, logistica),
+      rastreio: x.tracking_number || null,
+      atualizado: x.update_time ? new Date(x.update_time * 1000).toISOString() : null,
     };
   });
 }
@@ -358,7 +403,16 @@ async function sincronizar(storeId: string, de: string, ate: string, salvar: boo
   // Casos encerrados já salvos não são consultados de novo
   const conhecidas: Map<string, Devolucao> = new Map();
   if (salvar) {
-    const { data: ant } = await admin.from("devolucoes").select("mp, id, dados").eq("store_id", storeId).eq("aberta", false).gte("data", `${de}T00:00:00-03:00`).lte("data", `${ate}T23:59:59.999-03:00`);
+    // Encerrados também são revistos (o custo pode mudar), mas no máximo a cada 12 horas
+    const limite = new Date(Date.now() - 12 * 3600_000).toISOString();
+    const { data: ant } = await admin
+      .from("devolucoes")
+      .select("mp, id, dados")
+      .eq("store_id", storeId)
+      .eq("aberta", false)
+      .gte("atualizado_em", limite)
+      .gte("data", `${de}T00:00:00-03:00`)
+      .lte("data", `${ate}T23:59:59.999-03:00`);
     (ant ?? []).forEach((x) => conhecidas.set(`${x.mp}:${x.id}`, x.dados as Devolucao));
   }
   // Busca as vendas dos pedidos (por número do pedido ou do pacote)
@@ -414,7 +468,7 @@ async function sincronizar(storeId: string, de: string, ate: string, salvar: boo
   // Salva tudo (novos e atualizados)
   const agora = new Date().toISOString();
   if (salvar && itens.length) {
-    const linhas = itens.map((d) => ({ store_id: storeId, mp: d.mp, id: d.id, conta: d.conta, pedido: d.pedido, data: d.data || null, aberta: d.aberta, dados: d, atualizado_em: agora }));
+    const linhas = itens.filter((d) => !conhecidas.has(`${d.mp}:${d.id}`)).map((d) => ({ store_id: storeId, mp: d.mp, id: d.id, conta: d.conta, pedido: d.pedido, data: d.data || null, aberta: d.aberta, dados: d, atualizado_em: agora }));
     for (let i = 0; i < linhas.length; i += 200) await admin.from("devolucoes").upsert(linhas.slice(i, i + 200), { onConflict: "store_id,mp,id" });
   }
   const novas = itens.filter((d) => !conhecidas.has(`${d.mp}:${d.id}`)).length;
