@@ -10,7 +10,7 @@ export const ABAS: { id: AbaId; label: string; grupo: string; exato?: string[]; 
   { id: "promo_ml", label: "Promoções Mercado Livre", grupo: "Promoções", exato: ["/dashboard/promocoes"] },
   { id: "promo_shopee", label: "Promoções Shopee", grupo: "Promoções", prefixo: ["/dashboard/promocoes/shopee"] },
   { id: "promo_tiktok", label: "Promoções TikTok Shop", grupo: "Promoções", prefixo: ["/dashboard/promocoes/tiktok"] },
-  { id: "ads", label: "Publicidade (investimento em ads)", grupo: "Análises", prefixo: ["/dashboard/ads"] },
+  { id: "ads", label: "Publicidade (investimento em ads)", grupo: "Análises", prefixo: ["/dashboard/publicidade"] },
   { id: "calculadora", label: "Calculadora", grupo: "Análises", prefixo: ["/dashboard/calculadora"] },
   { id: "relatorios", label: "Relatórios", grupo: "Análises", prefixo: ["/dashboard/relatorios"] },
   { id: "dre", label: "DRE", grupo: "Análises", prefixo: ["/dashboard/dre"] },
