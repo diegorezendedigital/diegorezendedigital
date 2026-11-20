@@ -372,11 +372,13 @@ export default function PedidosPage() {
 
   async function salvarCusto(l: Linha) {
     setErro("");
-    const v = Number(custoManual.replace(/\./g, "").replace(",", "."));
-    if (!(v > 0)) {
-      setErro("Informe o custo total deste item (maior que zero).");
+    const unit = Number(custoManual.replace(/\./g, "").replace(",", "."));
+    if (!(unit > 0)) {
+      setErro("Informe o custo de 1 unidade (maior que zero).");
       return;
     }
+    // O campo pede o custo de UMA peça; a venda guarda o custo total (peça × quantidade)
+    const v = Math.round(unit * Math.max(1, l.qtd) * 100) / 100;
     setSalvando(true);
     try {
       const r = await apiFetch<{ produto?: string; sku?: string | null; editado?: boolean }>("/api/vendas/custo", { method: "POST", body: JSON.stringify({ sale_id: l.id, custo: v, senha }) });
@@ -916,9 +918,12 @@ export default function PedidosPage() {
                               </td>
                               <td className="px-4 py-5 text-right">
                                 {l.custo > 0 && (
-                                  <Tip titulo="Custo do produto" linhas={[...(l.itens.length > 1 ? l.itens.map((i) => [`${i.qtd}x ${i.sku || i.produto.slice(0, 24)}`, i.custo > 0 ? brl(i.custo) : "sem custo"] as [string, string]) : []), ["Custo total da venda", brl(l.custo)], ["% da venda", f(l.custo) ?? "—"]]} nota={l.manual ? "Algum custo foi informado manualmente com a senha master." : "Custo cadastrado no Armazém na data da venda × unidades. Mudar o custo depois não altera esta venda."}>
+                                  <Tip titulo="Custo do produto" linhas={[...(l.itens.length > 1 ? l.itens.map((i) => [`${i.qtd}x ${i.sku || i.produto.slice(0, 24)}`, i.custo > 0 ? `${i.qtd} × ${brl(i.custo / Math.max(1, i.qtd))} = ${brl(i.custo)}` : "sem custo"] as [string, string]) : []), ...(l.itens.length === 1 && l.itens[0].qtd > 1 ? [["Custo de 1 peça", brl(l.custo / l.itens[0].qtd)] as [string, string], ["× Quantidade", String(l.itens[0].qtd)] as [string, string]] : []), ["Custo total da venda", brl(l.custo)], ["% da venda", f(l.custo) ?? "—"]]} nota={l.manual ? "Algum custo foi informado manualmente com a senha master." : "Custo cadastrado no Armazém na data da venda × unidades. Mudar o custo depois não altera esta venda."}>
                                     {brl(l.custo)}
                                     <Pc v={f(l.custo)} />
+                                    {l.itens.length === 1 && l.itens[0].qtd > 1 && (
+                                      <div className="text-[11px] font-medium text-amber-700 tabular-nums">{l.itens[0].qtd} × {brl(l.custo / l.itens[0].qtd)}</div>
+                                    )}
                                     {l.manual && l.itens.length === 1 && <div className="text-[11px] text-slate-500">manual</div>}
                                   </Tip>
                                 )}
@@ -928,7 +933,13 @@ export default function PedidosPage() {
                                       {editId === i.id ? (
                                         <div className="ml-auto flex w-44 flex-col gap-1.5 text-left" onKeyDown={(e) => { if (e.key === "Enter") salvarCusto(i); if (e.key === "Escape") setEditId(null); }}>
                                           {l.itens.length > 1 && <div className="truncate font-mono text-[10px] text-slate-500" title={i.produto}>{i.qtd}x {i.sku || i.produto}</div>}
-                                          <input autoFocus className="input py-1 text-right text-[13px]" inputMode="decimal" placeholder={`Custo total (${i.qtd} un.)`} title={`Custo total deste item (custo unitário × ${i.qtd})`} value={custoManual} onChange={(e) => setCustoManual(e.target.value)} />
+                                          <input autoFocus className="input py-1 text-right text-[13px]" inputMode="decimal" placeholder="Custo de 1 peça" title={`Custo de 1 peça; o sistema multiplica por ${i.qtd}`} value={custoManual} onChange={(e) => setCustoManual(e.target.value)} />
+                                          <p className="text-right text-[11px] text-slate-500">
+                                            Custo de <b>1 peça</b>
+                                            {i.qtd > 1 && (Number(custoManual.replace(/\./g, "").replace(",", ".")) > 0
+                                              ? <> · {i.qtd} × {brl(Number(custoManual.replace(/\./g, "").replace(",", ".")))} = <b className="text-slate-800">{brl(Number(custoManual.replace(/\./g, "").replace(",", ".")) * i.qtd)}</b></>
+                                              : <> · será × {i.qtd}</>)}
+                                          </p>
                                           <input type="password" className="input py-1 text-[13px]" placeholder="Senha master" autoComplete="off" value={senha} onChange={(e) => setSenha(e.target.value)} />
                                           <div className="flex gap-1.5">
                                             <button className="btn flex-1 !px-2 !py-1 text-xs" onClick={() => salvarCusto(i)} disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
@@ -939,17 +950,21 @@ export default function PedidosPage() {
                                         <button
                                           className="flex w-full items-baseline justify-end gap-1.5 text-[11px] hover:text-indigo-700"
                                           title={`${i.produto} · clique para ${i.custo > 0 ? "editar" : "informar"} o custo (senha master)`}
-                                          onClick={() => { setEditId(i.id); setCustoManual(i.custo > 0 ? String(i.custo).replace(".", ",") : ""); setSenha(""); }}
+                                          onClick={() => { setEditId(i.id); setCustoManual(i.custo > 0 ? String(Math.round((i.custo / Math.max(1, i.qtd)) * 100) / 100).replace(".", ",") : ""); setSenha(""); }}
                                         >
-                                          <span className="max-w-[110px] truncate font-mono text-slate-400">{i.qtd}x {i.sku || i.produto}</span>
+                                          <span className="max-w-[90px] truncate font-mono text-slate-400">{i.sku || i.produto}</span>
                                           {i.custo > 0 ? (
-                                            <span className="tabular-nums text-slate-600">{brl(i.custo)}{i.manual ? "*" : ""}</span>
+                                            <span className="tabular-nums text-slate-600">
+                                              {i.qtd > 1 && <span className="text-amber-700">{i.qtd} × {brl(i.custo / i.qtd)} = </span>}
+                                              {brl(i.custo)}
+                                              {i.manual ? "*" : ""}
+                                            </span>
                                           ) : (
                                             <span className="text-amber-700 underline">informar</span>
                                           )}
                                         </button>
                                       ) : i.custo > 0 ? (
-                                        <button className="text-[11px] text-slate-400 underline hover:text-indigo-700" title="Editar o custo desta venda (senha master)" onClick={() => { setEditId(i.id); setCustoManual(String(i.custo).replace(".", ",")); setSenha(""); }}>
+                                        <button className="text-[11px] text-slate-400 underline hover:text-indigo-700" title="Editar o custo desta venda (senha master)" onClick={() => { setEditId(i.id); setCustoManual(String(Math.round((i.custo / Math.max(1, i.qtd)) * 100) / 100).replace(".", ",")); setSenha(""); }}>
                                           editar
                                         </button>
                                       ) : (
