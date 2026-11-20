@@ -5,6 +5,7 @@ import { apiFetch, supabase } from "@/lib/supabase/client";
 import { Company, ContaML, mensagemErro } from "@/lib/types";
 import PainelML from "@/components/PainelML";
 import PainelShopee from "@/components/PainelShopee";
+import PainelTikTok from "@/components/PainelTikTok";
 
 const MARKETPLACES = [
   "Mercado Livre", "Shopee", "Amazon", "Shein", "TikTok Shop", "Shopify", "Nuvemshop", "WooCommerce",
@@ -21,6 +22,7 @@ export default function IntegracoesPage() {
   const [erroML, setErroML] = useState("");
   const [avisoML, setAvisoML] = useState("");
   const [qtdShopee, setQtdShopee] = useState(0);
+  const [qtdTikTok, setQtdTikTok] = useState(0);
 
   const carregarContas = useCallback(async () => {
     try {
@@ -34,6 +36,11 @@ export default function IntegracoesPage() {
   useEffect(() => {
     // Volta do Mercado Livre depois de autorizar (ou negar) o acesso.
     const qs = new URLSearchParams(window.location.search);
+    if (qs.get("canal") === "tiktok") {
+      setSelecionado("TikTok Shop");
+      carregarContas();
+      return;
+    }
     if (qs.get("canal") === "shopee") {
       setSelecionado("Shopee"); // a volta da Shopee é tratada no painel dela
       carregarContas();
@@ -116,7 +123,7 @@ export default function IntegracoesPage() {
     return d.toLocaleString("pt-BR");
   };
 
-  const contagem = (nome: string) => (nome === "Mercado Livre" ? contas.length : nome === "Shopee" ? qtdShopee : 0);
+  const contagem = (nome: string) => (nome === "Mercado Livre" ? contas.length : nome === "Shopee" ? qtdShopee : nome === "TikTok Shop" ? qtdTikTok : 0);
 
   return (
     <div className="space-y-5">
@@ -144,8 +151,10 @@ export default function IntegracoesPage() {
         <div className="min-w-0 space-y-5">
           {selecionado === "Shopee" ? (
             <PainelShopee empresas={empresas} aoContar={setQtdShopee} />
+          ) : selecionado === "TikTok Shop" ? (
+            <PainelTikTok empresas={empresas} aoContar={setQtdTikTok} />
           ) : selecionado !== "Mercado Livre" ? (
-            <div className="card text-sm text-slate-600">A integração com {selecionado} ainda não está disponível. Por enquanto, só o Mercado Livre é sincronizado automaticamente.</div>
+            <div className="card text-sm text-slate-600">A integração com {selecionado} ainda não está disponível. Por enquanto, Mercado Livre, Shopee e TikTok Shop são sincronizados.</div>
           ) : (
             <>
               <section className="space-y-3">
