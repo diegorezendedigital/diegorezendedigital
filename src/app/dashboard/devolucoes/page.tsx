@@ -29,6 +29,7 @@ type Devolucao = {
   custo: number;
   link?: string;
   etapa?: Etapa;
+  semCusto?: string | null;
   rastreio?: string | null;
   atualizado?: string | null;
 };
@@ -410,7 +411,10 @@ export default function DevolucoesPage() {
                 <td className="px-4 py-4 text-right tabular-nums text-slate-700">{d.freteIda > 0 ? brl(d.freteIda) : "—"}</td>
                 <td className="px-4 py-4 text-right tabular-nums text-slate-700">{d.freteVolta > 0 ? brl(d.freteVolta) : "—"}</td>
                 <td className="px-4 py-4 text-right tabular-nums text-slate-700">{d.produtoPerdido > 0 ? brl(d.produtoPerdido) : "—"}</td>
-                <td className={`px-4 py-4 text-right font-semibold tabular-nums ${d.custo > 0 ? "text-red-700" : "text-slate-400"}`}>{d.custo > 0 ? `-${brl(d.custo)}` : brl(0)}</td>
+                <td className={`px-4 py-4 text-right font-semibold tabular-nums ${d.custo > 0 ? "text-red-700" : "text-slate-400"}`}>
+                  {d.custo > 0 ? `-${brl(d.custo)}` : brl(0)}
+                  {d.semCusto && <div className="mt-0.5 text-[11px] font-normal text-emerald-700">{d.semCusto}</div>}
+                </td>
               </tr>
             ))}
             {visiveis.length > 1 && (
@@ -428,8 +432,8 @@ export default function DevolucoesPage() {
       </div>
 
       <p className="text-[11px] text-slate-500">
-        Custo estimado = frete de ida perdido (quando a venda foi reembolsada) + frete da devolução cobrado de você + custo do produto quando ele não volta (o
-        comprador ficou com ele ou o reembolso foi sem devolução). Quando o produto volta, ele não entra no custo. A comissão costuma ser devolvida pelo marketplace no
+        Custo estimado = frete de ida perdido (quando a venda foi reembolsada) + frete da devolução cobrado de você + custo do produto quando há certeza de que ele não
+        volta. No Mercado Livre, arrependimento/desistência e casos com cobertura do Mercado Livre não custam nada para você. Quando o produto volta, ele não entra no custo. A comissão costuma ser devolvida pelo marketplace no
         reembolso, por isso não entra.
       </p>
     </div>

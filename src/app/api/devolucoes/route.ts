@@ -33,10 +33,18 @@ export type Devolucao = {
   produtoVoltou: boolean | null;
   custo: number; // custo total estimado para o vendedor
   link?: string;
+  semCusto?: string | null; // por que este caso não custa nada para o vendedor
+  versao?: number;
   etapa: Etapa; // em que pé está (para as sub-abas)
   rastreio?: string | null;
   atualizado?: string | null; // última mudança no marketplace
 };
+
+// Sobe quando a regra de custo muda: casos salvos com versão antiga são recalculados
+const VERSAO_REGRA = 2;
+
+// Arrependimento / desistência: no Mercado Livre o frete da devolução é pago pelo próprio ML
+const ARREPENDIMENTO = /n[aã]o quero mais|arrepend|desist|mudei de ideia|n[aã]o (me )?serviu|boas condi[cç][oõ]es|n[aã]o gostei|comprei por engano/i;
 
 export type Etapa = "aguardando_postagem" | "a_caminho" | "recebido" | "em_analise" | "reembolsado" | "a_favor" | "cancelada";
 
@@ -129,7 +137,7 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
       nomes.set(codigo, motivo);
     }
     const aberta = String(c.status) !== "closed";
-    const resolucao = (c.resolution ?? {}) as { reason?: string; benefited?: string[] };
+    const resolucao = (c.resolution ?? {}) as { reason?: string; benefited?: string[]; applied_coverage?: boolean };
     const ganhouComprador = (resolucao.benefited ?? []).includes("complainant");
     const ganhouVendedor = (resolucao.benefited ?? []).includes("respondent");
     const resultado: Devolucao["resultado"] = aberta ? "andamento" : ganhouComprador ? "comprador" : ganhouVendedor ? "vendedor" : "cancelada";
@@ -165,9 +173,17 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
 
     const venda = n(v?.sale_price);
     const reembolso = resultado === "comprador" ? venda : 0;
-    const freteIda = resultado === "comprador" ? n(v?.shipping_cost) : 0;
+    // Quando o vendedor NÃO paga nada:
+    // - arrependimento/desistência: o Mercado Livre paga a devolução e devolve o frete
+    // - cobertura do Mercado Livre (applied_coverage / coverage_decision): o ML assume o reembolso
+    const arrependimento = ARREPENDIMENTO.test(motivo);
+    const cobertura = resolucao.applied_coverage === true || resolucao.reason === "coverage_decision";
+    const semCusto = cobertura ? "Coberto pelo Mercado Livre" : arrependimento ? "Arrependimento: o Mercado Livre paga a devolução" : null;
+    if (semCusto) freteVolta = 0;
+    const freteIda = resultado === "comprador" && !semCusto ? n(v?.shipping_cost) : 0;
     // Produto perdido: comprador ganhou e o produto não voltou
-    const produtoPerdido = resultado === "comprador" && produtoVoltou !== true && (produtoVoltou === false || !temDevolucao) ? n(v?.cost_price) : 0;
+    // Produto perdido só quando há certeza de que ele não volta (comprador ficou com ele / devolução não chegou)
+    const produtoPerdido = resultado === "comprador" && produtoVoltou === false && !cobertura ? n(v?.cost_price) : 0;
     const tipoTxt = String(c.stage) === "dispute" ? "Mediação" : temDevolucao ? "Devolução" : String(c.type) === "cancel_purchase" ? "Cancelamento" : "Reclamação";
     return {
       mp: "mercado_livre",
@@ -191,6 +207,8 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
       produtoPerdido,
       produtoVoltou,
       custo: Math.round((freteIda + freteVolta + produtoPerdido) * 100) / 100,
+      semCusto,
+      versao: VERSAO_REGRA,
       link: `https://www.mercadolivre.com.br/vendas/${pedido}/detalhe`,
       etapa: etapaDe(
         resultado,
@@ -328,6 +346,7 @@ async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: 
       produtoPerdido,
       produtoVoltou,
       custo: Math.round((freteIda + freteVolta + produtoPerdido) * 100) / 100,
+      versao: VERSAO_REGRA,
       etapa: etapaDe(resultado, logistica),
       rastreio: x.tracking_number || null,
       atualizado: x.update_time ? new Date(x.update_time * 1000).toISOString() : null,
@@ -413,7 +432,9 @@ async function sincronizar(storeId: string, de: string, ate: string, salvar: boo
       .gte("atualizado_em", limite)
       .gte("data", `${de}T00:00:00-03:00`)
       .lte("data", `${ate}T23:59:59.999-03:00`);
-    (ant ?? []).forEach((x) => conhecidas.set(`${x.mp}:${x.id}`, x.dados as Devolucao));
+    (ant ?? []).forEach((x) => {
+      if ((x.dados as Devolucao)?.versao === VERSAO_REGRA) conhecidas.set(`${x.mp}:${x.id}`, x.dados as Devolucao);
+    });
   }
   // Busca as vendas dos pedidos (por número do pedido ou do pacote)
   const vendas = async (pedidos: string[]) => {
