@@ -86,7 +86,7 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
   const faixa = `date_created:after:${de}T00:00:00.000-03:00,before:${ate}T23:59:59.999-03:00`;
   const claims: Record<string, unknown>[] = [];
   for (let off = 0; off < 300; off += 50) {
-    const j = await mlGetJson(token, `/post-purchase/v1/claims/search?range=${encodeURIComponent(faixa)}&sort=date_created:desc&limit=50&offset=${off}`);
+    const j = await mlGetJson(token, `/post-purchase/v1/claims/search?player_role=respondent&player_user_id=${conta.ml_user_id}&range=${encodeURIComponent(faixa)}&sort=date_created:desc&limit=50&offset=${off}`);
     const d = (j.data as Record<string, unknown>[]) ?? [];
     claims.push(...d);
     const total = n((j.paging as { total?: number })?.total);
