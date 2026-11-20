@@ -4,7 +4,7 @@ export const metadata = { title: "Política de Privacidade — Diego Rezende Dig
 
 export default function Privacidade() {
   return (
-    <PaginaLegal titulo="Política de Privacidade" atualizado="15 de novembro de 2026">
+    <PaginaLegal titulo="Política de Privacidade" atualizado="19 de novembro de 2026">
       <p>
         Esta política explica como o Diego Rezende Digital (&quot;nós&quot;) trata os dados dos vendedores que usam o sistema e das lojas que eles conectam, incluindo Mercado Livre, Shopee e TikTok Shop, em conformidade com a Lei Geral de Proteção de Dados (LGPD, Lei 13.709/2018).
       </p>
@@ -47,10 +47,19 @@ export default function Privacidade() {
         Nos termos da LGPD, você pode pedir confirmação do tratamento, acesso, correção, portabilidade, anonimização ou exclusão dos seus dados, e revogar consentimentos.
       </p>
 
-      <h2>7. Atualização desta política</h2>
+      <h2>7. Incidentes de segurança</h2>
+      <p>
+        O responsável pela segurança e pela privacidade dos dados é Diego Rezende (encarregado). Qualquer pessoa pode comunicar uma suspeita de incidente
+        ou vulnerabilidade pelo e-mail contato@diegorezendedigital.com.br, com o assunto &quot;Incidente de segurança&quot;. Ao identificar um incidente, nós o
+        investigamos imediatamente, revogamos e trocamos credenciais e tokens afetados, e avisamos os vendedores afetados e o marketplace envolvido
+        (Mercado Livre, Shopee ou TikTok Shop) sem demora indevida e em até 72 horas após a confirmação. Quando a lei exigir, comunicamos também a
+        Autoridade Nacional de Proteção de Dados (ANPD). Cada incidente é registrado com causa, impacto e ações corretivas.
+      </p>
+
+      <h2>8. Atualização desta política</h2>
       <p>Revisamos esta política pelo menos uma vez por ano e sempre que o serviço mudar de forma relevante. A data da última atualização aparece no topo da página.</p>
 
-      <h2>8. Contato</h2>
+      <h2>9. Contato</h2>
       <p>Para dúvidas ou pedidos sobre seus dados: contato@diegorezendedigital.com.br.</p>
     </PaginaLegal>
   );
