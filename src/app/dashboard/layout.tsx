@@ -49,6 +49,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const [carregando, setCarregando] = useState(true);
+  const [falhou, setFalhou] = useState(false);
   const [nomeLoja, setNomeLoja] = useState("");
   const [ehAdmin, setEhAdmin] = useState(false);
   const [convidado, setConvidado] = useState(false);
@@ -59,26 +60,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     let ativo = true;
 
+    // Nenhuma etapa pode deixar a tela presa em "Carregando…"
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const comLimite = (p: PromiseLike<any>, ms = 12000): Promise<any> =>
+      Promise.race([Promise.resolve(p), new Promise<never>((_, rej) => setTimeout(() => rej(new Error("tempo esgotado")), ms))]);
+
     async function verificarSessao() {
-      const { data } = await supabase.auth.getSession();
+      const { data } = await comLimite(supabase.auth.getSession());
       const user = data.session?.user;
       if (!user) {
         router.push("/login");
         return;
       }
 
-      const lojaId = (await lojaAtual()) ?? user.id;
+      const lojaId = (await comLimite(lojaAtual()).catch(() => undefined)) ?? user.id;
       const convidado = lojaId !== user.id;
-      const lojaResp = await supabase.from("stores").select("name").eq("id", lojaId).maybeSingle();
+      const lojaResp = await comLimite(supabase.from("stores").select("name").eq("id", lojaId).maybeSingle()).catch(() => ({ data: null as { name: string } | null }));
       let nome: string = lojaResp.data?.name ?? "";
-      if (!lojaResp.data && !convidado) {
+      if (!lojaResp.data && !convidado && "error" in lojaResp && !lojaResp.error) {
         // Conta antiga sem loja: cria agora (a regra do banco permite só a própria loja).
         nome = (user.user_metadata?.full_name as string | undefined) || "Minha Loja";
         await supabase.from("stores").insert({ id: user.id, name: nome });
       }
-      const adminResp = await supabase.from("admins").select("user_id").eq("user_id", user.id).maybeSingle();
+      const adminResp = await comLimite(supabase.from("admins").select("user_id").eq("user_id", user.id).maybeSingle()).catch(() => ({ data: null }));
       let perms: string[] | null = null;
-      if (convidado) perms = await apiFetch<{ permissoes?: string[] | null }>("/api/equipe").then((r) => r.permissoes ?? null).catch(() => null);
+      if (convidado) perms = await comLimite(apiFetch<{ permissoes?: string[] | null }>("/api/equipe")).then((r) => r.permissoes ?? null).catch(() => null);
 
       if (ativo) {
         setNomeLoja(nome);
@@ -89,7 +95,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
     }
 
-    verificarSessao();
+    verificarSessao().catch(() => {
+      if (ativo) setFalhou(true);
+    });
     return () => {
       ativo = false;
     };
@@ -112,7 +120,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.push("/login");
   }
 
-  if (carregando) return <p className="p-8 text-sm text-slate-500">Carregando…</p>;
+  if (carregando)
+    return falhou ? (
+      <div className="p-8 text-sm text-slate-600">
+        <p>Não consegui confirmar o seu login agora.</p>
+        <button className="btn mt-3" onClick={() => window.location.reload()}>Tentar de novo</button>
+        <p className="mt-3 text-[12px] text-slate-500">Se continuar, feche as outras abas do sistema e entre de novo.</p>
+      </div>
+    ) : (
+      <p className="p-8 text-sm text-slate-500">Carregando…</p>
+    );
 
   // Convidado não vê Integrações nem Configurações (conectar contas, CNPJ, senha master e usuários são do master)
   const SO_MASTER = ["/dashboard/integracoes", "/dashboard/configuracoes"];
