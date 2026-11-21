@@ -37,11 +37,12 @@ export type Devolucao = {
   versao?: number;
   etapa: Etapa; // em que pé está (para as sub-abas)
   rastreio?: string | null;
+  logisticaBruta?: string | null; // status de logística como veio do marketplace (para conferência)
   atualizado?: string | null; // última mudança no marketplace
 };
 
 // Sobe quando a regra de custo muda: casos salvos com versão antiga são recalculados
-const VERSAO_REGRA = 3;
+const VERSAO_REGRA = 4;
 
 // Arrependimento / desistência: no Mercado Livre o frete da devolução é pago pelo próprio ML
 const ARREPENDIMENTO = /n[aã]o quero mais|arrepend|desist|mudei de ideia|n[aã]o (me )?serviu|boas condi[cç][oõ]es|n[aã]o gostei|comprei por engano/i;
@@ -331,14 +332,32 @@ async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: 
     }
     const freteIda = resultado === "comprador" ? freteIdaExtrato ?? n(v?.shipping_cost) : 0;
     const it = x.item?.[0];
-    const lg = String(x.logistics_status ?? "").toUpperCase();
-    const logistica: "aguardando" | "transito" | "recebido" | null = /DELIVERY_DONE|DELIVERED|RECEIVED/.test(lg)
+    let lg = String(x.logistics_status ?? "").toUpperCase();
+    let logistica: "aguardando" | "transito" | "recebido" | null = /DELIVERY_DONE|DELIVERED|RECEIVED/.test(lg)
       ? "recebido"
-      : /PICKUP_DONE|IN_TRANSIT|SHIPPED|PICKUP_RETRY/.test(lg)
+      : /PICKUP_DONE|IN_TRANSIT|SHIPPED|LOST/.test(lg)
       ? "transito"
-      : /PENDING|READY|REQUEST_CREATED|NOT_STARTED/.test(lg) || (st === "ACCEPTED" && !soReembolso)
+      : /PENDING|READY|REQUEST_CREATED|NOT_START|PICKUP_RETRY|PICKUP_FAILED/.test(lg)
       ? "aguardando"
       : null;
+    // Devolução aberta com rastreio: confere o rastreio reverso, porque o status da lista costuma ficar parado
+    if (aberta && !soReembolso && x.tracking_number && logistica !== "recebido") {
+      try {
+        const t = await shopeeGet<{ response?: { reverse_logistics_status?: string; tracking_info?: { description?: string; update_time?: number }[]; reverse_logistic_update_time?: number } }>(
+          token, loja.shop_id, "/api/v2/returns/get_reverse_tracking_info", { return_sn: String(x.return_sn ?? "") },
+        );
+        const rs = String(t.response?.reverse_logistics_status ?? "").toUpperCase();
+        const eventos = t.response?.tracking_info ?? [];
+        const ult = eventos.map((e) => String(e.description ?? "")).join(" | ").toLowerCase();
+        if (rs) lg = rs;
+        if (/DELIVERY_DONE|DELIVERED|RECEIVED|SELLER_RECEIV/.test(rs) || /entregue ao vendedor|entregue ao remetente|devolvido ao vendedor|delivered/.test(ult)) logistica = "recebido";
+        else if (/PICKUP_DONE|IN_TRANSIT|SHIPPED|DROP|POSTED/.test(rs) || eventos.length > 0) logistica = "transito";
+        else if (rs) logistica = /PENDING|READY|NOT_START|CREATED/.test(rs) ? "aguardando" : logistica;
+      } catch {
+        /* sem rastreio reverso disponível */
+      }
+    }
+    if (!logistica && st === "ACCEPTED" && !soReembolso) logistica = x.tracking_number ? "transito" : "aguardando";
     return {
       mp: "shopee",
       conta: loja.shop_id,
@@ -364,6 +383,7 @@ async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: 
       versao: VERSAO_REGRA,
       etapa: etapaDe(resultado, logistica),
       rastreio: x.tracking_number || null,
+      logisticaBruta: lg || null,
       atualizado: x.update_time ? new Date(x.update_time * 1000).toISOString() : null,
     };
   });

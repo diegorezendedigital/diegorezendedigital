@@ -31,6 +31,7 @@ type Devolucao = {
   etapa?: Etapa;
   semCusto?: string | null;
   rastreio?: string | null;
+  logisticaBruta?: string | null;
   atualizado?: string | null;
 };
 
@@ -400,6 +401,7 @@ export default function DevolucoesPage() {
                   })()}
                   <p className="mt-1 text-[11px] text-slate-500">{d.status}</p>
                   {d.rastreio && <p className="font-mono text-[11px] text-slate-600">Rastreio {d.rastreio}</p>}
+                  {d.logisticaBruta && <p className="text-[10px] text-slate-400" title="Status de logística informado pelo marketplace">{d.logisticaBruta}</p>}
                   {d.atualizado && <p className="text-[11px] text-slate-400">Atualizado {br(d.atualizado)}</p>}
                   {d.produtoVoltou === true && <p className="text-[11px] text-emerald-700">Produto voltou</p>}
                   {d.produtoVoltou === false && <p className="text-[11px] text-red-700">Produto não voltou</p>}
