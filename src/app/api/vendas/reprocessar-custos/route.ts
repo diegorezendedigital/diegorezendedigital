@@ -12,7 +12,8 @@ type Custo = { product_id: string; cost_price: number; icms_credit: number; pis_
 // - Existe um custo vigente na data da venda → usa esse (mesmo que a venda já tivesse outro custo).
 // - Não existe, mas a venda está sem custo → usa o custo mais antigo cadastrado (melhor informação disponível).
 // - Não existe e a venda já tem custo → não mexe. Vendas com custo informado à mão nunca mudam.
-// body: { de: "AAAA-MM-DD", ate: "AAAA-MM-DD" }
+// body: { de: "AAAA-MM-DD", ate: "AAAA-MM-DD", modo?: "sem_custo_atual" }
+// modo "sem_custo_atual": só vendas SEM custo, usando o custo ATUAL do produto (o de hoje), não o da data da venda.
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
@@ -87,6 +88,18 @@ export async function POST(req: Request) {
         : undefined;
     };
 
+    // Custo de hoje: o cadastrado no produto; sem ele, o último do histórico
+    const custoAtual = (pid: string | null, v: (typeof vendas)[number]): Custo | undefined => {
+      if (!pid) return undefined;
+      const p = produtos.get(pid);
+      if (p && Number(p.cost_price) > 0)
+        return { product_id: pid, cost_price: Number(p.cost_price), icms_credit: Number(p.icms_credit) || 0, pis_credit: Number(p.pis_credit) || 0, cofins_credit: Number(p.cofins_credit) || 0, valid_from: v.sold_at };
+      const lista = historico.get(pid) ?? [];
+      return lista[lista.length - 1];
+    };
+    const soSemCusto = b.modo === "sem_custo_atual";
+    const escolher = soSemCusto ? custoAtual : custoNaData;
+
     const r = { analisadas: vendas.length, reprocessadas: 0, mantidas: 0, manuais: 0, semCusto: 0 };
     const mudancas: { id: string; dados: Record<string, unknown> }[] = [];
 
@@ -95,14 +108,18 @@ export async function POST(req: Request) {
         r.manuais++;
         continue;
       }
+      if (soSemCusto && Number(v.cost_price) !== 0) {
+        r.mantidas++;
+        continue;
+      }
       const ligado = produtoLigado(v);
       let pid = ligado;
-      let escolhido = custoNaData(ligado, v);
+      let escolhido = escolher(ligado, v);
       let viaSku = false;
       if (!escolhido) {
         const outro = produtoSku(v);
         if (outro && outro !== ligado) {
-          escolhido = custoNaData(outro, v);
+          escolhido = escolher(outro, v);
           if (escolhido) { pid = outro; viaSku = true; }
         }
       }

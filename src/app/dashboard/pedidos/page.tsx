@@ -310,7 +310,7 @@ export default function PedidosPage() {
     }
   }
   const [reprocessando, setReprocessando] = useState(false);
-  const [modalLojas, setModalLojas] = useState<null | "pedidos" | "custos">(null);
+  const [modalLojas, setModalLojas] = useState<null | "pedidos" | "custos" | "sem_custo">(null);
   const [reprocessandoCustos, setReprocessandoCustos] = useState(false);
   const [progresso, setProgresso] = useState("");
   const [fracaoProg, setFracaoProg] = useState<number | null>(null);
@@ -347,15 +347,25 @@ export default function PedidosPage() {
     }
   }
 
-  async function reprocessarCustos(lojaIds: string[]) {
+  async function reprocessarCustos(lojaIds: string[], semCusto = false) {
     setErro("");
     setAviso("");
     setReprocessandoCustos(true);
     try {
       const r = await apiFetch<{ analisadas: number; reprocessadas: number; mantidas: number; manuais: number; semCusto: number; parcial: boolean }>("/api/vendas/reprocessar-custos", {
         method: "POST",
-        body: JSON.stringify({ de, ate, lojas: lojaIds }),
+        body: JSON.stringify({ de, ate, lojas: lojaIds, ...(semCusto ? { modo: "sem_custo_atual" } : {}) }),
       });
+      if (semCusto) {
+        setAviso(
+          `Vendas sem custo no período: ${r.reprocessadas} receberam o custo atual do produto. ` +
+            (r.semCusto > 0 ? `${r.semCusto} continuam sem custo (produto não ligado ou sem custo no armazém). ` : "") +
+            `${r.mantidas} já tinham custo e não mudaram.` +
+            (r.parcial ? " A rodada foi parcial; clique de novo para continuar." : "")
+        );
+        await carregar();
+        return;
+      }
       setAviso(
         `Custos reprocessados no período: ${r.reprocessadas} de ${r.analisadas} vendas atualizadas com o custo da data da venda. ` +
           `${r.mantidas} já estavam corretas ou não têm custo cadastrado na data, ${r.manuais} com custo manual (não mudam)` +
@@ -647,6 +657,9 @@ export default function PedidosPage() {
             {rodandoAuto ? <span className="text-brand">· atualizando…</span> : ultimaAuto ? <span>· última às {ultimaAuto.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span> : null}
           </label>
           <div className="flex flex-wrap items-end justify-end gap-2">
+            <button className="btn-ghost" onClick={() => setModalLojas("sem_custo")} disabled={reprocessando || reprocessandoCustos} title="Só nas vendas do período que estão sem custo: aplica o custo atual de cada produto no armazém">
+              Reprocessar sem custo
+            </button>
             <button className="btn-ghost" onClick={() => setModalLojas("custos")} disabled={reprocessando || reprocessandoCustos} title="Recalcula o custo das vendas do período com o custo cadastrado na data de cada venda">
               {reprocessandoCustos ? "Reprocessando custos…" : "Reprocessar custos"}
             </button>
@@ -671,14 +684,14 @@ export default function PedidosPage() {
       </div>
       {modalLojas && (
         <ModalLojas
-          titulo={modalLojas === "pedidos" ? "Reprocessar pedidos" : "Reprocessar custos"}
+          titulo={modalLojas === "pedidos" ? "Reprocessar pedidos" : modalLojas === "sem_custo" ? "Reprocessar pedidos sem custo (custo atual)" : "Reprocessar custos"}
           lojas={lojas}
           onClose={() => setModalLojas(null)}
           onConfirmar={(ids) => {
             const qual = modalLojas;
             setModalLojas(null);
             if (qual === "pedidos") reprocessar(ids);
-            else reprocessarCustos(ids);
+            else reprocessarCustos(ids, qual === "sem_custo");
           }}
         />
       )}
