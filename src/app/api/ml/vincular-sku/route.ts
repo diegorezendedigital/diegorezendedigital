@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { skuDoItem } from "@/lib/server/sku-ml";
 import { getAccessToken, itensDoML } from "@/lib/server/ml";
+import { chaveSku, chaveSkuFraca } from "@/lib/sku";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -9,7 +10,7 @@ export const maxDuration = 60;
 type Anuncio = { id: string; external_id: string; sku: string | null; product_id: string | null; ml_user_id: string | null };
 
 // Liga automaticamente cada anúncio SEM produto ao produto do armazém que tem exatamente o mesmo SKU.
-// 1) anúncios sem SKU gravado têm o SKU buscado no Mercado Livre; 2) o SKU é comparado, igual e sem espaços nas pontas.
+// 1) anúncios sem SKU gravado têm o SKU buscado no Mercado Livre; 2) o SKU é comparado sem diferenciar maiúsculas, acentos nem espaço/hífen.
 // Anúncios já ligados a um produto não são alterados.
 export async function POST(req: Request) {
   const user = await userFromRequest(req);
@@ -85,12 +86,16 @@ export async function POST(req: Request) {
 
     // 2) Produtos do armazém por SKU (exato)
     const produtos = new Map<string, string[]>();
+    const fracos = new Map<string, Set<string>>();
     for (let i = 0; i < 20000; i += 1000) {
       const { data, error } = await admin.from("products").select("id, sku").eq("store_id", storeId).range(i, i + 999);
       if (error) throw new Error(error.message);
       (data ?? []).forEach((p) => {
-        const s = String(p.sku ?? "").trim();
-        if (s) produtos.set(s, [...(produtos.get(s) ?? []), p.id as string]);
+        const k = chaveSku(String(p.sku ?? ""));
+        if (!k) return;
+        produtos.set(k, [...(produtos.get(k) ?? []), p.id as string]);
+        const w = chaveSkuFraca(String(p.sku ?? ""));
+        if (w) fracos.set(w, (fracos.get(w) ?? new Set<string>()).add(p.id as string));
       });
       if ((data ?? []).length < 1000) break;
     }
@@ -108,7 +113,8 @@ export async function POST(req: Request) {
         r.semSku++;
         continue;
       }
-      const ids = produtos.get(s);
+      const fraco = fracos.get(chaveSkuFraca(s));
+      const ids = produtos.get(chaveSku(s)) ?? (fraco && fraco.size === 1 ? Array.from(fraco) : undefined);
       if (!ids) {
         r.semProduto++;
         faltando.add(s);

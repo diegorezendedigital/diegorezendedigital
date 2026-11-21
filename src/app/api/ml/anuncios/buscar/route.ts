@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { skuDoItem } from "@/lib/server/sku-ml";
 import { getAccessToken, itensDoML, listConnections, mlGet } from "@/lib/server/ml";
+import { IndiceSku } from "@/lib/sku";
+import { indiceSkuArmazem } from "@/lib/server/sku-armazem";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -135,12 +137,8 @@ export async function POST(req: Request) {
       if (atualizar.length) await admin.from("listings").upsert(atualizar, { onConflict: "store_id,external_id" });
       const novos = lista.filter((a) => !ja.has(a.item.id));
       if (novos.length) {
-        const skus = novos.map((a) => skuDoItem(a.item)).filter(Boolean);
-        const porSku = new Map<string, string>();
-        if (skus.length) {
-          const { data: prods } = await admin.from("products").select("id, sku").eq("store_id", user.id).in("sku", skus);
-          (prods ?? []).forEach((p) => porSku.set(p.sku as string, p.id as string));
-        }
+        // Liga ao produto de mesmo SKU (sem diferenciar maiúsculas, acentos nem espaço/hífen)
+        const porSku = novos.some((a) => skuDoItem(a.item)) ? await indiceSkuArmazem(admin, user.id) : new IndiceSku<string>();
         const { error } = await admin.from("listings").upsert(
           novos.map((a) => ({ ...campos(a), product_id: porSku.get(skuDoItem(a.item)) ?? null, company_id: a.company_id ?? padrao?.id ?? null })),
           { onConflict: "store_id,external_id", ignoreDuplicates: true }

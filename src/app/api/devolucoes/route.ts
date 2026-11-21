@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { getAccessToken, listConnections } from "@/lib/server/ml";
 import { shopeeGet, tokenShopee } from "@/lib/server/shopee";
+import { IndiceSku } from "@/lib/sku";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -521,13 +522,12 @@ async function sincronizar(storeId: string, de: string, ate: string, salvar: boo
   };
 
   // Custo do armazém por SKU (carregado uma vez, só se precisar)
-  let custos: Promise<Map<string, number>> | null = null;
-  const normSku = (x: string) => x.trim().toUpperCase();
+  let custos: Promise<IndiceSku<number>> | null = null;
   const carregarCustos = async () => {
-    const m = new Map<string, number>();
+    const m = new IndiceSku<number>();
     for (let i = 0; ; i += 1000) {
       const { data } = await admin.from("products").select("sku, cost_price").eq("store_id", user.id).range(i, i + 999);
-      for (const p of (data ?? []) as { sku: string | null; cost_price: number | null }[]) if (p.sku && n(p.cost_price) > 0) m.set(normSku(p.sku), n(p.cost_price));
+      for (const p of (data ?? []) as { sku: string | null; cost_price: number | null }[]) if (p.sku && n(p.cost_price) > 0) m.add(p.sku, n(p.cost_price), 1);
       if (!data || data.length < 1000) break;
     }
     return m;
@@ -535,7 +535,7 @@ async function sincronizar(storeId: string, de: string, ate: string, salvar: boo
   const custoSku = async (sku: string | null | undefined) => {
     if (!sku) return 0;
     custos ??= carregarCustos();
-    return (await custos).get(normSku(sku)) ?? 0;
+    return (await custos).get(sku) ?? 0;
   };
 
   const contasML = await listConnections(user.id).catch(() => []);

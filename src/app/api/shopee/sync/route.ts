@@ -4,6 +4,7 @@ import { shopeeGet, tokenShopee } from "@/lib/server/shopee";
 import { calcularLucro } from "@/lib/pricing";
 import { CANAIS, faixaDoPreco } from "@/lib/taxas-publicas";
 import type { Company, Product } from "@/lib/types";
+import { IndiceSku } from "@/lib/sku";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -131,24 +132,20 @@ export async function POST(req: Request) {
     const { data: existentes } = await admin.from("listings").select("id, external_id, product_id, company_id, units").eq("store_id", storeId).in("external_id", chaves);
     (existentes ?? []).forEach((l) => anuncios.set(l.external_id as string, { id: l.id, product_id: l.product_id, company_id: l.company_id, units: Number(l.units) || 1 }));
 
-    // Produtos do armazém por SKU (sem diferenciar maiúsculas/minúsculas nem espaços)
-    const normSku = (x: string) => x.trim().toLowerCase();
-    const porSku = new Map<string, string>();
-    {
-      const skusPedido = Array.from(new Set(Array.from(itens.values()).map((i) => normSku(skuDe(i))).filter(Boolean)));
-      if (skusPedido.length) {
-        for (let de = 0; ; de += 1000) {
-          const { data: prods } = await admin.from("products").select("id, sku").eq("store_id", storeId).not("sku", "is", null).range(de, de + 999);
-          (prods ?? []).forEach((p) => { const k = normSku(String(p.sku ?? "")); if (k && skusPedido.includes(k) && !porSku.has(k)) porSku.set(k, p.id as string); });
-          if (!prods || prods.length < 1000) break;
-        }
+    // Produtos do armazém por SKU (sem diferenciar maiúsculas, acentos nem espaço/hífen: "Água" = "Agua")
+    const porSku = new IndiceSku<string>();
+    if (Array.from(itens.values()).some((i) => skuDe(i))) {
+      for (let de = 0; ; de += 1000) {
+        const { data: prods } = await admin.from("products").select("id, sku, cost_price").eq("store_id", storeId).not("sku", "is", null).order("id").range(de, de + 999);
+        (prods ?? []).forEach((p) => porSku.add(String(p.sku ?? ""), p.id as string, Number(p.cost_price) > 0 ? 1 : 0));
+        if (!prods || prods.length < 1000) break;
       }
     }
 
     // Anúncios que já existiam sem produto ligado: liga pelo SKU do pedido (assim a venda pega o custo do armazém)
     for (const [c, an] of Array.from(anuncios.entries())) {
       if (an.product_id) continue;
-      const pid = porSku.get(normSku(skuDe(itens.get(c)!)));
+      const pid = porSku.get(skuDe(itens.get(c)!));
       if (!pid) continue;
       const { error } = await admin.from("listings").update({ product_id: pid }).eq("id", an.id).is("product_id", null);
       if (!error) an.product_id = pid;
@@ -156,7 +153,7 @@ export async function POST(req: Request) {
 
     // Produto do armazém com o mesmo SKU de cada item (reserva quando o anúncio está ligado a um produto sem custo ou que não existe mais)
     const prodPorChave = new Map<string, string>();
-    chaves.forEach((c) => { const pid = porSku.get(normSku(skuDe(itens.get(c)!))); if (pid) prodPorChave.set(c, pid); });
+    chaves.forEach((c) => { const pid = porSku.get(skuDe(itens.get(c)!)); if (pid) prodPorChave.set(c, pid); });
 
     let anunciosCriados = 0;
     const faltam = chaves.filter((c) => !anuncios.has(c));
@@ -172,7 +169,7 @@ export async function POST(req: Request) {
           title: i.model_name ? `${nome} - ${i.model_name}` : nome,
           price: n(i.model_discounted_price) || n(i.model_original_price),
           ...(skuDe(i) ? { sku: skuDe(i) } : {}),
-          product_id: porSku.get(normSku(skuDe(i))) ?? null,
+          product_id: porSku.get(skuDe(i)) ?? null,
           company_id: empresaDaLoja,
         };
       });

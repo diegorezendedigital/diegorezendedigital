@@ -316,7 +316,7 @@ export default function PedidosPage() {
   const [fracaoProg, setFracaoProg] = useState<number | null>(null);
   const [aviso, setAviso] = useState("");
   type DetSC = { pedido: string; produto: string; sku: string | null; qtd: number; custo?: number; motivo?: string };
-  const [resumoSC, setResumoSC] = useState<null | { analisadas: number; atualizadas: DetSC[]; continuam: DetSC[]; jaTinham: number; manuais: number; inicio: number; fim: number }>(null);
+  const [resumoSC, setResumoSC] = useState<null | { analisadas: number; atualizadas: DetSC[]; continuam: DetSC[]; jaTinham: number; manuais: number; ligados: number; falhas: number; erroGravar: string | null; inicio: number; fim: number }>(null);
   const [verSC, setVerSC] = useState<"atualizadas" | "continuam" | null>("continuam");
   const [editId, setEditId] = useState<string | null>(null);
   const [custoManual, setCustoManual] = useState("");
@@ -365,7 +365,7 @@ export default function PedidosPage() {
       const passo = Math.max(1, Math.ceil(dias / 25));
       const iso = (t: number) => new Date(t - 3 * 3600000).toISOString().slice(0, 10);
       const br = (x: string) => `${x.slice(8, 10)}/${x.slice(5, 7)}`;
-      const acc = { analisadas: 0, atualizadas: [] as DetSC[], continuam: [] as DetSC[], jaTinham: 0, manuais: 0 };
+      const acc = { analisadas: 0, atualizadas: [] as DetSC[], continuam: [] as DetSC[], jaTinham: 0, manuais: 0, ligados: 0, falhas: 0, erroGravar: null as string | null };
       setFracaoProg(0);
       for (let d = 0; d < dias; d += passo) {
         const a = iso(t0 + d * DIA);
@@ -373,12 +373,15 @@ export default function PedidosPage() {
         setProgresso(`Analisando ${a === b ? br(a) : `${br(a)} a ${br(b)}`} · ${acc.atualizadas.length} receberam custo · ${acc.continuam.length} continuam sem`);
         let parcial = true;
         for (let tentativa = 0; parcial && tentativa < 5; tentativa++) {
-          const r = await apiFetch<{ analisadas: number; reprocessadas: number; mantidas: number; manuais: number; parcial: boolean; atualizadas?: DetSC[]; continuam?: DetSC[] }>("/api/vendas/reprocessar-custos", {
+          const r = await apiFetch<{ analisadas: number; reprocessadas: number; mantidas: number; manuais: number; parcial: boolean; anunciosLigados?: number; falhas?: number; erroGravar?: string | null; atualizadas?: DetSC[]; continuam?: DetSC[] }>("/api/vendas/reprocessar-custos", {
             method: "POST",
             body: JSON.stringify({ de: a, ate: b, lojas: lojaIds, modo: "sem_custo_atual" }),
           });
           parcial = r.parcial;
           acc.atualizadas.push(...(r.atualizadas ?? []));
+          acc.ligados += r.anunciosLigados ?? 0;
+          acc.falhas += r.falhas ?? 0;
+          acc.erroGravar ??= r.erroGravar ?? null;
           if (!parcial) {
             acc.analisadas += r.analisadas;
             acc.jaTinham += r.mantidas;
@@ -405,7 +408,7 @@ export default function PedidosPage() {
     setAviso("");
     setReprocessandoCustos(true);
     try {
-      const r = await apiFetch<{ analisadas: number; reprocessadas: number; mantidas: number; manuais: number; semCusto: number; parcial: boolean }>("/api/vendas/reprocessar-custos", {
+      const r = await apiFetch<{ analisadas: number; reprocessadas: number; mantidas: number; manuais: number; semCusto: number; parcial: boolean; anunciosLigados?: number; falhas?: number; erroGravar?: string | null }>("/api/vendas/reprocessar-custos", {
         method: "POST",
         body: JSON.stringify({ de, ate, lojas: lojaIds, ...(semCusto ? { modo: "sem_custo_atual" } : {}) }),
       });
@@ -421,6 +424,8 @@ export default function PedidosPage() {
       }
       setAviso(
         `Custos reprocessados no período: ${r.reprocessadas} de ${r.analisadas} vendas atualizadas com o custo da data da venda. ` +
+          (r.anunciosLigados ? `${r.anunciosLigados} anúncio(s) sem produto foram ligados ao armazém pelo SKU. ` : "") +
+          (r.falhas ? `${r.falhas} venda(s) não puderam ser gravadas${r.erroGravar ? ` (${r.erroGravar})` : ""}. ` : "") +
           `${r.mantidas} já estavam corretas ou não têm custo cadastrado na data, ${r.manuais} com custo manual (não mudam)` +
           (r.semCusto > 0 ? `, ${r.semCusto} continuam sem custo (sem produto ligado ou sem custo cadastrado).` : ".") +
           (r.parcial ? " A rodada foi parcial; clique de novo para continuar." : "")
@@ -784,6 +789,8 @@ export default function PedidosPage() {
               <div className="rounded-xl bg-red-50 p-3"><p className="text-xs text-red-700">Continuam sem custo</p><p className="text-xl font-semibold tabular-nums text-red-800">{sc.continuam.length}</p><p className="text-[11px] text-red-700">{listaGrupos.length} {listaGrupos.length === 1 ? "produto" : "produtos"} para acertar</p></div>
               <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Não mexidas</p><p className="text-xl font-semibold tabular-nums">{sc.jaTinham + sc.manuais}</p><p className="text-[11px] text-slate-500">{sc.jaTinham} já tinham custo · {sc.manuais} custo manual</p></div>
             </div>
+            {sc.ligados > 0 && <p className="rounded-md bg-emerald-50 p-2 text-xs text-emerald-800">{sc.ligados} {sc.ligados === 1 ? "anúncio estava" : "anúncios estavam"} sem produto e {sc.ligados === 1 ? "foi ligado" : "foram ligados"} ao armazém pelo SKU. As próximas vendas deles já entram com custo.</p>}
+            {sc.falhas > 0 && <p className="rounded-md bg-red-50 p-2 text-xs text-red-700">{sc.falhas} {sc.falhas === 1 ? "venda não pôde ser gravada" : "vendas não puderam ser gravadas"}{sc.erroGravar ? `: ${sc.erroGravar}` : ""}. Me mande esta mensagem.</p>}
             <div>
               <div className="mb-1 flex justify-between text-xs text-slate-500"><span>Vendas sem custo resolvidas</span><span className="font-mono font-semibold text-slate-700">{pct}%</span></div>
               <div className="h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></div>

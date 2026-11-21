@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { shopeeGet, tokenShopee } from "@/lib/server/shopee";
 import { CANAIS, faixaDoPreco } from "@/lib/taxas-publicas";
+import { IndiceSku } from "@/lib/sku";
+import { indiceSkuArmazem } from "@/lib/server/sku-armazem";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -133,12 +135,8 @@ export async function POST(req: Request) {
       }
       const novos = linhas.filter((l) => !jaExiste.has(l.externalId));
       if (novos.length) {
-        const skus = novos.map((l) => l.sku).filter(Boolean);
-        const porSku = new Map<string, string>();
-        if (skus.length) {
-          const { data: prods } = await admin.from("products").select("id, sku").eq("store_id", storeId).in("sku", skus);
-          (prods ?? []).forEach((p) => porSku.set(p.sku as string, p.id as string));
-        }
+        // Liga ao produto de mesmo SKU (sem diferenciar maiúsculas, acentos nem espaço/hífen)
+        const porSku = novos.some((l) => l.sku) ? await indiceSkuArmazem(admin, storeId) : new IndiceSku<string>();
         const registros = novos.map((l) => ({ ...campos(l), product_id: porSku.get(l.sku) ?? null, company_id: empresaId }));
         const { error } = await admin.from("listings").upsert(registros, { onConflict: "store_id,external_id", ignoreDuplicates: true });
         if (error) throw new Error(error.message);

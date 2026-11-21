@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { conferirSenha } from "@/lib/server/senha";
+import { produtosDoSku } from "@/lib/server/sku-armazem";
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +42,9 @@ export async function POST(req: Request) {
       const { data } = await admin.from("products").select("id, sku, cost_price").eq("id", produtoId).eq("store_id", user.id).maybeSingle();
       produto = data;
     } else if (venda.sku) {
-      const { data } = await admin.from("products").select("id, sku, cost_price").eq("store_id", user.id).eq("sku", venda.sku).limit(2);
-      if (data && data.length === 1) produto = data[0];
+      // Só aceita quando existe um único produto com esse SKU (sem diferenciar maiúsculas, acentos nem espaço/hífen)
+      const candidatos = await produtosDoSku(admin, user.id, venda.sku);
+      if (candidatos.length === 1) produto = candidatos[0];
     }
     let produtoAtualizado: "sim" | "ja_tinha_custo" | "sem_produto" = "sem_produto";
     if (produto) {

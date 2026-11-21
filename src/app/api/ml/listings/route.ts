@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { exigirAba, supabaseAdmin, userFromRequest } from "@/lib/server/supabase-admin";
 import { skuDoItem } from "@/lib/server/sku-ml";
 import { getAccessToken, getConnection, itensDoML, mlGet, taxaDoAnuncio } from "@/lib/server/ml";
+import { IndiceSku } from "@/lib/sku";
+import { indiceSkuArmazem } from "@/lib/server/sku-armazem";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -123,12 +125,8 @@ export async function POST(req: Request) {
       // Cria os novos, já ligados ao produto de mesmo SKU e ao CNPJ padrão.
       const novos = itens.filter((i) => !jaExiste.has(i.id));
       if (novos.length) {
-        const skus = novos.map((i) => skuDoItem(i)).filter(Boolean);
-        const porSku = new Map<string, string>();
-        if (skus.length) {
-          const { data: prods } = await admin.from("products").select("id, sku").eq("store_id", storeId).in("sku", skus);
-          (prods ?? []).forEach((p) => porSku.set(p.sku as string, p.id as string));
-        }
+        // Liga ao produto de mesmo SKU (sem diferenciar maiúsculas, acentos nem espaço/hífen)
+        const porSku = novos.some((i) => skuDoItem(i)) ? await indiceSkuArmazem(admin, storeId) : new IndiceSku<string>();
         const registros = novos.map((it) => ({
           ...campos(it),
           product_id: porSku.get(skuDoItem(it)) ?? null,
