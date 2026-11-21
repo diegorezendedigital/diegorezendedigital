@@ -28,11 +28,11 @@ export async function POST(req: Request) {
     const admin = supabaseAdmin();
     const storeId = user.id;
 
-    const vendas: { id: string; product_id: string | null; listing_id: string | null; sku: string | null; quantity: number; sale_price: number; fees_total: number; shipping_cost: number; cost_price: number; cost_manual: boolean; sold_at: string }[] = [];
+    const vendas: { id: string; order_number: string | null; title: string | null; product_id: string | null; listing_id: string | null; sku: string | null; quantity: number; sale_price: number; fees_total: number; shipping_cost: number; cost_price: number; cost_manual: boolean; sold_at: string }[] = [];
     for (let i = 0; i < 20000; i += 1000) {
       let q = admin
         .from("sales")
-        .select("id, product_id, listing_id, sku, quantity, sale_price, fees_total, shipping_cost, cost_price, cost_manual, sold_at")
+        .select("id, order_number, title, product_id, listing_id, sku, quantity, sale_price, fees_total, shipping_cost, cost_price, cost_manual, sold_at")
         .eq("store_id", storeId)
         .gte("sold_at", de.toISOString())
         .lte("sold_at", ate.toISOString());
@@ -102,6 +102,11 @@ export async function POST(req: Request) {
 
     const r = { analisadas: vendas.length, reprocessadas: 0, mantidas: 0, manuais: 0, semCusto: 0 };
     const mudancas: { id: string; dados: Record<string, unknown> }[] = [];
+    // Detalhe por venda (só no modo "sem custo"), para a tela mostrar o que mudou e o que ficou sem custo
+    type Det = { pedido: string; produto: string; sku: string | null; qtd: number; custo?: number; motivo?: string };
+    const atualizadas: Det[] = [];
+    const continuam: Det[] = [];
+    const det = (v: (typeof vendas)[number]): Det => ({ pedido: v.order_number ?? "", produto: v.title ?? "—", sku: v.sku, qtd: Number(v.quantity) || 1 });
 
     for (const v of vendas) {
       if (v.cost_manual) {
@@ -124,6 +129,8 @@ export async function POST(req: Request) {
         }
       }
       if (!escolhido || !pid) {
+        if (soSemCusto && Number(v.cost_price) === 0)
+          continuam.push({ ...det(v), motivo: !ligado && !produtoSku(v) ? "Produto não ligado (SKU não encontrado no armazém)" : "Produto sem custo cadastrado no armazém" });
         if (Number(v.cost_price) === 0) r.semCusto++;
         else r.mantidas++;
         continue;
@@ -140,15 +147,16 @@ export async function POST(req: Request) {
         r.mantidas++;
         continue;
       }
+      if (soSemCusto) atualizadas.push({ ...det(v), custo });
       mudancas.push({ id: v.id, dados: { cost_price: custo, tax_amount: Math.round(imposto * 100) / 100, product_id: pid } });
     }
 
     for (let i = 0; i < mudancas.length; i += 25) {
-      if (Date.now() - inicioMs > 50000) return NextResponse.json({ ...r, parcial: true });
+      if (Date.now() - inicioMs > 50000) return NextResponse.json({ ...r, parcial: true, atualizadas: atualizadas.slice(0, r.reprocessadas), continuam });
       await Promise.all(mudancas.slice(i, i + 25).map((m) => admin.from("sales").update(m.dados).eq("id", m.id)));
       r.reprocessadas += Math.min(25, mudancas.length - i);
     }
-    return NextResponse.json({ ...r, parcial: false });
+    return NextResponse.json({ ...r, parcial: false, ...(soSemCusto ? { atualizadas, continuam } : {}) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erro ao reprocessar os custos" }, { status: 500 });
   }

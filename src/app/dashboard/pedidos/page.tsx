@@ -315,6 +315,9 @@ export default function PedidosPage() {
   const [progresso, setProgresso] = useState("");
   const [fracaoProg, setFracaoProg] = useState<number | null>(null);
   const [aviso, setAviso] = useState("");
+  type DetSC = { pedido: string; produto: string; sku: string | null; qtd: number; custo?: number; motivo?: string };
+  const [resumoSC, setResumoSC] = useState<null | { analisadas: number; atualizadas: DetSC[]; continuam: DetSC[]; jaTinham: number; manuais: number; inicio: number; fim: number }>(null);
+  const [verSC, setVerSC] = useState<"atualizadas" | "continuam" | null>("continuam");
   const [editId, setEditId] = useState<string | null>(null);
   const [custoManual, setCustoManual] = useState("");
   const [senha, setSenha] = useState("");
@@ -342,6 +345,56 @@ export default function PedidosPage() {
       setErro(mensagemErro(e));
     } finally {
       setReprocessando(false);
+      setProgresso("");
+      setFracaoProg(null);
+    }
+  }
+
+  // Sem custo: roda o período em partes para mostrar o progresso e junta o resultado de cada parte
+  async function reprocessarSemCusto(lojaIds: string[]) {
+    setErro("");
+    setAviso("");
+    setResumoSC(null);
+    setReprocessandoCustos(true);
+    const inicio = Date.now();
+    try {
+      const DIA = 86400000;
+      const t0 = new Date(`${de}T12:00:00-03:00`).getTime();
+      const t1 = new Date(`${ate}T12:00:00-03:00`).getTime();
+      const dias = Math.max(1, Math.round((t1 - t0) / DIA) + 1);
+      const passo = Math.max(1, Math.ceil(dias / 25));
+      const iso = (t: number) => new Date(t - 3 * 3600000).toISOString().slice(0, 10);
+      const br = (x: string) => `${x.slice(8, 10)}/${x.slice(5, 7)}`;
+      const acc = { analisadas: 0, atualizadas: [] as DetSC[], continuam: [] as DetSC[], jaTinham: 0, manuais: 0 };
+      setFracaoProg(0);
+      for (let d = 0; d < dias; d += passo) {
+        const a = iso(t0 + d * DIA);
+        const b = iso(t0 + Math.min(dias - 1, d + passo - 1) * DIA);
+        setProgresso(`Analisando ${a === b ? br(a) : `${br(a)} a ${br(b)}`} · ${acc.atualizadas.length} receberam custo · ${acc.continuam.length} continuam sem`);
+        let parcial = true;
+        for (let tentativa = 0; parcial && tentativa < 5; tentativa++) {
+          const r = await apiFetch<{ analisadas: number; reprocessadas: number; mantidas: number; manuais: number; parcial: boolean; atualizadas?: DetSC[]; continuam?: DetSC[] }>("/api/vendas/reprocessar-custos", {
+            method: "POST",
+            body: JSON.stringify({ de: a, ate: b, lojas: lojaIds, modo: "sem_custo_atual" }),
+          });
+          parcial = r.parcial;
+          acc.atualizadas.push(...(r.atualizadas ?? []));
+          if (!parcial) {
+            acc.analisadas += r.analisadas;
+            acc.jaTinham += r.mantidas;
+            acc.manuais += r.manuais;
+            acc.continuam.push(...(r.continuam ?? []));
+          }
+        }
+        setFracaoProg(Math.min(1, (d + passo) / dias));
+      }
+      setResumoSC({ ...acc, inicio, fim: Date.now() });
+      setVerSC(acc.continuam.length ? "continuam" : "atualizadas");
+      await carregar();
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setReprocessandoCustos(false);
       setProgresso("");
       setFracaoProg(null);
     }
@@ -658,7 +711,7 @@ export default function PedidosPage() {
           </label>
           <div className="flex flex-wrap items-end justify-end gap-2">
             <button className="btn-ghost" onClick={() => setModalLojas("sem_custo")} disabled={reprocessando || reprocessandoCustos} title="Só nas vendas do período que estão sem custo: aplica o custo atual de cada produto no armazém">
-              Reprocessar sem custo
+              {reprocessandoCustos && progresso.startsWith("Analisando") ? "Buscando custos…" : "Reprocessar sem custo"}
             </button>
             <button className="btn-ghost" onClick={() => setModalLojas("custos")} disabled={reprocessando || reprocessandoCustos} title="Recalcula o custo das vendas do período com o custo cadastrado na data de cada venda">
               {reprocessandoCustos ? "Reprocessando custos…" : "Reprocessar custos"}
@@ -691,13 +744,91 @@ export default function PedidosPage() {
             const qual = modalLojas;
             setModalLojas(null);
             if (qual === "pedidos") reprocessar(ids);
-            else reprocessarCustos(ids, qual === "sem_custo");
+            else if (qual === "sem_custo") reprocessarSemCusto(ids);
+            else reprocessarCustos(ids);
           }}
         />
       )}
 
       {erro && <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{erro}</p>}
       {aviso && <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">{aviso}</p>}
+      {resumoSC && (() => {
+        const sc = resumoSC;
+        const totalCusto = sc.atualizadas.reduce((t, x) => t + (x.custo ?? 0), 0);
+        const semAntes = sc.atualizadas.length + sc.continuam.length;
+        const pct = semAntes ? Math.round((sc.atualizadas.length / semAntes) * 100) : 100;
+        // Agrupa as que continuam sem custo por SKU, para saber o que cadastrar no armazém
+        const grupos = new Map<string, { produto: string; sku: string | null; motivo: string; pedidos: number; pecas: number }>();
+        sc.continuam.forEach((x) => {
+          const k = `${x.sku ?? ""}|${x.motivo ?? ""}|${x.sku ? "" : x.produto}`;
+          const g = grupos.get(k) ?? { produto: x.produto, sku: x.sku, motivo: x.motivo ?? "", pedidos: 0, pecas: 0 };
+          g.pedidos += 1;
+          g.pecas += x.qtd;
+          grupos.set(k, g);
+        });
+        const listaGrupos = Array.from(grupos.values()).sort((a, b) => b.pedidos - a.pedidos);
+        return (
+          <div className="card space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="font-semibold">Reprocessar sem custo · resultado</p>
+                <p className="text-xs text-slate-500">
+                  Período {de.split("-").reverse().join("/")} a {ate.split("-").reverse().join("/")} · {sc.analisadas} vendas analisadas · levou {Math.max(1, Math.round((sc.fim - sc.inicio) / 1000))}s
+                </p>
+              </div>
+              <button className="text-xs text-slate-500 hover:underline" onClick={() => setResumoSC(null)}>Fechar</button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Estavam sem custo</p><p className="text-xl font-semibold tabular-nums">{semAntes}</p></div>
+              <div className="rounded-xl bg-emerald-50 p-3"><p className="text-xs text-emerald-700">Receberam o custo atual</p><p className="text-xl font-semibold tabular-nums text-emerald-800">{sc.atualizadas.length}</p><p className="text-[11px] text-emerald-700">{brl(totalCusto)} de custo lançado</p></div>
+              <div className="rounded-xl bg-red-50 p-3"><p className="text-xs text-red-700">Continuam sem custo</p><p className="text-xl font-semibold tabular-nums text-red-800">{sc.continuam.length}</p><p className="text-[11px] text-red-700">{listaGrupos.length} {listaGrupos.length === 1 ? "produto" : "produtos"} para acertar</p></div>
+              <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Não mexidas</p><p className="text-xl font-semibold tabular-nums">{sc.jaTinham + sc.manuais}</p><p className="text-[11px] text-slate-500">{sc.jaTinham} já tinham custo · {sc.manuais} custo manual</p></div>
+            </div>
+            <div>
+              <div className="mb-1 flex justify-between text-xs text-slate-500"><span>Vendas sem custo resolvidas</span><span className="font-mono font-semibold text-slate-700">{pct}%</span></div>
+              <div className="h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></div>
+            </div>
+            <div className="flex gap-2 text-sm">
+              <button className={verSC === "continuam" ? "btn" : "btn-ghost"} onClick={() => setVerSC(verSC === "continuam" ? null : "continuam")}>Continuam sem custo ({sc.continuam.length})</button>
+              <button className={verSC === "atualizadas" ? "btn" : "btn-ghost"} onClick={() => setVerSC(verSC === "atualizadas" ? null : "atualizadas")}>Receberam custo ({sc.atualizadas.length})</button>
+            </div>
+            {verSC === "continuam" && (listaGrupos.length ? (
+              <div className="max-h-80 overflow-auto rounded-xl border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-3 py-2">Produto / SKU</th><th className="px-3 py-2">Por quê</th><th className="px-3 py-2 text-right">Pedidos</th><th className="px-3 py-2 text-right">Peças</th></tr></thead>
+                  <tbody>
+                    {listaGrupos.map((g, i) => (
+                      <tr key={i} className="border-t border-slate-100">
+                        <td className="px-3 py-2"><p className="line-clamp-1">{g.produto}</p><p className="font-mono text-[11px] text-slate-500">{g.sku ?? "sem SKU"}</p></td>
+                        <td className="px-3 py-2 text-xs text-red-700">{g.motivo}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{g.pedidos}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{g.pecas}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm text-emerald-700">Nenhuma venda ficou sem custo.</p>)}
+            {verSC === "atualizadas" && (sc.atualizadas.length ? (
+              <div className="max-h-80 overflow-auto rounded-xl border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-slate-50 text-left text-xs text-slate-500"><tr><th className="px-3 py-2">Pedido</th><th className="px-3 py-2">Produto / SKU</th><th className="px-3 py-2 text-right">Qtd</th><th className="px-3 py-2 text-right">Custo lançado</th></tr></thead>
+                  <tbody>
+                    {sc.atualizadas.map((x, i) => (
+                      <tr key={i} className="border-t border-slate-100">
+                        <td className="px-3 py-2 font-mono text-xs">{x.pedido}</td>
+                        <td className="px-3 py-2"><p className="line-clamp-1">{x.produto}</p><p className="font-mono text-[11px] text-slate-500">{x.sku ?? "sem SKU"}</p></td>
+                        <td className="px-3 py-2 text-right tabular-nums">{x.qtd}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{brl(x.custo ?? 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm text-slate-500">Nenhuma venda recebeu custo nesta rodada.</p>)}
+          </div>
+        );
+      })()}
 
       <div className="card flex flex-wrap items-end gap-4">
         <div>
