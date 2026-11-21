@@ -32,6 +32,8 @@ type Devolucao = {
   semCusto?: string | null;
   rastreio?: string | null;
   logisticaBruta?: string | null;
+  custoPrevisto?: number;
+  previstoObs?: string | null;
   atualizado?: string | null;
 };
 
@@ -174,6 +176,7 @@ export default function DevolucoesPage() {
       visiveis.reduce(
         (a, d) => ({
           custo: a.custo + d.custo,
+          previsto: a.previsto + (d.custoPrevisto ?? 0),
           freteIda: a.freteIda + d.freteIda,
           freteVolta: a.freteVolta + d.freteVolta,
           perdido: a.perdido + d.produtoPerdido,
@@ -182,7 +185,7 @@ export default function DevolucoesPage() {
           comprador: a.comprador + (d.resultado === "comprador" ? 1 : 0),
           vendedor: a.vendedor + (d.resultado === "vendedor" ? 1 : 0),
         }),
-        { custo: 0, freteIda: 0, freteVolta: 0, perdido: 0, reembolso: 0, abertas: 0, comprador: 0, vendedor: 0 }
+        { custo: 0, previsto: 0, freteIda: 0, freteVolta: 0, perdido: 0, reembolso: 0, abertas: 0, comprador: 0, vendedor: 0 }
       ),
     [visiveis]
   );
@@ -216,7 +219,7 @@ export default function DevolucoesPage() {
   const taxa = totalPedidos > 0 ? (itens.length / totalPedidos) * 100 : null;
   const kpis = [
     { t: "Reclamações e devoluções", v: String(visiveis.length), s: taxa != null ? `${taxa.toFixed(1).replace(".", ",")}% dos ${totalPedidos} pedidos do período` : "—", cor: "#6250d6" },
-    { t: "Custo estimado", v: brl(tot.custo), s: visiveis.length ? `média de ${brl(tot.custo / visiveis.length)} por caso` : "—", cor: "#dc2626" },
+    { t: "Custo estimado", v: brl(tot.custo), s: tot.previsto > 0 ? `+ ${brl(tot.previsto)} previsto nas abertas por erro seu` : visiveis.length ? `média de ${brl(tot.custo / visiveis.length)} por caso` : "—", cor: "#dc2626" },
     { t: "Frete de volta", v: brl(tot.freteVolta), s: `+ ${brl(tot.freteIda)} de frete de ida perdido`, cor: "#eb6834" },
     { t: "Produtos que não voltaram", v: brl(tot.perdido), s: "custo dos produtos que ficaram com o comprador", cor: "#d55181" },
     { t: "Resultado", v: `${tot.comprador} × ${tot.vendedor}`, s: `reembolsados × a seu favor · ${tot.abertas} em andamento`, cor: "#1baf7a" },
@@ -414,7 +417,8 @@ export default function DevolucoesPage() {
                 <td className="px-4 py-4 text-right tabular-nums text-slate-700">{d.freteVolta > 0 ? brl(d.freteVolta) : "—"}</td>
                 <td className="px-4 py-4 text-right tabular-nums text-slate-700">{d.produtoPerdido > 0 ? brl(d.produtoPerdido) : "—"}</td>
                 <td className={`px-4 py-4 text-right font-semibold tabular-nums ${d.custo > 0 ? "text-red-700" : "text-slate-400"}`}>
-                  {d.custo > 0 ? `-${brl(d.custo)}` : brl(0)}
+                  {d.custo > 0 ? `-${brl(d.custo)}` : (d.custoPrevisto ?? 0) > 0 ? <span className="text-amber-600">-{brl(d.custoPrevisto ?? 0)}</span> : brl(0)}
+                  {d.custo === 0 && (d.custoPrevisto ?? 0) > 0 && <div className="mt-0.5 max-w-[14rem] text-[11px] font-normal text-amber-700">{d.previstoObs ?? "previsto"}</div>}
                   {d.semCusto && <div className="mt-0.5 text-[11px] font-normal text-emerald-700">{d.semCusto}</div>}
                 </td>
               </tr>
@@ -426,7 +430,10 @@ export default function DevolucoesPage() {
                 <td className="px-4 py-4 text-right tabular-nums">{brl(tot.freteIda)}</td>
                 <td className="px-4 py-4 text-right tabular-nums">{brl(tot.freteVolta)}</td>
                 <td className="px-4 py-4 text-right tabular-nums">{brl(tot.perdido)}</td>
-                <td className="px-4 py-4 text-right tabular-nums text-red-700">-{brl(tot.custo)}</td>
+                <td className="px-4 py-4 text-right tabular-nums text-red-700">
+                  -{brl(tot.custo)}
+                  {tot.previsto > 0 && <div className="text-[11px] font-normal text-amber-700">+ {brl(tot.previsto)} previsto</div>}
+                </td>
               </tr>
             )}
           </tbody>
@@ -434,7 +441,7 @@ export default function DevolucoesPage() {
       </div>
 
       <p className="text-[11px] text-slate-500">
-        Custo estimado = frete de ida perdido (quando a venda foi reembolsada) + frete da devolução cobrado de você + custo do produto quando há certeza de que ele não
+        Em laranja = custo previsto de devoluções da Shopee ainda abertas por erro seu (produto errado, defeito, diferente do anúncio): frete de ida + frete de volta, estimado igual ao de ida até a Shopee lançar o valor real. Custo estimado = frete de ida perdido (quando a venda foi reembolsada) + frete da devolução cobrado de você + custo do produto quando há certeza de que ele não
         volta. No Mercado Livre, arrependimento/desistência e casos com cobertura do Mercado Livre não custam nada para você. Quando o produto volta, ele não entra no custo. A comissão costuma ser devolvida pelo marketplace no
         reembolso, por isso não entra.
       </p>

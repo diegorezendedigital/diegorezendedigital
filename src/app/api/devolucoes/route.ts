@@ -37,12 +37,14 @@ export type Devolucao = {
   versao?: number;
   etapa: Etapa; // em que pé está (para as sub-abas)
   rastreio?: string | null;
-  logisticaBruta?: string | null; // status de logística como veio do marketplace (para conferência)
+  logisticaBruta?: string | null;
+  custoPrevisto?: number; // devolução em andamento por erro do vendedor: quanto deve custar quando fechar
+  previstoObs?: string | null; // status de logística como veio do marketplace (para conferência)
   atualizado?: string | null; // última mudança no marketplace
 };
 
 // Sobe quando a regra de custo muda: casos salvos com versão antiga são recalculados
-const VERSAO_REGRA = 4;
+const VERSAO_REGRA = 5;
 
 // Arrependimento / desistência: no Mercado Livre o frete da devolução é pago pelo próprio ML
 const ARREPENDIMENTO = /n[aã]o quero mais|arrepend|desist|mudei de ideia|n[aã]o (me )?serviu|boas condi[cç][oõ]es|n[aã]o gostei|comprei por engano/i;
@@ -254,6 +256,10 @@ type RetornoShopee = {
   item?: { name?: string; item_sku?: string; variation_sku?: string; amount?: number }[];
 };
 
+// Motivos em que o erro é do vendedor: a Shopee cobra de você o frete de volta e você perde o frete de ida
+const CULPA_VENDEDOR_SHOPEE = new Set(["WRONG_ITEM", "ITEM_DAMAGED", "DIFFERENT_DESCRIPTION", "ITEM_WRONGDAMAGED", "ITEM_MISSING", "ITEM_FAKE", "PHYSICAL_DMG", "FUNCTIONAL_DMG"]);
+const DEFEITO_SHOPEE = new Set(["ITEM_DAMAGED", "ITEM_WRONGDAMAGED", "PHYSICAL_DMG", "FUNCTIONAL_DMG"]);
+
 const MOTIVO_SHOPEE: Record<string, string> = {
   NOT_RECEIPT: "Produto não chegou",
   WRONG_ITEM: "Produto errado",
@@ -358,7 +364,19 @@ async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: 
       }
     }
     if (!logistica && st === "ACCEPTED" && !soReembolso) logistica = x.tracking_number ? "transito" : "aguardando";
+    // Em andamento e erro do vendedor: custo previsto = frete de ida + frete de volta (do extrato ou estimado igual ao de ida)
+    let custoPrevisto = 0;
+    let previstoObs: string | null = null;
+    const motivoCod = String(x.reason ?? "");
+    if (aberta && !soReembolso && CULPA_VENDEDOR_SHOPEE.has(motivoCod)) {
+      const ida = freteIdaExtrato ?? n(v?.shipping_cost);
+      const volta = freteVolta > 0 ? freteVolta : ida;
+      custoPrevisto = Math.round((ida + volta) * 100) / 100;
+      previstoObs = `previsto: frete de ida ${ida ? "" : "(sem valor) "}+ frete de volta${freteVolta > 0 ? "" : " estimado"}${DEFEITO_SHOPEE.has(motivoCod) ? " · confira se a peça volta vendável" : ""}`;
+    }
     return {
+      custoPrevisto,
+      previstoObs,
       mp: "shopee",
       conta: loja.shop_id,
       contaNome: loja.nome,
