@@ -41,7 +41,7 @@ export type Devolucao = {
 };
 
 // Sobe quando a regra de custo muda: casos salvos com versão antiga são recalculados
-const VERSAO_REGRA = 2;
+const VERSAO_REGRA = 3;
 
 // Arrependimento / desistência: no Mercado Livre o frete da devolução é pago pelo próprio ML
 const ARREPENDIMENTO = /n[aã]o quero mais|arrepend|desist|mudei de ideia|n[aã]o (me )?serviu|boas condi[cç][oõ]es|n[aã]o gostei|comprei por engano/i;
@@ -246,6 +246,7 @@ type RetornoShopee = {
   refund_amount?: number;
   create_time?: number;
   needs_logistics?: boolean;
+  return_solution?: number; // 0 = devolução e reembolso, 1 = só reembolso
   logistics_status?: string;
   tracking_number?: string;
   update_time?: number;
@@ -268,7 +269,7 @@ const MOTIVO_SHOPEE: Record<string, string> = {
   FUNCTIONAL_DMG: "Defeito de funcionamento",
 };
 
-async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: string }, de: string, ate: string, vendas: (pedidos: string[]) => Promise<Map<string, Venda>>, conhecidas: Conhecidas): Promise<Devolucao[]> {
+async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: string }, de: string, ate: string, vendas: (pedidos: string[]) => Promise<Map<string, Venda>>, conhecidas: Conhecidas, custoSku: (sku: string | null | undefined) => Promise<number>): Promise<Devolucao[]> {
   const token = await tokenShopee(storeId, loja.shop_id);
   if (!token) throw new Error("Loja sem acesso. Autorize de novo em Integrações.");
   const lista: RetornoShopee[] = [];
@@ -311,9 +312,23 @@ async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: 
     const aberta = !["CLOSED", "CANCELLED", "REFUND_PAID"].includes(st);
     const resultado: Devolucao["resultado"] = st === "CANCELLED" ? "cancelada" : st === "REFUND_PAID" || (st === "CLOSED" && n(x.refund_amount) > 0) ? "comprador" : aberta ? "andamento" : "vendedor";
     const reembolso = resultado === "comprador" ? n(x.refund_amount) : 0;
-    // Sem logística reversa = reembolso sem devolução: o produto fica com o comprador
-    const produtoVoltou = x.needs_logistics === false ? false : null;
-    const produtoPerdido = resultado === "comprador" && x.needs_logistics === false ? n(v?.cost_price) : 0;
+    // Sem logística reversa (ou "só reembolso") = reembolso sem devolução: o produto fica com o comprador
+    const soReembolso = x.needs_logistics === false || x.return_solution === 1;
+    const produtoVoltou = soReembolso ? false : null;
+    let produtoPerdido = 0;
+    if (resultado === "comprador" && soReembolso) {
+      // 1º: custo do armazém pelo SKU de cada item reembolsado × quantidade
+      for (const i of x.item ?? []) produtoPerdido += (await custoSku(i.variation_sku || i.item_sku)) * (n(i.amount) || 1);
+      // 2º: custo gravado na venda, proporcional às peças reembolsadas
+      if (!produtoPerdido && n(v?.cost_price)) {
+        const qtdDev = (x.item ?? []).reduce((t, i) => t + (n(i.amount) || 1), 0);
+        const qtdPed = n(v?.quantity);
+        produtoPerdido = qtdDev && qtdPed && qtdDev < qtdPed ? (n(v?.cost_price) * qtdDev) / qtdPed : n(v?.cost_price);
+      }
+      // 3º: custo do armazém pelo SKU da venda
+      if (!produtoPerdido) produtoPerdido = (await custoSku(v?.sku)) * (n(v?.quantity) || 1);
+      produtoPerdido = Math.round(produtoPerdido * 100) / 100;
+    }
     const freteIda = resultado === "comprador" ? freteIdaExtrato ?? n(v?.shipping_cost) : 0;
     const it = x.item?.[0];
     const lg = String(x.logistics_status ?? "").toUpperCase();
@@ -321,7 +336,7 @@ async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: 
       ? "recebido"
       : /PICKUP_DONE|IN_TRANSIT|SHIPPED|PICKUP_RETRY/.test(lg)
       ? "transito"
-      : /PENDING|READY|REQUEST_CREATED|NOT_STARTED/.test(lg) || (st === "ACCEPTED" && x.needs_logistics !== false)
+      : /PENDING|READY|REQUEST_CREATED|NOT_STARTED/.test(lg) || (st === "ACCEPTED" && !soReembolso)
       ? "aguardando"
       : null;
     return {
@@ -331,7 +346,7 @@ async function devolucoesShopee(storeId: string, loja: { shop_id: string; nome: 
       id: String(x.return_sn ?? ""),
       pedido,
       data: x.create_time ? new Date(x.create_time * 1000).toISOString() : "",
-      tipo: x.needs_logistics === false ? "Reembolso sem devolução" : "Devolução",
+      tipo: soReembolso ? "Reembolso sem devolução" : "Devolução",
       motivo: MOTIVO_SHOPEE[String(x.reason ?? "")] ?? (x.text_reason || String(x.reason ?? "—")),
       status: STATUS_SHOPEE[st] ?? st,
       aberta,
@@ -467,6 +482,24 @@ async function sincronizar(storeId: string, de: string, ate: string, salvar: boo
     return m;
   };
 
+  // Custo do armazém por SKU (carregado uma vez, só se precisar)
+  let custos: Promise<Map<string, number>> | null = null;
+  const normSku = (x: string) => x.trim().toUpperCase();
+  const carregarCustos = async () => {
+    const m = new Map<string, number>();
+    for (let i = 0; ; i += 1000) {
+      const { data } = await admin.from("products").select("sku, cost_price").eq("store_id", user.id).range(i, i + 999);
+      for (const p of (data ?? []) as { sku: string | null; cost_price: number | null }[]) if (p.sku && n(p.cost_price) > 0) m.set(normSku(p.sku), n(p.cost_price));
+      if (!data || data.length < 1000) break;
+    }
+    return m;
+  };
+  const custoSku = async (sku: string | null | undefined) => {
+    if (!sku) return 0;
+    custos ??= carregarCustos();
+    return (await custos).get(normSku(sku)) ?? 0;
+  };
+
   const contasML = await listConnections(user.id).catch(() => []);
   const { data: lojasShopee } = await admin.from("shopee_connections").select("shop_id, shop_name, store_name").eq("store_id", user.id);
   const erros: string[] = [];
@@ -478,7 +511,7 @@ async function sincronizar(storeId: string, de: string, ate: string, salvar: boo
       })
     ),
     ...(lojasShopee ?? []).map((l) =>
-      devolucoesShopee(user.id, { shop_id: String(l.shop_id), nome: String(l.store_name || l.shop_name || l.shop_id) }, de, ate, vendas, conhecidas).catch((e) => {
+      devolucoesShopee(user.id, { shop_id: String(l.shop_id), nome: String(l.store_name || l.shop_name || l.shop_id) }, de, ate, vendas, conhecidas, custoSku).catch((e) => {
         erros.push(`${l.store_name || l.shop_name || "Shopee"}: ${e instanceof Error ? e.message : String(e)}`);
         return [] as Devolucao[];
       })
