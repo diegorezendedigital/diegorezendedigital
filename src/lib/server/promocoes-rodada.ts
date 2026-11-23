@@ -2,7 +2,7 @@ import crypto from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Company, Listing, Product } from "@/lib/types";
 import { getAccessToken, mlGet } from "./ml";
-import { aplicarDescontoProprio, ID_DESCONTO_PROPRIO, NOME_DESCONTO_PROPRIO } from "./promocoes-desconto";
+import { aplicarDescontoProprio, ID_DESCONTO_PROPRIO, NOME_DESCONTO_PROPRIO, type ResultadoProprio } from "./promocoes-desconto";
 import { revisarParticipacoes } from "./promocoes-revisao";
 import { decidirEEntrar, gravarAcao, margemMinimaDoSku, motivoNaoAutomatico, novoCache, paraVoceDecidir, type ItemPromoML, type PromoML } from "./promocoes-motor";
 
@@ -34,6 +34,8 @@ export type Rodada = {
 };
 
 type PlanoPromo = { conta: string; id: string; tipo: string; nome: string; total: number };
+// Desconto próprio que ainda não pôde ser criado porque o Mercado Livre estava removendo o antigo: n = novas tentativas já feitas, apos = a partir de quando tentar
+type RefazerProprio = { id: string; n: number; apos: number; antes: number | null };
 type Cursor = {
   conta?: string; // se definido, a rodada vale só para essa conta do Mercado Livre
   plano?: PlanoPromo[];
@@ -48,6 +50,8 @@ type Cursor = {
   manuais?: PlanoPromo[]; // relâmpago e desconto por quantidade: não entram sozinhas, você decide na lista da promoção
   propTotal?: number; // anúncios que passam pela fase do desconto próprio (preço riscado)
   propIdx?: number; // quantos já passaram
+  refazer?: RefazerProprio[]; // desconto próprio esperando o Mercado Livre terminar de remover o antigo (nova tentativa no fim da fase)
+  refeitos?: number; // desses, quantos acabaram criados
   revIdx?: number; // revisão das promoções em que o anúncio já está (custo atual): quantos anúncios já passaram
   revFeita?: boolean;
   reajustados?: number; // preços reajustados pelo custo atual (promoção do ML ou desconto próprio)
@@ -55,6 +59,10 @@ type Cursor = {
 };
 
 const ATIVAS = ["na_fila", "rodando"];
+// O Mercado Livre remove o desconto próprio antigo em segundo plano e recusa o novo enquanto isso. Espera antes de cada nova tentativa (3 no máximo)
+const ESPERAS_REFAZER_MS = [20_000, 45_000, 90_000];
+const AVISO_RECRIANDO = "Recriando descontos próprios: o Mercado Livre ainda estava removendo os antigos.";
+const dormir = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const TRAVA_MS = 75_000;
 const VALIDADE_PAGINA_MS = 4 * 60_000;
 export const PARADA_MS = 90_000; // sem sinal de vida há 90 s: a continuação se perdeu e precisa ser retomada
@@ -220,6 +228,7 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
     return { continuar: true };
   };
   const terminar = async (status: "concluida" | "erro", aviso?: string) => {
+    avisos.delete(AVISO_RECRIANDO);
     if (aviso) avisos.add(aviso);
     c.avisos = Array.from(avisos).slice(0, 12);
     await admin
@@ -477,6 +486,34 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
     c.revFeita = true;
 
     // 6) Desconto próprio (preço riscado) nos anúncios que não estão em nenhuma promoção do Mercado Livre
+    const registrarProprio = async (anuncio: Listing, conta: string, r: ResultadoProprio) => {
+      if (r.status === "pulado" || r.status === "adiado") return;
+      const logErro = await gravarAcao(admin, {
+        store_id: run.store_id,
+        ml_user_id: conta,
+        item_id: anuncio.external_id,
+        promotion_id: ID_DESCONTO_PROPRIO,
+        promotion_type: "PRICE_DISCOUNT",
+        promotion_name: NOME_DESCONTO_PROPRIO,
+        price: r.preco,
+        margin: r.margem,
+        min_margin: r.minimo,
+        status: r.status === "criado" || r.status === "mantido" ? "entrou" : r.status,
+        message: r.mensagem,
+        updated_at: new Date().toISOString(),
+        run_id: runId,
+        origem: run.origem,
+      });
+      if (logErro) avisos.add(`Não consegui gravar o log (${logErro}): rode o SQL da automação no Supabase.`);
+      cont.avaliados++;
+      if (r.status === "criado") cont.entraram++;
+      if (r.mensagem.startsWith("Preço reajustado")) c.reajustados = (c.reajustados ?? 0) + 1;
+      else if (r.status === "recusada") cont.recusados++;
+      else if (r.status === "erro") {
+        cont.erros++;
+        ultimoErro = `${anuncio.external_id} (desconto próprio): ${r.mensagem}`;
+      }
+    };
     while ((c.propIdx ?? 0) < anuncios.length) {
       if (tempoAcabou()) return await pausar();
       const anuncio = anuncios[c.propIdx ?? 0];
@@ -484,7 +521,7 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
       const token = await tokenDe(conta);
       const produto = anuncio.product_id ? produtos.get(anuncio.product_id) : undefined;
       if (token) {
-        let r: Awaited<ReturnType<typeof aplicarDescontoProprio>>;
+        let r: ResultadoProprio;
         try {
           r = await aplicarDescontoProprio({ token, mlUserId: conta, anuncio, produto, empresa: empresaDe(anuncio), cache });
         } catch (e) {
@@ -495,37 +532,68 @@ export async function processarFatia(admin: SupabaseClient, runId: string, prazo
           r = { status: "erro", preco: null, margem: null, minimo: margemMinimaDoSku(produto), mensagem: msg };
         }
         c.falhas = 0;
-        if (r.status !== "pulado") {
-          const logErro = await gravarAcao(admin, {
-            store_id: run.store_id,
-            ml_user_id: conta,
-            item_id: anuncio.external_id,
-            promotion_id: ID_DESCONTO_PROPRIO,
-            promotion_type: "PRICE_DISCOUNT",
-            promotion_name: NOME_DESCONTO_PROPRIO,
-            price: r.preco,
-            margin: r.margem,
-            min_margin: r.minimo,
-            status: r.status === "criado" || r.status === "mantido" ? "entrou" : r.status,
-            message: r.mensagem,
-            updated_at: new Date().toISOString(),
-            run_id: runId,
-            origem: run.origem,
-          });
-          if (logErro) avisos.add(`Não consegui gravar o log (${logErro}): rode o SQL da automação no Supabase.`);
-          cont.avaliados++;
-          if (r.status === "criado") cont.entraram++;
-          if (r.mensagem.startsWith("Preço reajustado")) c.reajustados = (c.reajustados ?? 0) + 1;
-          else if (r.status === "recusada") cont.recusados++;
-          else if (r.status === "erro") {
-            cont.erros++;
-            ultimoErro = `${anuncio.external_id} (desconto próprio): ${r.mensagem}`;
-          }
+        if (r.status === "adiado") {
+          // O desconto antigo foi removido e o Mercado Livre ainda não liberou o anúncio: o novo é criado no fim desta fase (6b)
+          c.refazer = [...(c.refazer ?? []), { id: anuncio.external_id, n: 0, apos: Date.now() + ESPERAS_REFAZER_MS[0], antes: r.precoAnterior ?? null }];
+        } else {
+          await registrarProprio(anuncio, conta, r);
         }
       }
       c.propIdx = (c.propIdx ?? 0) + 1;
       if ((await salvar()) === "cancelada") return { continuar: false };
     }
+
+    // 6b) Anúncios que ficaram esperando o Mercado Livre terminar de remover o desconto antigo: tenta criar o novo de novo, cada vez esperando mais
+    if ((c.refazer?.length ?? 0) > 0 && !avisos.has(AVISO_RECRIANDO)) {
+      avisos.add(AVISO_RECRIANDO);
+      if ((await salvar()) === "cancelada") return { continuar: false };
+    }
+    while ((c.refazer?.length ?? 0) > 0) {
+      if (tempoAcabou()) return await pausar();
+      const fila = [...(c.refazer ?? [])].sort((x, y) => x.apos - y.apos);
+      const prox = fila[0];
+      const falta = prox.apos - Date.now();
+      if (falta > 0) {
+        // Ainda é cedo para o próximo da fila: espera o que couber nesta parte (a rodada continua na próxima, se precisar)
+        await dormir(Math.max(25, Math.min(falta, prazoMs - (Date.now() - inicio))));
+        continue;
+      }
+      c.refazer = fila.slice(1);
+      const anuncio = anuncios.find((x) => x.external_id === prox.id);
+      const conta = anuncio ? String(anuncio.ml_user_id) : "";
+      const token = anuncio ? await tokenDe(conta) : null;
+      if (anuncio && token) {
+        const produto = anuncio.product_id ? produtos.get(anuncio.product_id) : undefined;
+        let r: ResultadoProprio;
+        try {
+          r = await aplicarDescontoProprio({ token, mlUserId: conta, anuncio, produto, empresa: empresaDe(anuncio), cache, precoAnterior: prox.antes, ultimaTentativa: prox.n + 1 >= ESPERAS_REFAZER_MS.length });
+        } catch (e) {
+          // Falha passageira (limite de chamadas, instabilidade): conta como uma tentativa
+          r = { status: "adiado", preco: null, margem: null, minimo: margemMinimaDoSku(produto), mensagem: e instanceof Error ? e.message : "Erro do Mercado Livre", precoAnterior: prox.antes };
+        }
+        if (r.status === "adiado") {
+          const n = prox.n + 1;
+          if (n < ESPERAS_REFAZER_MS.length) {
+            c.refazer = [...(c.refazer ?? []), { id: prox.id, n, apos: Date.now() + ESPERAS_REFAZER_MS[n], antes: r.precoAnterior ?? prox.antes }];
+          } else {
+            const reais = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+            const quanto = r.preco != null ? ` de ${reais(r.preco)}` : "";
+            const antes = prox.antes != null ? ` O desconto antigo (${reais(prox.antes)}) já tinha sido removido para reajustar o preço, então o anúncio está sem desconto próprio por enquanto.` : "";
+            await registrarProprio(anuncio, conta, {
+              ...r,
+              status: "erro",
+              mensagem: `Não consegui criar o novo desconto${quanto} depois de ${ESPERAS_REFAZER_MS.length + 1} tentativas (${r.mensagem}).${antes} Rode a promoção de novo em alguns minutos.`,
+            });
+          }
+        } else {
+          if (r.status === "criado") c.refeitos = (c.refeitos ?? 0) + 1;
+          await registrarProprio(anuncio, conta, r);
+        }
+      }
+      if ((await salvar()) === "cancelada") return { continuar: false };
+    }
+    avisos.delete(AVISO_RECRIANDO);
+    if (c.refeitos) avisos.add("Alguns descontos próprios só foram criados no fim da rodada: o Mercado Livre ainda estava removendo o desconto antigo.");
     return await terminar("concluida");
   } catch (e) {
     ultimoErro = e instanceof Error ? e.message : "Erro inesperado na rodada";

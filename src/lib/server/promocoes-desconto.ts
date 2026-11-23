@@ -14,6 +14,7 @@ export const NOME_DESCONTO_PROPRIO = "Desconto próprio (preço riscado)";
 
 const DIAS_DE_DESCONTO = 14; // o Mercado Livre aceita no máximo 14 dias no desconto individual
 const ATIVOS = ["started", "pending", "programmed", "sync_requested"];
+const REMOVENDO = "restore_requested"; // o Mercado Livre ainda está terminando de remover a promoção do anúncio (acontece em segundo plano)
 const TOLERANCIA_PP = 0.5; // pontos de margem: dentro disso o desconto atual é mantido
 
 const centavos = (v: number) => Math.round(v * 100) / 100;
@@ -24,12 +25,17 @@ type PromoDoItem = { id?: string; type?: string; status?: string; price?: number
 type ItemML = { id?: string; status?: string; price?: number; original_price?: number | null };
 
 export type ResultadoProprio = {
-  status: "criado" | "mantido" | "recusada" | "erro" | "pulado";
+  // "adiado": o desconto antigo foi removido (ou está sendo) e o Mercado Livre ainda não liberou o anúncio para o novo: a rodada tenta de novo daqui a pouco
+  status: "criado" | "mantido" | "recusada" | "erro" | "pulado" | "adiado";
   preco: number | null;
   margem: number | null;
   minimo: number;
   mensagem: string;
+  precoAnterior?: number | null; // preço do desconto removido para reajustar (vale para o "adiado" e fica na mensagem do reajuste)
 };
+
+// O Mercado Livre responde isso quando o anúncio ainda não está livre para um novo desconto (remoção do anterior em andamento)
+const recusaPorRemocaoPendente = (msg: string) => /no candidates found/i.test(msg);
 
 // Data (AAAA-MM-DD) no horário de Brasília, com deslocamento em dias
 function dataBR(dias = 0): string {
@@ -43,6 +49,8 @@ type Entrada = {
   produto: Product | undefined;
   empresa: Company | null;
   cache: CacheML;
+  precoAnterior?: number | null; // nova tentativa: preço do desconto que já foi removido numa tentativa anterior
+  ultimaTentativa?: boolean; // última nova tentativa: tenta criar mesmo que o Mercado Livre ainda mostre uma remoção pendente
 };
 
 export async function aplicarDescontoProprio(a: Entrada): Promise<ResultadoProprio> {
@@ -58,6 +66,8 @@ export async function aplicarDescontoProprio(a: Entrada): Promise<ResultadoPropr
   const outra = ativas.find((p) => p.type && p.type !== "PRICE_DISCOUNT");
   if (outra) return { ...vazio, status: "pulado", mensagem: `Já está na promoção “${outra.name || outra.type}”.` };
   const minha = ativas.find((p) => p.type === "PRICE_DISCOUNT");
+  // Alguma promoção (o desconto próprio antigo, por exemplo) ainda está sendo removida pelo Mercado Livre: até acabar, ele recusa criar outro desconto
+  const removendo = !minha && lista.some((p) => String(p.status) === REMOVENDO);
 
   // Sem custo não dá para calcular (só avisa quando o anúncio não está numa promoção do ML, que já foi tratada nos convites)
   const entrada = entradaDoAnuncio(anuncio, produto, empresa, Number(anuncio.fee_percent ?? 12), Number(anuncio.fee_fixed ?? 6));
@@ -120,7 +130,7 @@ export async function aplicarDescontoProprio(a: Entrada): Promise<ResultadoPropr
   }
 
   // 5) Já tem desconto próprio perto da meta e com validade sobrando: mantém
-  let precoAnterior: number | null = null;
+  let precoAnterior: number | null = a.precoAnterior ?? null;
   if (minha) {
     const atual = centavos(Number(minha.price) || Number(item.price) || 0);
     if (atual > 0) {
@@ -136,6 +146,11 @@ export async function aplicarDescontoProprio(a: Entrada): Promise<ResultadoPropr
   }
 
   // 6) Cria o desconto (preço riscado) por 14 dias
+  // O Mercado Livre remove o desconto antigo em segundo plano e, até acabar, recusa o novo ("No candidates found for item"). Nesse caso não é erro:
+  // o anúncio fica "adiado" e a rodada tenta de novo daqui a pouco, em vez de deixá-lo sem desconto até a próxima rodada.
+  if (removendo && !a.ultimaTentativa) {
+    return { ...vazio, preco: alvo, margem: c.margem, status: "adiado", precoAnterior, mensagem: "a promoção anterior continua em remoção no Mercado Livre" };
+  }
   try {
     await mlPost(token, `/seller-promotions/items/${encodeURIComponent(id)}?app_version=v2`, {
       promotion_type: "PRICE_DISCOUNT",
@@ -145,6 +160,9 @@ export async function aplicarDescontoProprio(a: Entrada): Promise<ResultadoPropr
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro do Mercado Livre";
+    if (recusaPorRemocaoPendente(msg)) {
+      return { ...vazio, preco: alvo, margem: c.margem, status: "adiado", precoAnterior, mensagem: msg };
+    }
     return { ...vazio, preco: alvo, margem: c.margem, status: "erro", mensagem: `O Mercado Livre recusou o desconto de ${reais(alvo)}: ${msg}` };
   }
   const desconto = ((base - alvo) / base) * 100;
