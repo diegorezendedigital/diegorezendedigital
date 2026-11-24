@@ -102,7 +102,7 @@ export default function ArmazemPage() {
     }
     const ligacoes: Listing[] = [];
     for (let i = 0; i < 50000; i += 1000) {
-      const r = await supabase.from("listings").select("id, product_id, marketplace_id, external_id, title, price, units, shipping_cost, fee_percent, fee_fixed, company_id, target_margin, thumbnail, ml_user_id").order("id").range(i, i + 999);
+      const r = await supabase.from("listings").select("id, product_id, marketplace_id, external_id, title, price, units, shipping_cost, fee_percent, fee_fixed, company_id, target_margin, thumbnail, permalink, ml_user_id").order("id").range(i, i + 999);
       if (r.error) break;
       ligacoes.push(...((r.data ?? []) as unknown as Listing[]));
       if ((r.data ?? []).length < 1000) break;
@@ -563,6 +563,20 @@ export default function ArmazemPage() {
   function capaDoAnuncio(p: Product): string | null {
     const l = (anunciosDoProduto[p.id] ?? []).find((x) => x.thumbnail);
     return l?.thumbnail ? l.thumbnail.replace(/^http:\/\//, "https://") : null;
+  }
+  // Link da página pública do anúncio (usa o permalink salvo; senão monta pelo ID)
+  function linkDoAnuncio(l: Listing): string | null {
+    if (l.permalink) return l.permalink.replace(/^http:\/\//, "https://");
+    const id = String(l.external_id ?? "");
+    if (l.marketplace_id === "mercado_livre") {
+      const m = id.match(/^([A-Z]{3})-?(\d+)/);
+      return m ? `https://produto.mercadolivre.com.br/${m[1]}-${m[2]}` : null;
+    }
+    if (l.marketplace_id === "shopee" && l.ml_user_id) {
+      const item = id.split(":")[0];
+      return item ? `https://shopee.com.br/product/${l.ml_user_id}/${item}` : null;
+    }
+    return null;
   }
   async function usarImagem(p: Product) {
     const url = capaDoAnuncio(p);
@@ -1234,17 +1248,29 @@ export default function ArmazemPage() {
                       <span className="group relative">
                         <span className="cursor-default font-mono text-xs underline decoration-dotted">{anuncios[p.id] ?? 0}</span>
                         {(anunciosDoProduto[p.id]?.length ?? 0) > 0 && (
-                          <span className="pointer-events-none absolute left-0 top-full z-40 hidden w-72 pt-1 group-hover:block">
-                            <span className="block rounded-xl border border-slate-200 bg-white p-3 text-left text-xs shadow-xl">
+                          <span className="absolute left-0 top-full z-40 hidden w-80 pt-1 group-hover:block">
+                            <span className="block max-h-[70vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 text-left text-xs shadow-xl">
                               {anunciosDoProduto[p.id].slice(0, 5).map((l) => {
                                 const a = analisarAnuncio(l, p, empresas.find((c) => c.id === l.company_id) ?? empresas[0] ?? null, { pct: 12, fixo: 6 });
                                 const roi = a && a.custo > 0 ? (a.lucro / a.custo) * 100 : null;
+                                const link = linkDoAnuncio(l);
+                                const foto = l.thumbnail ? l.thumbnail.replace(/^http:\/\//, "https://") : null;
                                 return (
                                   <span key={l.id} className="mb-2 block border-b border-slate-100 pb-2 last:mb-0 last:border-0 last:pb-0">
                                     {(l.ml_user_id && nomesContas[String(l.ml_user_id)]) && (
                                       <span className="mb-0.5 block truncate text-[11px] font-semibold text-slate-800">{nomesContas[String(l.ml_user_id)]}</span>
                                     )}
-                                    <span className="block truncate font-mono text-[10px] text-slate-500">{l.external_id}</span>
+                                    <span className="mb-1 flex items-start gap-2">
+                                      {foto ? (
+                                        <img src={foto} alt="" className="h-12 w-12 shrink-0 rounded border border-slate-200 object-cover" />
+                                      ) : (
+                                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded border border-slate-200 bg-slate-50 text-[9px] text-slate-400">sem foto</span>
+                                      )}
+                                      <span className="min-w-0 flex-1">
+                                        <span className="line-clamp-2 block text-[11px] leading-snug text-slate-800" title={l.title ?? ""}>{l.title || "Anúncio sem título"}</span>
+                                        <span className="block truncate font-mono text-[10px] text-slate-500">{l.external_id}</span>
+                                      </span>
+                                    </span>
                                     <span className="block">Preço do anúncio: <b>{brl(Number(l.price))}</b></span>
                                     {a ? (
                                       <span className="block">
@@ -1252,6 +1278,11 @@ export default function ArmazemPage() {
                                       </span>
                                     ) : (
                                       <span className="block text-slate-400">Sem custo cadastrado para calcular.</span>
+                                    )}
+                                    {link && (
+                                      <a href={link} target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[11px] font-medium text-brand hover:bg-brand-light">
+                                        Ver anúncio ↗
+                                      </a>
                                     )}
                                   </span>
                                 );
