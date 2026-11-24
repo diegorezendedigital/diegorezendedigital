@@ -9,6 +9,7 @@ import { LinhaProduto, baixarModelo, lerPlanilha } from "@/lib/planilha";
 import { analisarAnuncio } from "@/lib/anuncio";
 import { pesoCubicoKg, pesoFaturavelKg, medidasDoProduto } from "@/lib/frete-ml";
 import type { ContaML, Listing } from "@/lib/types";
+import GerarKits from "@/components/GerarKits";
 
 type Painel = null | "manual" | "excel";
 type Componente = { id: string; kit_id: string; component_id: string; quantity: number };
@@ -1003,6 +1004,8 @@ export default function ArmazemPage() {
           </button>
         ))}
       </div>
+
+      {aba === "kit" && <GerarKits onConcluido={carregar} />}
 
       {grupoFiltro && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
