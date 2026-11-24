@@ -23,6 +23,15 @@ const menus: Menu[] = [
   { label: "Pedidos", href: "/dashboard/pedidos" },
   { label: "Devoluções", href: "/dashboard/devolucoes" },
   {
+    label: "Nota Fiscal",
+    base: "/dashboard/notas-fiscais",
+    filhos: [
+      { label: "Entrada (compras)", href: "/dashboard/notas-fiscais/entrada" },
+      { label: "Saída (vendas)", href: "/dashboard/notas-fiscais/saida" },
+      { label: "Configuração fiscal", href: "/dashboard/notas-fiscais/configuracao" },
+    ],
+  },
+  {
     label: "Promoções",
     base: "/dashboard/promocoes",
     filhos: [
@@ -133,13 +142,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Convidado não vê Configurações (CNPJ, senha master e usuários são do master).
   // Integrações só com a permissão "integracoes" liberada pelo master.
-  const SO_MASTER = ["/dashboard/configuracoes", ...(podeIntegrar(convidado, permissoes) ? [] : ["/dashboard/integracoes"])];
+  const SO_MASTER = ["/dashboard/configuracoes", ...(podeIntegrar(convidado, permissoes) ? [] : ["/dashboard/integracoes", "/dashboard/notas-fiscais/configuracao"])];
   // Colaborador: só as abas que o master liberou
   const liberado = (href: string) => !convidado || pode(permissoes, abaDoCaminho(href));
   const base: Menu[] = convidado
     ? menus
         .filter((m) => !SO_MASTER.includes(m.href ?? m.base ?? ""))
-        .map((m) => (m.filhos ? { ...m, filhos: m.filhos.filter((f) => liberado(f.href)) } : m))
+        .map((m) => (m.filhos ? { ...m, filhos: m.filhos.filter((f) => liberado(f.href) && !SO_MASTER.some((p) => f.href.startsWith(p))) } : m))
         .filter((m) => (m.filhos ? m.filhos.length > 0 : liberado(m.href as string)))
     : menus;
   if (convidado && !liberado(pathname)) {
@@ -252,7 +261,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
-      <main className={`mx-auto p-5 ${(pathname === "/dashboard" || pathname.startsWith("/dashboard/dre") || pathname.startsWith("/dashboard/pedidos") || pathname.startsWith("/dashboard/devolucoes") || pathname.startsWith("/dashboard/produtos/armazem") || pathname.startsWith("/dashboard/produtos/anuncios") || pathname.startsWith("/dashboard/promocoes")) ? "max-w-none px-6" : "max-w-7xl"} pb-12`}>{children}</main>
+      <main className={`mx-auto p-5 ${(pathname === "/dashboard" || pathname.startsWith("/dashboard/dre") || pathname.startsWith("/dashboard/pedidos") || pathname.startsWith("/dashboard/devolucoes") || pathname.startsWith("/dashboard/produtos/armazem") || pathname.startsWith("/dashboard/produtos/anuncios") || pathname.startsWith("/dashboard/promocoes") || pathname.startsWith("/dashboard/notas-fiscais")) ? "max-w-none px-6" : "max-w-7xl"} pb-12`}>{children}</main>
       <div className="pointer-events-none fixed bottom-2 left-2 z-50 rounded bg-white/90 px-2 py-1 font-mono text-[11px] leading-tight text-slate-600 shadow-sm ring-1 ring-slate-200">
         v{process.env.NEXT_PUBLIC_APP_VERSION} · atualizado em{" "}
         {process.env.NEXT_PUBLIC_BUILD_TIME

@@ -11,9 +11,40 @@ const NOVO = "__novo";
 const IGNORAR = "__ignorar";
 
 type Linha = { item: ItemNFe; destino: string };
-type Nota = { nfe: NFe; arquivo: string; duplicada: boolean; linhas: Linha[] };
+// empresaId: CNPJ que recebeu a nota quando ela veio da lista de Entrada; undefined = vale o CNPJ escolhido na tela
+type Nota = { nfe: NFe; arquivo: string; xml: string; duplicada: boolean; linhas: Linha[]; empresaId?: string | null };
 
 const soDigitos = (s: string | null | undefined) => String(s ?? "").replace(/\D/g, "");
+
+// Espelha o lançamento na lista de Entrada. É só um espelho: se a tabela ainda não existe (SQL não rodado) ou falhar, o lançamento em nfe_imports continua valendo.
+async function registrarNaLista(uid: string, nota: Nota, empId: string | null) {
+  try {
+    const agora = new Date().toISOString();
+    const up = await supabase.from("nfe_entradas").update({ lancada_em: agora, atualizado_em: agora }).eq("chave", nota.nfe.chave).select("id");
+    if (up.error || (up.data ?? []).length > 0) return;
+    const { nfe } = nota;
+    await supabase.from("nfe_entradas").insert({
+      store_id: uid,
+      company_id: empId,
+      chave: nfe.chave,
+      numero: nfe.numero,
+      serie: nfe.serie,
+      emitente_nome: nfe.emitenteNome,
+      emitente_cnpj: nfe.emitenteCnpj,
+      destinatario_cnpj: nfe.destinatarioCnpj || null,
+      emitida_em: nfe.emitidaEm,
+      total: nfe.total,
+      itens: nfe.itens.length,
+      situacao: "autorizada",
+      completa: true,
+      xml: nota.xml,
+      origem: "xml",
+      lancada_em: agora,
+    });
+  } catch {
+    /* espelho da lista: ignorar */
+  }
+}
 
 export default function NfePage() {
   const [produtos, setProdutos] = useState<Product[]>([]);
@@ -31,22 +62,77 @@ export default function NfePage() {
       supabase.from("products").select("*").order("name"),
       supabase.from("companies").select("*").order("created_at"),
     ]);
-    setProdutos((p.data ?? []) as Product[]);
+    const prods = (p.data ?? []) as Product[];
+    setProdutos(prods);
     const lista = (c.data ?? []) as Company[];
     setEmpresas(lista);
     setEmpresaId((atual) => atual || lista.find((x) => x.is_default)?.id || lista[0]?.id || "");
+    return { prods, lista };
   }, []);
 
-  useEffect(() => {
-    carregar();
-  }, [carregar]);
-
-  function sugerir(item: ItemNFe): string {
-    const porEan = item.ean ? produtos.find((p) => p.ean === item.ean) : undefined;
+  function sugerir(item: ItemNFe, base: Product[] = produtos): string {
+    const porEan = item.ean ? base.find((p) => p.ean === item.ean) : undefined;
     if (porEan) return porEan.id;
-    const porSku = produtos.find((p) => p.sku === item.codigo);
+    const porSku = base.find((p) => p.sku === item.codigo);
     return porSku ? porSku.id : NOVO;
   }
+
+  // Vindo da tela de Entrada (?chaves=...): carrega o XML que já está guardado lá, sem precisar enviar arquivo.
+  async function carregarDaLista(chaves: string[], prods: Product[]) {
+    setErro("");
+    setAviso("");
+    setLendo(true);
+    try {
+      const r = await supabase.from("nfe_entradas").select("chave, xml, company_id").in("chave", chaves);
+      if (r.error) {
+        throw new Error(/nfe_entradas|schema cache|does not exist/i.test(r.error.message) ? "Falta rodar o SQL das notas fiscais no Supabase (arquivo 20261213_notas_fiscais.sql)." : r.error.message);
+      }
+      const achadas = (r.data ?? []) as { chave: string; xml: string | null; company_id: string | null }[];
+      const lidas: Nota[] = [];
+      const problemas: string[] = [];
+      for (const chave of chaves) {
+        const linha = achadas.find((x) => x.chave === chave);
+        if (!linha?.xml) {
+          problemas.push(`A nota ${chave} ainda não tem o XML completo guardado.`);
+          continue;
+        }
+        let nfe: NFe;
+        try {
+          nfe = lerNFe(linha.xml);
+        } catch (e) {
+          problemas.push(`${chave}: ${mensagemErro(e)}`);
+          continue;
+        }
+        if (lidas.some((n) => n.nfe.chave === nfe.chave)) continue;
+        const ja = await supabase.from("nfe_imports").select("id").eq("chave", nfe.chave).maybeSingle();
+        lidas.push({
+          nfe,
+          arquivo: `${chave}.xml`,
+          xml: linha.xml,
+          duplicada: !!ja.data,
+          empresaId: linha.company_id,
+          linhas: nfe.itens.map((item) => ({ item, destino: sugerir(item, prods) })),
+        });
+      }
+      setNotas(lidas);
+      if (problemas.length) setErro(problemas.join(" "));
+    } catch (e) {
+      setErro(mensagemErro(e));
+    } finally {
+      setLendo(false);
+    }
+  }
+
+  useEffect(() => {
+    (async () => {
+      const { prods } = await carregar();
+      const q = new URLSearchParams(window.location.search).get("chaves") || "";
+      const chaves = Array.from(new Set(q.split(",").map((x) => x.trim()).filter((x) => /^\d{44}$/.test(x)))).slice(0, 200);
+      if (chaves.length > 0) await carregarDaLista(chaves, prods);
+    })();
+    // carrega uma vez ao abrir a página
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function lerArquivos(files: FileList | null) {
     setErro("");
@@ -58,8 +144,9 @@ export default function NfePage() {
       const lidas: Nota[] = [];
       for (const f of Array.from(files)) {
         let nfe: NFe;
+        const xml = await f.text();
         try {
-          nfe = lerNFe(await f.text());
+          nfe = lerNFe(xml);
         } catch (e) {
           throw new Error(`${f.name}: ${mensagemErro(e)}`);
         }
@@ -68,6 +155,7 @@ export default function NfePage() {
         lidas.push({
           nfe,
           arquivo: f.name,
+          xml,
           duplicada: !!ja.data,
           linhas: nfe.itens.map((item) => ({ item, destino: sugerir(item) })),
         });
@@ -105,13 +193,14 @@ export default function NfePage() {
       for (const nota of notas) {
         if (nota.duplicada) continue;
         const { nfe } = nota;
+        const empNota = (nota.empresaId ?? empresaId) || null; // nota vinda da lista de Entrada usa o CNPJ que a recebeu
 
         // Registra a nota primeiro: a chave única impede lançar a mesma nota duas vezes.
         const reg = await supabase
           .from("nfe_imports")
           .insert({
             store_id: uid,
-            company_id: empresaId || null,
+            company_id: empNota,
             chave: nfe.chave,
             numero: nfe.numero,
             serie: nfe.serie,
@@ -146,7 +235,7 @@ export default function NfePage() {
                 icms_credit: c.icms,
                 pis_credit: c.pis,
                 cofins_credit: c.cofins,
-                company_id: empresaId || null,
+                company_id: empNota,
                 cost_updated_at: agora,
               });
               if (r.error) throw new Error(`Item ${item.codigo}: ${r.error.message}`);
@@ -165,7 +254,7 @@ export default function NfePage() {
                   ncm: antigo.ncm || item.ncm,
                   ean: antigo.ean || item.ean,
                   stock_qty: novoEstoque,
-                  company_id: empresaId || antigo.company_id,
+                  company_id: empNota || antigo.company_id,
                   cost_updated_at: agora,
                 })
                 .eq("id", destino);
@@ -175,6 +264,7 @@ export default function NfePage() {
             }
           }
           notasOk++;
+          await registrarNaLista(uid, nota, empNota);
         } catch (e) {
           await supabase.from("nfe_imports").delete().eq("id", reg.data.id);
           throw e;
@@ -183,6 +273,7 @@ export default function NfePage() {
 
       setAviso(`${notasOk} nota(s) lançada(s): ${atualizados} produtos atualizados e ${criados} criados.`);
       setNotas([]);
+      if (window.location.search) window.history.replaceState(null, "", window.location.pathname); // tira ?chaves= para não recarregar as mesmas notas
       carregar();
     } catch (e) {
       setErro(mensagemErro(e));
@@ -249,7 +340,10 @@ export default function NfePage() {
                 {n.nfe.emitenteNome} · {formatarCnpj(n.nfe.emitenteCnpj)} · total {brl(n.nfe.total)}
               </p>
             </div>
-            {n.duplicada && <span className="badge bg-slate-200 text-slate-700">Já importada</span>}
+            <div className="flex flex-wrap items-center gap-2">
+              {n.empresaId && <span className="badge bg-slate-100 text-slate-700">Comprador: {empresas.find((c) => c.id === n.empresaId)?.name ?? "CNPJ da nota"}</span>}
+              {n.duplicada && <span className="badge bg-slate-200 text-slate-700">Já importada</span>}
+            </div>
           </div>
           {!n.duplicada && (
             <div className="overflow-x-auto">

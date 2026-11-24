@@ -1,6 +1,6 @@
 // Abas que o usuário master pode liberar para cada colaborador.
 // Integrações e Configurações ficam sempre só com o master.
-export type AbaId = "inicio" | "armazem" | "anuncios" | "pedidos" | "devolucoes" | "promo_ml" | "promo_shopee" | "promo_tiktok" | "calculadora" | "relatorios" | "dre";
+export type AbaId = "inicio" | "armazem" | "anuncios" | "pedidos" | "devolucoes" | "nf_entrada" | "nf_saida" | "promo_ml" | "promo_shopee" | "promo_tiktok" | "calculadora" | "relatorios" | "dre";
 
 export const ABAS: { id: AbaId; label: string; grupo: string; exato?: string[]; prefixo?: string[] }[] = [
   { id: "inicio", label: "Início (painel)", grupo: "Geral", exato: ["/dashboard"] },
@@ -8,6 +8,8 @@ export const ABAS: { id: AbaId; label: string; grupo: string; exato?: string[]; 
   { id: "devolucoes", label: "Devoluções e reclamações", grupo: "Geral", prefixo: ["/dashboard/devolucoes"] },
   { id: "armazem", label: "Produtos armazém e NF-e", grupo: "Produtos", prefixo: ["/dashboard/produtos/armazem", "/dashboard/produtos/nfe"] },
   { id: "anuncios", label: "Anúncios Marketplace", grupo: "Produtos", prefixo: ["/dashboard/produtos/anuncios"] },
+  { id: "nf_entrada", label: "Nota fiscal de entrada", grupo: "Nota fiscal", prefixo: ["/dashboard/notas-fiscais/entrada"] },
+  { id: "nf_saida", label: "Nota fiscal de saída", grupo: "Nota fiscal", prefixo: ["/dashboard/notas-fiscais/saida"] },
   { id: "promo_ml", label: "Promoções Mercado Livre", grupo: "Promoções", exato: ["/dashboard/promocoes"] },
   { id: "promo_shopee", label: "Promoções Shopee", grupo: "Promoções", prefixo: ["/dashboard/promocoes/shopee"] },
   { id: "promo_tiktok", label: "Promoções TikTok Shop", grupo: "Promoções", prefixo: ["/dashboard/promocoes/tiktok"] },
