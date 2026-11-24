@@ -39,13 +39,16 @@ export type Devolucao = {
   etapa: Etapa; // em que pé está (para as sub-abas)
   rastreio?: string | null;
   logisticaBruta?: string | null;
+  tarifa?: number; // tarifa de venda que o marketplace cobrou e não devolveu
+  fonte?: "extrato" | "estimativa"; // de onde veio o custo: extrato do marketplace ou regra estimada
+  extrato?: { descricao: string; valor: number }[]; // linhas do extrato do pedido (cobrança negativa, bonificação positiva)
   custoPrevisto?: number; // devolução em andamento por erro do vendedor: quanto deve custar quando fechar
   previstoObs?: string | null; // status de logística como veio do marketplace (para conferência)
   atualizado?: string | null; // última mudança no marketplace
 };
 
 // Sobe quando a regra de custo muda: casos salvos com versão antiga são recalculados
-const VERSAO_REGRA = 5;
+const VERSAO_REGRA = 6;
 
 // Arrependimento / desistência: no Mercado Livre o frete da devolução é pago pelo próprio ML
 const ARREPENDIMENTO = /n[aã]o quero mais|arrepend|desist|mudei de ideia|n[aã]o (me )?serviu|boas condi[cç][oõ]es|n[aã]o gostei|comprei por engano/i;
@@ -109,6 +112,50 @@ const STATUS_DEV_ML: Record<string, string> = {
 
 type Conhecidas = Map<string, Devolucao>; // chave "mp:id" → caso já salvo e encerrado
 
+// ---- Extrato do Mercado Livre por pedido (cobranças e bonificações de verdade) ----
+type LinhaExtrato = { id: string; descricao: string; valor: number; envio: boolean; bonus: boolean; envioId: string | null; bonificaId: string | null };
+const EH_ENVIO = /envio|env[ií]o|frete|shipping|log[ií]stic/i;
+
+// GET /billing/integration/group/ML/order/details: até 60 pedidos por chamada, chamadas em sequência (evita 429)
+async function extratoML(token: string, pedidos: string[]): Promise<Map<string, LinhaExtrato[]>> {
+  const m = new Map<string, LinhaExtrato[]>();
+  const ids = Array.from(new Set(pedidos.filter((p) => /^\d+$/.test(p))));
+  for (let i = 0; i < ids.length; i += 60) {
+    const lote = ids.slice(i, i + 60);
+    const j = await mlGetJson(token, `/billing/integration/group/ML/order/details?order_ids=${lote.join(",")}&limit=150`).catch(() => null);
+    if (!j) continue; // sem extrato (erro, 206 ou 429): esses pedidos ficam na regra estimada
+    for (const r of (j.results as Record<string, unknown>[]) ?? []) {
+      const pedido = String(r.order_id ?? "");
+      const linhas: LinhaExtrato[] = [];
+      for (const d of (r.details as Record<string, unknown>[]) ?? []) {
+        const c = (d.charge_info ?? {}) as Record<string, unknown>;
+        const desc = String(c.transaction_detail ?? c.detail_sub_type ?? "Cobrança");
+        const bonus = String(c.detail_type ?? "CHARGE").toUpperCase() !== "CHARGE";
+        const valor = Math.abs(n(c.detail_amount));
+        if (!valor) continue;
+        linhas.push({
+          id: String(c.detail_id ?? ""),
+          descricao: desc,
+          valor: bonus ? valor : -valor,
+          envio: EH_ENVIO.test(desc),
+          bonus,
+          envioId: ((d.shipping_info as { shipping_id?: string | number } | undefined)?.shipping_id ?? null) != null ? String((d.shipping_info as { shipping_id: string | number }).shipping_id) : null,
+          bonificaId: c.charge_bonified_id != null ? String(c.charge_bonified_id) : null,
+        });
+      }
+      // Bonificação herda o tipo (envio ou tarifa) da cobrança que ela devolve
+      const porId = new Map(linhas.filter((l) => !l.bonus).map((l) => [l.id, l]));
+      for (const l of linhas) if (l.bonus && l.bonificaId && porId.has(l.bonificaId)) {
+        const orig = porId.get(l.bonificaId)!;
+        l.envio = orig.envio;
+        l.envioId = l.envioId ?? orig.envioId;
+      }
+      if (linhas.length) m.set(pedido, [...(m.get(pedido) ?? []), ...linhas]);
+    }
+  }
+  return m;
+}
+
 async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: string }, de: string, ate: string, vendas: (pedidos: string[]) => Promise<Map<string, Venda>>, conhecidas: Conhecidas): Promise<Devolucao[]> {
   const token = await getAccessToken(storeId, conta.ml_user_id);
   if (!token) throw new Error("Conta sem acesso. Reconecte em Integrações.");
@@ -124,6 +171,9 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
   const doPedido = claims.filter((c) => !c.resource || c.resource === "order");
   const mapa = await vendas(doPedido.map((c) => String(c.resource_id)));
   const nomes = new Map<string, string>();
+  // Extrato só dos casos que serão recalculados (encerrados já salvos não são consultados)
+  const aConsultar = doPedido.slice(0, 300).filter((c) => !(conhecidas.has(`mercado_livre:${c.id}`) && String(c.status) === "closed"));
+  const extratos = await extratoML(token, aConsultar.map((c) => String(c.resource_id ?? ""))).catch(() => new Map<string, LinhaExtrato[]>());
 
   return emLotes(doPedido.slice(0, 300), 5, async (c): Promise<Devolucao> => {
     const id = String(c.id);
@@ -176,18 +226,55 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
     if (resolucao.reason === "prefered_to_keep_product") produtoVoltou = false;
 
     const venda = n(v?.sale_price);
-    const reembolso = resultado === "comprador" ? venda : 0;
-    // Quando o vendedor NÃO paga nada:
-    // - arrependimento/desistência: o Mercado Livre paga a devolução e devolve o frete
-    // - cobertura do Mercado Livre (applied_coverage / coverage_decision): o ML assume o reembolso
     const arrependimento = ARREPENDIMENTO.test(motivo);
     const cobertura = resolucao.applied_coverage === true || resolucao.reason === "coverage_decision";
-    const semCusto = cobertura ? "Coberto pelo Mercado Livre" : arrependimento ? "Arrependimento: o Mercado Livre paga a devolução" : null;
-    if (semCusto) freteVolta = 0;
-    const freteIda = resultado === "comprador" && !semCusto ? n(v?.shipping_cost) : 0;
-    // Produto perdido: comprador ganhou e o produto não voltou
+
+    // 1) Extrato do ML: o que foi cobrado e não devolvido neste pedido
+    const linhas = extratos.get(pedido) ?? null;
+    let reembolsado = 0;
+    let envioOriginal: string | null = null;
+    if (linhas) {
+      const ped = await mlGetJson(token, `/orders/${pedido}`).catch(() => null);
+      if (ped) {
+        reembolsado = ((ped.payments as { transaction_amount_refunded?: number }[]) ?? []).reduce((t, p) => t + n(p.transaction_amount_refunded), 0);
+        envioOriginal = (ped.shipping as { id?: number | string } | undefined)?.id != null ? String((ped.shipping as { id: number | string }).id) : null;
+      }
+    }
+    const devolvido = reembolsado > 0 || resultado === "comprador";
+
+    let freteIda: number;
+    let tarifa = 0;
+    let fonte: Devolucao["fonte"] = "estimativa";
+    let reembolso = resultado === "comprador" ? venda : 0;
+    let semCusto: string | null = null;
+    if (linhas) {
+      fonte = "extrato";
+      const soma = (f: (l: LinhaExtrato) => boolean) => -linhas.filter(f).reduce((t, l) => t + l.valor, 0); // positivo = custo
+      const ehVolta = (l: LinhaExtrato) => l.envio && !!l.envioId && !!envioOriginal && l.envioId !== envioOriginal;
+      const voltaExtrato = soma(ehVolta);
+      if (devolvido) {
+        // Comprador recebeu o dinheiro: tudo o que ficou cobrado é custo da devolução
+        freteIda = Math.max(0, soma((l) => l.envio && !ehVolta(l)));
+        tarifa = Math.max(0, soma((l) => !l.envio));
+        if (reembolsado > 0) reembolso = Math.min(reembolsado, venda || reembolsado);
+      } else {
+        // Venda mantida: frete de ida e tarifa são custos normais da venda, não da devolução
+        freteIda = 0;
+      }
+      // Frete de volta: o do extrato; se ainda não apareceu lá, o custo da etiqueta de volta
+      freteVolta = voltaExtrato > 0 ? voltaExtrato : freteVolta;
+    } else {
+      // 2) Sem extrato: regra estimada
+      // - arrependimento/desistência: o Mercado Livre paga a devolução e devolve o frete
+      // - cobertura do Mercado Livre (applied_coverage / coverage_decision): o ML assume o reembolso
+      semCusto = cobertura ? "Coberto pelo Mercado Livre" : arrependimento ? "Arrependimento: o Mercado Livre paga a devolução" : null;
+      if (semCusto) freteVolta = 0;
+      freteIda = resultado === "comprador" && !semCusto ? n(v?.shipping_cost) : 0;
+    }
     // Produto perdido só quando há certeza de que ele não volta (comprador ficou com ele / devolução não chegou)
     const produtoPerdido = resultado === "comprador" && produtoVoltou === false && !cobertura ? n(v?.cost_price) : 0;
+    const custoTotal = freteIda + freteVolta + tarifa + produtoPerdido;
+    if (fonte === "extrato" && custoTotal === 0 && devolvido) semCusto = cobertura ? "Coberto pelo Mercado Livre (conferido no extrato)" : "O ML devolveu as cobranças (conferido no extrato)";
     const tipoTxt = String(c.stage) === "dispute" ? "Mediação" : temDevolucao ? "Devolução" : String(c.type) === "cancel_purchase" ? "Cancelamento" : "Reclamação";
     return {
       mp: "mercado_livre",
@@ -210,7 +297,10 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
       freteVolta: Math.round(freteVolta * 100) / 100,
       produtoPerdido,
       produtoVoltou,
-      custo: Math.round((freteIda + freteVolta + produtoPerdido) * 100) / 100,
+      custo: Math.round(custoTotal * 100) / 100,
+      tarifa: Math.round(tarifa * 100) / 100,
+      fonte,
+      extrato: linhas ? linhas.map((l) => ({ descricao: l.descricao, valor: l.valor })) : undefined,
       semCusto,
       versao: VERSAO_REGRA,
       link: `https://www.mercadolivre.com.br/vendas/${pedido}/detalhe`,

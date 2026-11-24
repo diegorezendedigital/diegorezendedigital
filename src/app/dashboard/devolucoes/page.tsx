@@ -35,6 +35,9 @@ type Devolucao = {
   custoPrevisto?: number;
   previstoObs?: string | null;
   atualizado?: string | null;
+  tarifa?: number;
+  fonte?: "extrato" | "estimativa";
+  extrato?: { descricao: string; valor: number }[];
 };
 
 type Etapa = "aguardando_postagem" | "a_caminho" | "recebido" | "em_analise" | "reembolsado" | "a_favor" | "cancelada";
@@ -419,7 +422,27 @@ export default function DevolucoesPage() {
                 <td className={`px-4 py-4 text-right font-semibold tabular-nums ${d.custo > 0 ? "text-red-700" : "text-slate-400"}`}>
                   {d.custo > 0 ? `-${brl(d.custo)}` : (d.custoPrevisto ?? 0) > 0 ? <span className="text-amber-600">-{brl(d.custoPrevisto ?? 0)}</span> : brl(0)}
                   {d.custo === 0 && (d.custoPrevisto ?? 0) > 0 && <div className="mt-0.5 max-w-[14rem] text-[11px] font-normal text-amber-700">{d.previstoObs ?? "previsto"}</div>}
+                  {(d.tarifa ?? 0) > 0 && <div className="mt-0.5 text-[11px] font-normal text-slate-500">inclui tarifa {brl(d.tarifa ?? 0)}</div>}
                   {d.semCusto && <div className="mt-0.5 text-[11px] font-normal text-emerald-700">{d.semCusto}</div>}
+                  {d.mp === "mercado_livre" && (
+                    d.fonte === "extrato" ? (
+                      <span className="group relative mt-0.5 inline-block text-[11px] font-normal text-brand underline decoration-dotted">
+                        pelo extrato do ML
+                        <span className="absolute right-0 top-full z-40 hidden w-72 pt-1 text-left group-hover:block">
+                          <span className="block rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl">
+                            {(d.extrato ?? []).map((l, i) => (
+                              <span key={i} className="flex justify-between gap-3 border-b border-slate-100 py-1 last:border-0">
+                                <span className="truncate">{l.descricao}</span>
+                                <b className={l.valor < 0 ? "text-red-700" : "text-emerald-700"}>{l.valor < 0 ? "-" : "+"}{brl(Math.abs(l.valor))}</b>
+                              </span>
+                            ))}
+                          </span>
+                        </span>
+                      </span>
+                    ) : (
+                      <div className="mt-0.5 text-[11px] font-normal text-slate-400" title="O extrato do Mercado Livre ainda não trouxe este pedido; o custo foi estimado pela regra.">estimado</div>
+                    )
+                  )}
                 </td>
               </tr>
             ))}
