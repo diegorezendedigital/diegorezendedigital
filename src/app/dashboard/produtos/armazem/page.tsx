@@ -9,6 +9,13 @@ import { LinhaProduto, baixarModelo, lerPlanilha } from "@/lib/planilha";
 import { analisarAnuncio } from "@/lib/anuncio";
 import { pesoCubicoKg, pesoFaturavelKg, medidasDoProduto } from "@/lib/frete-ml";
 import type { ContaML, Listing } from "@/lib/types";
+
+// Etiqueta de cada marketplace no balão dos anúncios
+const MARKETPLACES: Record<string, { nome: string; cls: string }> = {
+  mercado_livre: { nome: "Mercado Livre", cls: "bg-[#FFE600] text-[#333]" },
+  shopee: { nome: "Shopee", cls: "bg-[#EE4D2D] text-white" },
+  tiktok: { nome: "TikTok Shop", cls: "bg-[#111] text-white" },
+};
 import GerarKits from "@/components/GerarKits";
 
 type Painel = null | "manual" | "excel";
@@ -130,12 +137,18 @@ export default function ArmazemPage() {
     setAnuncios(cont);
     setAnunciosDoProduto(listas);
     setMapaMp(porMp);
-    try {
-      const r = await apiFetch<{ accounts: ContaML[] }>("/api/ml/accounts");
-      setNomesContas(Object.fromEntries(r.accounts.map((a) => [String(a.ml_user_id), a.store_name || a.nickname || String(a.ml_user_id)])));
-    } catch {
-      /* sem contas conectadas: o balão aparece sem o nome da loja */
-    }
+    // Nome de cada conta, por marketplace: chave "<marketplace>:<id da conta>"
+    type LojaShop = { shop_id: string | number; shop_name?: string | null; store_name?: string | null };
+    const [ml, sh, tt] = await Promise.allSettled([
+      apiFetch<{ accounts: ContaML[] }>("/api/ml/accounts"),
+      apiFetch<{ accounts: LojaShop[] }>("/api/shopee/accounts"),
+      apiFetch<{ accounts: LojaShop[] }>("/api/tiktok/accounts"),
+    ]);
+    const nomes: Record<string, string> = {};
+    if (ml.status === "fulfilled") ml.value.accounts.forEach((a) => (nomes[`mercado_livre:${a.ml_user_id}`] = a.store_name || a.nickname || String(a.ml_user_id)));
+    if (sh.status === "fulfilled") sh.value.accounts.forEach((a) => (nomes[`shopee:${a.shop_id}`] = a.store_name || a.shop_name || String(a.shop_id)));
+    if (tt.status === "fulfilled") tt.value.accounts.forEach((a) => (nomes[`tiktok:${a.shop_id}`] = a.store_name || a.shop_name || String(a.shop_id)));
+    setNomesContas(nomes);
   }, []);
 
   useEffect(() => {
@@ -1257,9 +1270,19 @@ export default function ArmazemPage() {
                                 const foto = l.thumbnail ? l.thumbnail.replace(/^http:\/\//, "https://") : null;
                                 return (
                                   <span key={l.id} className="mb-2 block border-b border-slate-100 pb-2 last:mb-0 last:border-0 last:pb-0">
-                                    {(l.ml_user_id && nomesContas[String(l.ml_user_id)]) && (
-                                      <span className="mb-0.5 block truncate text-[11px] font-semibold text-slate-800">{nomesContas[String(l.ml_user_id)]}</span>
-                                    )}
+                                    <span className="mb-1 flex items-center gap-1.5">
+                                      {(() => {
+                                        const mp = MARKETPLACES[l.marketplace_id];
+                                        return (
+                                          <span className={`inline-flex h-4 shrink-0 items-center rounded-full px-1.5 text-[9px] font-bold ${mp?.cls ?? "bg-slate-200 text-slate-700"}`}>
+                                            {mp?.nome ?? l.marketplace_id}
+                                          </span>
+                                        );
+                                      })()}
+                                      <span className="truncate text-[11px] font-semibold text-slate-800">
+                                        {(l.ml_user_id && nomesContas[`${l.marketplace_id}:${l.ml_user_id}`]) || (l.ml_user_id ? `Conta ${l.ml_user_id}` : "Conta não identificada")}
+                                      </span>
+                                    </span>
                                     <span className="mb-1 flex items-start gap-2">
                                       {foto ? (
                                         <img src={foto} alt="" className="h-12 w-12 shrink-0 rounded border border-slate-200 object-cover" />
