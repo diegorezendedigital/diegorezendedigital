@@ -302,7 +302,7 @@ export default function DevolucoesPage() {
       {erro && <div className="card text-sm text-red-700">{erro}</div>}
       {erros.length > 0 && (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
-          {erros.map((e) => <p key={e}>Não foi possível buscar de {e}</p>)}
+          {erros.map((e) => <p key={e}>{/extrato/i.test(e) ? e : `Não foi possível buscar de ${e}`}</p>)}
         </div>
       )}
 

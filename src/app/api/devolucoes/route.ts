@@ -48,7 +48,7 @@ export type Devolucao = {
 };
 
 // Sobe quando a regra de custo muda: casos salvos com versão antiga são recalculados
-const VERSAO_REGRA = 6;
+const VERSAO_REGRA = 7;
 
 // Arrependimento / desistência: no Mercado Livre o frete da devolução é pago pelo próprio ML
 const ARREPENDIMENTO = /n[aã]o quero mais|arrepend|desist|mudei de ideia|n[aã]o (me )?serviu|boas condi[cç][oõ]es|n[aã]o gostei|comprei por engano/i;
@@ -117,15 +117,34 @@ type LinhaExtrato = { id: string; descricao: string; valor: number; envio: boole
 const EH_ENVIO = /envio|env[ií]o|frete|shipping|log[ií]stic/i;
 
 // GET /billing/integration/group/ML/order/details: até 60 pedidos por chamada, chamadas em sequência (evita 429)
-async function extratoML(token: string, pedidos: string[]): Promise<Map<string, LinhaExtrato[]>> {
+async function extratoML(token: string, pedidos: string[], conta: string): Promise<{ mapa: Map<string, LinhaExtrato[]>; erro: string | null }> {
   const m = new Map<string, LinhaExtrato[]>();
+  let erro: string | null = null;
   const ids = Array.from(new Set(pedidos.filter((p) => /^\d+$/.test(p))));
   for (let i = 0; i < ids.length; i += 60) {
     const lote = ids.slice(i, i + 60);
-    const j = await mlGetJson(token, `/billing/integration/group/ML/order/details?order_ids=${lote.join(",")}&limit=150`).catch(() => null);
-    if (!j) continue; // sem extrato (erro, 206 ou 429): esses pedidos ficam na regra estimada
-    for (const r of (j.results as Record<string, unknown>[]) ?? []) {
-      const pedido = String(r.order_id ?? "");
+    let j: Record<string, unknown> | null = null;
+    try {
+      j = await mlGetJson(token, `/billing/integration/group/ML/order/details?order_ids=${lote.join(",")}&limit=150`);
+    } catch (e) {
+      erro = e instanceof Error ? e.message : String(e);
+      console.error(`[devolucoes][extrato] conta ${conta}: falhou (${erro})`);
+      continue; // sem extrato: esses pedidos ficam na regra estimada
+    }
+    const resultados = (j.results as Record<string, unknown>[]) ?? [];
+    // Registro para conferência (sem dados do comprador): formato que o ML devolveu
+    console.log(
+      `[devolucoes][extrato] conta ${conta}: pedidos=${lote.length} total=${String(j.total ?? "?")} resultados=${resultados.length} chaves=${Object.keys(j).join(",")}` +
+        (resultados[0]
+          ? ` | 1º order_id=${String(resultados[0].order_id)} chaves=${Object.keys(resultados[0]).join(",")} detalhes=${JSON.stringify(
+              ((resultados[0].details as Record<string, unknown>[]) ?? []).slice(0, 8).map((d) => {
+                const c = (d.charge_info ?? {}) as Record<string, unknown>;
+                return [c.detail_type, c.detail_sub_type, c.transaction_detail, c.detail_amount, (d.shipping_info as { shipping_id?: unknown } | undefined)?.shipping_id, c.charge_bonified_id];
+              })
+            )}`
+          : "")
+    );
+    for (const r of resultados) {
       const linhas: LinhaExtrato[] = [];
       for (const d of (r.details as Record<string, unknown>[]) ?? []) {
         const c = (d.charge_info ?? {}) as Record<string, unknown>;
@@ -150,13 +169,21 @@ async function extratoML(token: string, pedidos: string[]): Promise<Map<string, 
         l.envio = orig.envio;
         l.envioId = l.envioId ?? orig.envioId;
       }
-      if (linhas.length) m.set(pedido, [...(m.get(pedido) ?? []), ...linhas]);
+      if (!linhas.length) continue;
+      // Guarda pelo número do pedido e também pelo pacote (a reclamação pode apontar para qualquer um dos dois)
+      const chaves = new Set<string>([String(r.order_id ?? "")]);
+      for (const d of (r.details as Record<string, unknown>[]) ?? []) {
+        for (const s of (d.sales_info as { order_id?: unknown }[]) ?? []) if (s.order_id != null) chaves.add(String(s.order_id));
+        const pack = (d.shipping_info as { pack_id?: unknown } | undefined)?.pack_id;
+        if (pack != null && String(pack)) chaves.add(String(pack));
+      }
+      for (const k of chaves) if (k) m.set(k, [...(m.get(k) ?? []), ...linhas]);
     }
   }
-  return m;
+  return { mapa: m, erro };
 }
 
-async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: string }, de: string, ate: string, vendas: (pedidos: string[]) => Promise<Map<string, Venda>>, conhecidas: Conhecidas): Promise<Devolucao[]> {
+async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: string }, de: string, ate: string, vendas: (pedidos: string[]) => Promise<Map<string, Venda>>, conhecidas: Conhecidas, avisar: (msg: string) => void = () => {}): Promise<Devolucao[]> {
   const token = await getAccessToken(storeId, conta.ml_user_id);
   if (!token) throw new Error("Conta sem acesso. Reconecte em Integrações.");
   const faixa = `date_created:after:${de}T00:00:00.000-03:00,before:${ate}T23:59:59.999-03:00`;
@@ -173,7 +200,12 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
   const nomes = new Map<string, string>();
   // Extrato só dos casos que serão recalculados (encerrados já salvos não são consultados)
   const aConsultar = doPedido.slice(0, 300).filter((c) => !(conhecidas.has(`mercado_livre:${c.id}`) && String(c.status) === "closed"));
-  const extratos = await extratoML(token, aConsultar.map((c) => String(c.resource_id ?? ""))).catch(() => new Map<string, LinhaExtrato[]>());
+  const { mapa: extratos, erro: erroExtrato } = await extratoML(token, aConsultar.map((c) => String(c.resource_id ?? "")), conta.ml_user_id).catch((e) => ({
+    mapa: new Map<string, LinhaExtrato[]>(),
+    erro: e instanceof Error ? e.message : String(e),
+  }));
+  if (erroExtrato) avisar(`${conta.nome}: extrato do Mercado Livre indisponível (${erroExtrato}); custos estimados pela regra`);
+  else if (aConsultar.length && !extratos.size) console.log(`[devolucoes][extrato] conta ${conta.ml_user_id}: nenhum dos ${aConsultar.length} pedidos veio no extrato`);
 
   return emLotes(doPedido.slice(0, 300), 5, async (c): Promise<Devolucao> => {
     const id = String(c.id);
@@ -233,14 +265,18 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
     const linhas = extratos.get(pedido) ?? null;
     let reembolsado = 0;
     let envioOriginal: string | null = null;
-    if (linhas) {
-      const ped = await mlGetJson(token, `/orders/${pedido}`).catch(() => null);
-      if (ped) {
-        reembolsado = ((ped.payments as { transaction_amount_refunded?: number }[]) ?? []).reduce((t, p) => t + n(p.transaction_amount_refunded), 0);
-        envioOriginal = (ped.shipping as { id?: number | string } | undefined)?.id != null ? String((ped.shipping as { id: number | string }).id) : null;
-      }
+    // Pedido no ML: dinheiro já devolvido ao comprador? (vale também com a mediação ainda aberta)
+    let pagamentoDevolvido = false;
+    const ped = await mlGetJson(token, `/orders/${pedido}`).catch(() => null);
+    if (ped) {
+      const pags = (ped.payments as { transaction_amount?: number; transaction_amount_refunded?: number; status?: string }[]) ?? [];
+      reembolsado = pags.reduce((t, p) => t + n(p.transaction_amount_refunded), 0);
+      pagamentoDevolvido = pags.some((p) => ["refunded", "charged_back", "cancelled"].includes(String(p.status))) || ["cancelled", "refunded"].includes(String(ped.status));
+      if (!reembolsado && pagamentoDevolvido) reembolsado = pags.reduce((t, p) => t + n(p.transaction_amount), 0);
+      envioOriginal = (ped.shipping as { id?: number | string } | undefined)?.id != null ? String((ped.shipping as { id: number | string }).id) : null;
+      console.log(`[devolucoes][pedido] ${pedido}: status=${String(ped.status)} pagamentos=${JSON.stringify(pags.map((p) => [p.status, p.transaction_amount, p.transaction_amount_refunded]))} extrato=${linhas ? linhas.length + " linhas" : "não veio"}`);
     }
-    const devolvido = reembolsado > 0 || resultado === "comprador";
+    const devolvido = reembolsado > 0 || pagamentoDevolvido || resultado === "comprador";
 
     let freteIda: number;
     let tarifa = 0;
@@ -269,7 +305,8 @@ async function devolucoesML(storeId: string, conta: { ml_user_id: string; nome: 
       // - cobertura do Mercado Livre (applied_coverage / coverage_decision): o ML assume o reembolso
       semCusto = cobertura ? "Coberto pelo Mercado Livre" : arrependimento ? "Arrependimento: o Mercado Livre paga a devolução" : null;
       if (semCusto) freteVolta = 0;
-      freteIda = resultado === "comprador" && !semCusto ? n(v?.shipping_cost) : 0;
+      freteIda = devolvido && !semCusto ? n(v?.shipping_cost) : 0;
+      if (devolvido && !reembolso) reembolso = reembolsado > 0 ? Math.min(reembolsado, venda || reembolsado) : venda;
     }
     // Produto perdido só quando há certeza de que ele não volta (comprador ficou com ele / devolução não chegou)
     const produtoPerdido = resultado === "comprador" && produtoVoltou === false && !cobertura ? n(v?.cost_price) : 0;
@@ -633,7 +670,7 @@ async function sincronizar(storeId: string, de: string, ate: string, salvar: boo
   const erros: string[] = [];
   const partes = await Promise.all([
     ...contasML.map((c) =>
-      devolucoesML(user.id, { ml_user_id: c.ml_user_id, nome: c.store_name || c.nickname || c.ml_user_id }, de, ate, vendas, conhecidas).catch((e) => {
+      devolucoesML(user.id, { ml_user_id: c.ml_user_id, nome: c.store_name || c.nickname || c.ml_user_id }, de, ate, vendas, conhecidas, (m) => erros.push(m)).catch((e) => {
         erros.push(`${c.store_name || c.nickname || "Mercado Livre"}: ${e instanceof Error ? e.message : String(e)}`);
         return [] as Devolucao[];
       })
